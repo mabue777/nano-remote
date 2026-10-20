@@ -488,3 +488,278 @@ textarea {
 .session-heading {
   margin-bottom: 6px;
 }
+
+/* The session view: a fixed-height column; only the conversation scrolls, the composer stays put. */
+.session-screen {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+
+.session-head p {
+  margin: 0 0 8px;
+}
+
+.pill {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.pill.ok {
+  color: var(--ok);
+}
+
+.pill.busy {
+  color: var(--busy);
+}
+
+.pill.attention {
+  color: var(--warn);
+}
+
+.pill.error {
+  color: var(--error);
+}
+
+.pill.muted {
+  color: var(--muted);
+}
+
+.decision-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 16%, var(--surface));
+  border: 1px solid var(--warn);
+}
+
+.decision-banner .counters {
+  display: flex;
+  gap: 6px;
+}
+
+.decision-banner .badge {
+  background: var(--warn);
+  padding: 0 8px;
+}
+
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -16px;
+  padding: 0 16px 12px;
+}
+
+.older {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.turns,
+.steers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.steers {
+  margin-top: 10px;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--accent);
+  color: var(--accent-text);
+  padding: 8px 12px;
+  border-radius: 16px 16px 4px 16px;
+}
+
+.msg.user .muted {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.turn.sending .msg.user,
+.steer.sending,
+.steer.queued {
+  opacity: 0.7;
+}
+
+.turn.failed_to_send .msg.user,
+.steer.failed {
+  opacity: 0.6;
+}
+
+.msg.agent {
+  align-self: stretch;
+}
+
+.item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.item-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.item .summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.item pre {
+  margin: 6px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.state {
+  font-weight: 600;
+  flex: none;
+}
+
+.state.ok,
+.turn-state.ok {
+  color: var(--ok);
+}
+
+.state.busy,
+.turn-state.busy {
+  color: var(--busy);
+}
+
+.state.error,
+.turn-state.error {
+  color: var(--error);
+}
+
+.state.muted,
+.turn-state.muted {
+  color: var(--muted);
+}
+
+.turn-state {
+  margin: 0;
+  font-weight: 600;
+}
+
+.paths {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.paths .kind.add {
+  color: var(--ok);
+}
+
+.paths .kind.delete {
+  color: var(--error);
+}
+
+.reasoning-toggle {
+  padding: 0;
+  text-align: left;
+}
+
+.reasoning-text {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.send-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: flex-end;
+  color: var(--error);
+}
+
+.send-failure .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.jump-pill {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 132px);
+  transform: translateX(-50%);
+  border-radius: 999px;
+  min-height: 36px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+  z-index: 5;
+}
+
+.composer {
+  flex: none;
+  border-top: 1px solid var(--line);
+  margin: 0 -16px;
+  padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+  background: var(--bg);
+}
+
+.composer .usage {
+  margin: 0 0 6px;
+}
+
+.composer-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.composer-form textarea {
+  flex: 1;
+  resize: none;
+  max-height: 40dvh;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+button.stop {
+  color: var(--error);
+  border-color: var(--error);
+}

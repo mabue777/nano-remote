@@ -7,7 +7,9 @@
 // It is written independently of web/src so a bug in the client cannot hide behind the same bug here.
 // Shapes come from protocol/examples via fixtures.ts. Test knobs: kill() drops every socket the way iOS
 // does on lock, closeAll(code) closes with a spec 10 code, compact() makes old cursors expire,
-// dropLive() loses one live event, onRequest intercepts requests, refuse() closes new sockets.
+// dropLive() loses one live event, onRequest intercepts requests, refuse() closes new sockets,
+// paceMs plays scripted turns step by step on a timer (so a browser sees deltas arrive), delay() holds
+// back the answer to the next request of a method, and reset() forgets every session.
 // For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
 // and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
 // and pages session/list by cursor.
@@ -39,8 +41,8 @@ interface FakeSession {
   approvals: Map<string, Json>;
   inputs: Map<string, Json>;
   byClientMessageId: Map<string, string>;
-  /** The scripted turn in progress, if any. */
-  running?: { turnId: string; commandItemId: string; requestId?: string };
+  /** The scripted turn in progress, if any; `timer` is its next paced step. */
+  running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout> };
 }
 
 export type RequestHook = (
@@ -216,6 +218,16 @@ export class FakeStream {
       this.send({ id: message.id, ...hooked });
       return;
     }
+    const delay = this.host.takeDelay(message.method);
+    if (delay !== undefined) {
+      setTimeout(() => this.answer(message), delay);
+      return;
+    }
+    this.answer(message);
+  }
+
+  private answer(message: Json): void {
+    if (this.closed) return;
     if (message.method !== 'initialize' && !this.initialized) {
       this.send({ id: message.id, error: { code: 'not_initialized', message: 'send initialize first' } });
       return;
@@ -249,6 +261,9 @@ export class FakeHost {
   readonly goodbyes: { streamId: string; reason: string | undefined }[] = [];
   pongStatus: 'active' | 'degraded' | 'draining' = 'active';
   onRequest: RequestHook | undefined;
+  /** When above 0, scripted turns emit one step per this many ms instead of all at once. */
+  paceMs = 0;
+  private readonly delays = new Map<string, number>();
   private server: WebSocketServer | undefined;
   private refusal: { code: number; reason: string } | undefined;
   private readonly dropped = new Set<string>();
@@ -329,6 +344,25 @@ export class FakeHost {
   /** The live delivery of this event is lost (it stays in the Journal). */
   dropLive(sessionId: string, seq: number): void {
     this.dropped.add(`${sessionId}#${seq}`);
+  }
+
+  /** The answer to the next request of `method` is sent `ms` later. */
+  delay(method: string, ms: number): void {
+    this.delays.set(method, ms);
+  }
+
+  takeDelay(method: string): number | undefined {
+    const ms = this.delays.get(method);
+    this.delays.delete(method);
+    return ms;
+  }
+
+  /** Forgets every session (stopping paced turns) and numbers new ones from 1 again. */
+  reset(): void {
+    for (const session of this.sessions.values()) clearTimeout(session.running?.timer);
+    this.sessions.clear();
+    this.delays.clear();
+    this.nextSession = 0;
   }
 
   session(sessionId: string): FakeSession {
@@ -494,6 +528,33 @@ export class FakeHost {
           after: () => this.playTurn(params.sessionId, turn.turnId, params.input, params.clientMessageId),
         };
       }
+      case 'turn/steer': {
+        const session = this.session(params.sessionId);
+        if (session.running === undefined || session.running.turnId !== params.turnId) {
+          throw new HostError({ code: 'turn_mismatch', message: `${params.turnId} is not the running turn` });
+        }
+        const turn = session.turns.find((t) => t.turnId === params.turnId);
+        const item = {
+          itemId: `itm_fake_${++this.nextId}`,
+          type: 'userMessage',
+          turnId: params.turnId,
+          status: 'completed',
+          content: params.input,
+          clientMessageId: params.clientMessageId,
+        };
+        return {
+          result: { turn: { ...turn, items: [...turn.items] } },
+          after: () => this.emit(params.sessionId, 'item/started', { turnId: params.turnId, item }),
+        };
+      }
+      case 'session/history': {
+        const session = this.session(params.sessionId);
+        const end = Number(String(params.before).replace(/^old_/, ''));
+        if (!Number.isInteger(end) || end < 0) throw new HostError({ code: 'invalid_params', message: 'bad cursor', data: { path: 'before' } });
+        const start = Math.max(0, end - (params.limit ?? 5));
+        const turns = session.turns.slice(start, end).reverse().map((turn) => this.inline(session, turn));
+        return { result: start > 0 ? { turns, olderCursor: `old_${start}` } : { turns } };
+      }
       case 'turn/interrupt': {
         const session = this.session(params.sessionId);
         if (session.running?.turnId !== params.turnId) return { result: { ok: true } };
@@ -527,11 +588,36 @@ export class FakeHost {
         after,
       };
     }
-    const turns = session.turns.slice(-(params.turns ?? 5)).map((turn) => ({
-      ...turn,
-      items: turn.items.map((id: string) => session.items.get(id)).filter(Boolean),
-    }));
-    return { result: { mode: 'snapshot', session: this.full(session), turns, cursor, pending }, after };
+    const shown = session.turns.slice(-(params.turns ?? 5));
+    const turns = shown.map((turn) => this.inline(session, turn));
+    const older = session.turns.length - shown.length;
+    return {
+      result: { mode: 'snapshot', session: this.full(session), turns, ...(older > 0 ? { olderCursor: `old_${older}` } : {}), cursor, pending },
+      after,
+    };
+  }
+
+  private inline(session: FakeSession, turn: Json): Json {
+    return { ...turn, items: turn.items.map((id: string) => session.items.get(id)).filter(Boolean) };
+  }
+
+  /**
+   * Runs the steps of a scripted turn: all at once, or with paceMs one per tick. A paced turn stops
+   * when it is no longer the running one (interrupted).
+   */
+  private play(session: FakeSession, steps: (() => void)[]): void {
+    if (this.paceMs <= 0) {
+      for (const step of steps) step();
+      return;
+    }
+    const running = session.running;
+    const next = (i: number) => {
+      if (running === undefined || session.running !== running) return;
+      running.timer = undefined;
+      steps[i]!();
+      if (i + 1 < steps.length) running.timer = setTimeout(() => next(i + 1), this.paceMs);
+    };
+    next(0);
   }
 
   // ---- the scripted agent (walkthrough, spec 13) ------------------------------------------------
@@ -548,34 +634,41 @@ export class FakeHost {
   private playTurn(sessionId: string, turnId: string, input: Json, clientMessageId: string | undefined): void {
     const session = this.session(sessionId);
     const running = session.running!;
-    this.emit(sessionId, 'turn/started', { turn: { turnId, status: 'inProgress', startedAt: 1760930100, completedAt: null, error: null, items: [] } });
-    const user = {
-      itemId: `itm_fake_${++this.nextId}`,
-      type: 'userMessage',
-      turnId,
-      status: 'completed',
-      content: input,
-      ...(clientMessageId !== undefined ? { clientMessageId } : {}),
-    };
-    this.emit(sessionId, 'item/started', { turnId, item: user });
-    this.emit(sessionId, 'status/changed', { status: 'running' });
+    const steps: (() => void)[] = [];
+    steps.push(() => {
+      this.emit(sessionId, 'turn/started', { turn: { turnId, status: 'inProgress', startedAt: 1760930100, completedAt: null, error: null, items: [] } });
+      const user = {
+        itemId: `itm_fake_${++this.nextId}`,
+        type: 'userMessage',
+        turnId,
+        status: 'completed',
+        content: input,
+        ...(clientMessageId !== undefined ? { clientMessageId } : {}),
+      };
+      this.emit(sessionId, 'item/started', { turnId, item: user });
+      this.emit(sessionId, 'status/changed', { status: 'running' });
+    });
     const agent = exampleMessage('28').params.item;
     const text: string = agent.text;
     const agentId = `itm_fake_${++this.nextId}`;
-    this.emit(sessionId, 'item/started', { turnId, item: { ...agent, itemId: agentId, turnId, status: 'inProgress', text: '' } });
+    steps.push(() => this.emit(sessionId, 'item/started', { turnId, item: { ...agent, itemId: agentId, turnId, status: 'inProgress', text: '' } }));
     const size = Math.ceil(text.length / this.deltas);
     for (let i = 0; i < text.length; i += size) {
-      this.emit(sessionId, 'item/delta', { itemId: agentId, turnId, field: 'text', delta: text.slice(i, i + size) });
+      const delta = text.slice(i, i + size);
+      steps.push(() => this.emit(sessionId, 'item/delta', { itemId: agentId, turnId, field: 'text', delta }));
     }
-    this.emit(sessionId, 'item/completed', { turnId, item: { ...agent, itemId: agentId, turnId, text } });
-    const command = exampleMessage('29').params.item;
-    this.emit(sessionId, 'item/started', { turnId, item: { ...command, itemId: running.commandItemId, turnId } });
-    const request = exampleMessage('32').params.request;
-    running.requestId = `req_fake_${++this.nextId}`;
-    this.emit(sessionId, 'approval/request', {
-      request: { ...request, requestId: running.requestId, sessionId, turnId, itemId: running.commandItemId },
+    steps.push(() => {
+      this.emit(sessionId, 'item/completed', { turnId, item: { ...agent, itemId: agentId, turnId, text } });
+      const command = exampleMessage('29').params.item;
+      this.emit(sessionId, 'item/started', { turnId, item: { ...command, itemId: running.commandItemId, turnId } });
+      const request = exampleMessage('32').params.request;
+      running.requestId = `req_fake_${++this.nextId}`;
+      this.emit(sessionId, 'approval/request', {
+        request: { ...request, requestId: running.requestId, sessionId, turnId, itemId: running.commandItemId },
+      });
+      this.emit(sessionId, 'status/changed', { status: 'waiting_approval' });
     });
-    this.emit(sessionId, 'status/changed', { status: 'waiting_approval' });
+    this.play(session, steps);
   }
 
   /** P7 and P8: the decision, then the rest of the turn. */
@@ -604,6 +697,7 @@ export class FakeHost {
   /** P9: the turn ends interrupted; a pending approval is withdrawn by the agent (spec 5.3). */
   private interruptTurn(sessionId: string): void {
     const running = this.session(sessionId).running!;
+    clearTimeout(running.timer);
     if (running.requestId !== undefined) {
       this.emit(sessionId, 'request/resolved', { requestId: running.requestId, kind: 'command', resolvedBy: 'agent', decision: 'cancel' });
     }

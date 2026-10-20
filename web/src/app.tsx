@@ -11,7 +11,7 @@ import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
 import { HomeScreen } from './screens/HomeScreen';
 import type { FetchLike } from './screens/pair-model';
 import { PairScreen } from './screens/PairScreen';
-import { SessionScreen } from './screens/SessionScreen';
+import { SessionScreen } from './screens/session/SessionScreen';
 import { StreamClient } from './stream/client';
 
 export interface AppProps {

@@ -123,7 +123,7 @@ export function agentRow(agent: Agent): AgentRow {
   return { id: agent.id, name: agent.name, status: agent.status, tone, detail };
 }
 
-export function statusOf(summary: SessionSummary): { label: string; tone: SessionRow['tone'] } {
+export function statusOf(summary: Pick<SessionSummary, 'status' | 'lastTurnStatus'>): { label: string; tone: SessionRow['tone'] } {
   switch (summary.status) {
     case 'running':
       return { label: 'Working', tone: 'busy' };

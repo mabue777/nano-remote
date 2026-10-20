@@ -6,6 +6,11 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 
 const TITLES = ['Create hello.txt and list files', 'Run the test suite', 'Sketch the README'];
 
+// Every test starts from the three seeded sessions (other specs run turns in them).
+test.beforeEach(async ({ request }) => {
+  await request.post('/test/reset');
+});
+
 async function freshCode(request: APIRequestContext, kind: 'code' | 'expire' = 'code'): Promise<string> {
   const response = await request.post(`/test/${kind}`);
   return ((await response.json()) as { code: string }).code;

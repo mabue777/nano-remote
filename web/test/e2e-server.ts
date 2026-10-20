@@ -4,8 +4,14 @@
 // scripted sessions are seeded: finished, waiting for an approval, and new. session/list pages by two,
 // so the third row only appears through cursor paging.
 //
+// Scripted turns are paced (PACE_MS per step) so the browser sees deltas arrive.
+//
 // Test hooks: `POST /test/code` issues a fresh code; `POST /test/expire` issues one that is already
-// expired. Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
+// expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them);
+// `POST /test/run {sessionId, text}` starts a scripted turn the way the desktop would;
+// `POST /test/resolve {sessionId, decision}` answers its approval from another device;
+// `POST /test/delay {method, ms}` holds back the answer to the next request of that method.
+// Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import http from 'node:http';
@@ -25,6 +31,25 @@ const TYPES: Record<string, string> = {
 };
 
 export const SEEDED_TITLES = ['Create hello.txt and list files', 'Run the test suite', 'Sketch the README'];
+const PACE_MS = 80;
+
+/** Three sessions: finished (ses_fake_1), waiting for an approval (ses_fake_2), and new (ses_fake_3). */
+function seed(host: FakeHost): void {
+  host.reset();
+  host.paceMs = 0;
+  const finished = host.createSession({ title: SEEDED_TITLES[0] });
+  host.runScriptedTurn(finished, 'Create a file named hello.txt in the current directory.');
+  host.resolveElsewhere(finished, 'accept');
+  const waiting = host.createSession({ title: SEEDED_TITLES[1], agentId: 'claude' });
+  host.runScriptedTurn(waiting, 'Run the tests.');
+  const fresh = host.createSession({ title: SEEDED_TITLES[2] });
+  // Recent, fixed times: waiting (newest), finished, then the new one, which lands on page two.
+  const now = Math.floor(Date.now() / 1000);
+  host.session(waiting).summary.updatedAt = now - 60;
+  host.session(finished).summary.updatedAt = now - 600;
+  host.session(fresh).summary.updatedAt = now - 86_400;
+  host.paceMs = PACE_MS;
+}
 
 interface Code {
   expiresAt: number;
@@ -44,17 +69,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
   };
 
   const host = new FakeHost({ pageSize: 2 });
-  const finished = host.createSession({ title: SEEDED_TITLES[0] });
-  host.runScriptedTurn(finished, 'Create a file named hello.txt in the current directory.');
-  host.resolveElsewhere(finished, 'accept');
-  const waiting = host.createSession({ title: SEEDED_TITLES[1], agentId: 'claude' });
-  host.runScriptedTurn(waiting, 'Run the tests.');
-  const fresh = host.createSession({ title: SEEDED_TITLES[2] });
-  // Recent, fixed times: waiting (newest), finished, then the new one, which lands on page two.
-  const now = Math.floor(Date.now() / 1000);
-  host.session(waiting).summary.updatedAt = now - 60;
-  host.session(finished).summary.updatedAt = now - 600;
-  host.session(fresh).summary.updatedAt = now - 86_400;
+  seed(host);
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
@@ -63,6 +78,34 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
     };
     if (request.method === 'POST' && url.pathname === '/test/code') return json(200, { code: issue(5 * 60_000) });
     if (request.method === 'POST' && url.pathname === '/test/expire') return json(200, { code: issue(-1) });
+    if (request.method === 'POST' && url.pathname.startsWith('/test/')) {
+      let text = '';
+      request.on('data', (chunk: Buffer) => (text += chunk.toString('utf8')));
+      request.on('end', () => {
+        try {
+          const body = text === '' ? {} : JSON.parse(text);
+          switch (url.pathname) {
+            case '/test/reset':
+              seed(host);
+              return json(200, { ok: true });
+            case '/test/run':
+              host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.');
+              return json(200, { ok: true });
+            case '/test/resolve':
+              host.resolveElsewhere(body.sessionId, body.decision ?? 'accept');
+              return json(200, { ok: true });
+            case '/test/delay':
+              host.delay(body.method, body.ms);
+              return json(200, { ok: true });
+            default:
+              return json(404, { error: { code: 'not_found', message: url.pathname } });
+          }
+        } catch (error) {
+          return json(400, { error: { code: 'invalid_params', message: String(error) } });
+        }
+      });
+      return;
+    }
     if (request.method === 'POST' && url.pathname === '/v1/pair') {
       if (!(request.headers['content-type'] ?? '').startsWith('application/json')) {
         return json(415, { error: { code: 'invalid_params', message: 'content-type must be application/json', data: { path: '' } } });

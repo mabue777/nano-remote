@@ -3,7 +3,7 @@
 The Nano Remote phone client: a TypeScript web app built by Vite into `host/public` and served by
 Nano Host over the tailnet (ADR 0004). Added to the iPhone home screen, it gets Web Push from the
 host (ADR 0005). Phase 2 of `docs/plan/roadmap.md` builds the UI; the first screens (pairing, home with
-host status and the session list, new session) are in.
+host status and the session list, new session, the session view with its composer) are in.
 
 ## Framework: Vite + Preact
 
@@ -33,6 +33,9 @@ Prefresh (HMR that keeps component state) is wanted during development.
 - `src/screens/`: one view model per screen (`*-model.ts`, plain classes with vitest tests) and the
   Preact components that render them (`*.tsx`, covered by the Playwright smoke). `device.ts` keeps the
   clientId from pairing in localStorage; the device token stays in the host's HttpOnly cookie.
+  `src/screens/session/` is the session view: the turn list (live deltas, commands, file changes,
+  reasoning, inline errors, older turns by `session/history`), the pending-request banner, and the
+  composer (send with an optimistic turn, steer while a turn runs, interrupt).
 - `src/generated/`: protocol types generated from `protocol/schema/*.json` by
   `host/scripts/generate-types.mjs`; gitignored, regenerated on every verify, never hand-edited.
 - `src/**/*.test.ts`: vitest unit tests (node environment; add `happy-dom` when a test needs the DOM).
@@ -40,7 +43,9 @@ Prefresh (HMR that keeps component state) is wanted during development.
   which loads `test/e2e-server.ts` through Vite: the built app (`host/public`), `POST /v1/pair` with
   single-use codes and a cookie, and the fake host (`test/fake-host.ts`) on `/v1/stream` with three
   scripted sessions paged by two. The smoke pairs, lands on home, sees the sessions, starts a session,
-  and checks wrong, expired and reused codes.
+  and checks wrong, expired and reused codes. `e2e/session.spec.ts` drives the session view: the
+  fake host paces scripted turns so deltas arrive one by one, and test hooks reset the sessions, start
+  a turn, approve from "another device" and delay a reply (see the header of `test/e2e-server.ts`).
 
 ## Commands (from the repo root)
 

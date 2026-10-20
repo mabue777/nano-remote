@@ -394,6 +394,63 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     client.last('turn/interrupt').resolve({ ok: true });
     await done;
   });
+
+  it('steer sends turn/steer with the given clientMessageId and returns the turn', async () => {
+    const { client, replica } = setup();
+    expect(replica.newClientMessageId()).toBe('cm-1');
+    const input = [{ type: 'text' as const, text: 'skip hidden files' }];
+    const done = replica.steer(SID, 't1', input, 'cm-9');
+    expect(client.last('turn/steer').params).toEqual({ sessionId: SID, turnId: 't1', input, clientMessageId: 'cm-9' });
+    client.last('turn/steer').resolve({ turn: turn('t1') });
+    await expect(done).resolves.toEqual({ turn: turn('t1') });
+  });
+});
+
+describe('Replica: older turns (session/history, spec 6)', () => {
+  it('pages older turns before olderCursor, oldest first in front, until none remain', async () => {
+    const { client, replica } = setup();
+    const opened = replica.open(SID);
+    client.last('session/open').resolve(snapshot(9, [{ ...turn('t3', { status: 'completed' }), items: [agentItem('i3', 't3', 'three')] }], { olderCursor: 'old-3' }));
+    await opened;
+
+    const page = replica.loadOlderTurns(SID, 2);
+    expect(client.last('session/history').params).toEqual({ sessionId: SID, before: 'old-3', limit: 2 });
+    client.last('session/history').resolve({
+      turns: [
+        { ...turn('t2', { status: 'completed' }), items: [agentItem('i2', 't2', 'two')] },
+        { ...turn('t1', { status: 'completed' }), items: [agentItem('i1', 't1', 'one')] },
+        { ...turn('t3', { status: 'completed' }), items: [] }, // already shown: skipped
+      ],
+      olderCursor: 'old-1',
+    });
+    await expect(page).resolves.toBe(true);
+    const view = replica.session(SID)!;
+    expect(view.turns.map((t) => t.turnId)).toEqual(['t1', 't2', 't3']);
+    expect(view.items.i1).toMatchObject({ text: 'one' });
+    expect(view.olderCursor).toBe('old-1');
+
+    const last = replica.loadOlderTurns(SID);
+    expect(client.last('session/history').params).toEqual({ sessionId: SID, before: 'old-1' });
+    client.last('session/history').resolve({ turns: [] });
+    await expect(last).resolves.toBe(false);
+    expect(view.olderCursor).toBeUndefined();
+    await expect(replica.loadOlderTurns(SID)).resolves.toBe(false); // nothing to page from
+    await expect(replica.loadOlderTurns('ses_unknown')).resolves.toBe(false);
+    expect(client.count('session/history')).toBe(2);
+  });
+
+  it('drops a page that a snapshot overtook', async () => {
+    const { client, replica } = setup();
+    const opened = replica.open(SID);
+    client.last('session/open').resolve(snapshot(9, [], { olderCursor: 'old-3' }));
+    await opened;
+    const page = replica.loadOlderTurns(SID);
+    const view = replica.session(SID)!;
+    view.olderCursor = 'old-7'; // as a reconnect snapshot would
+    client.last('session/history').resolve({ turns: [{ ...turn('t1'), items: [] }] });
+    await expect(page).resolves.toBe(true);
+    expect(view.turns).toEqual([]);
+  });
 });
 
 describe('Replica: session list', () => {

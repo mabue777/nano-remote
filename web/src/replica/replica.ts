@@ -11,10 +11,12 @@ import type {
   EventsSinceResult,
   HostStatus,
   SessionListResult,
+  SessionHistoryResult,
   SessionOpenResult,
   SessionStartParams,
   SessionStartResult,
   TurnStartResult,
+  TurnSteerResult,
 } from '../generated/methods';
 import type { ClientState, RequestOptions } from '../stream/client';
 import { RequestError } from '../stream/client';
@@ -333,7 +335,7 @@ export class Replica {
    * replaced when the host's turn arrives. Returns the clientMessageId.
    */
   sendMessage(sessionId: string, input: InputPart[]): string {
-    const clientMessageId = (this.options.newClientMessageId ?? (() => crypto.randomUUID()))();
+    const clientMessageId = this.newClientMessageId();
     const view = this.ensureView(sessionId);
     const turnId = optimisticId(clientMessageId);
     view.items[turnId] = { itemId: turnId, type: 'userMessage', turnId, status: 'inProgress', content: input, clientMessageId };
@@ -386,6 +388,52 @@ export class Replica {
   /** turn/interrupt; the turn ends with turn/completed {status: interrupted} through the Journal. */
   async interrupt(sessionId: string, turnId: string): Promise<void> {
     await this.client.request('turn/interrupt', { sessionId, turnId });
+  }
+
+  /**
+   * turn/steer: adds input to the running turn (spec 7). The steered userMessage item, echoing
+   * `clientMessageId`, arrives through the Journal; errors (turn_mismatch, not_supported, ...) reject.
+   */
+  steer(sessionId: string, turnId: string, input: InputPart[], clientMessageId: string): Promise<TurnSteerResult> {
+    return this.client.request<TurnSteerResult>('turn/steer', { sessionId, turnId, input, clientMessageId });
+  }
+
+  /** A fresh clientMessageId (the same source sendMessage uses). */
+  newClientMessageId(): string {
+    return (this.options.newClientMessageId ?? (() => crypto.randomUUID()))();
+  }
+
+  /**
+   * session/history before the view's olderCursor (spec 6): older turns go in front of the ones the view
+   * has, items inlined. Resolves true while still older turns remain, false when the start is reached
+   * (or there was no cursor to page from).
+   */
+  async loadOlderTurns(sessionId: string, limit?: number): Promise<boolean> {
+    const view = this.views.get(sessionId);
+    const before = view?.olderCursor;
+    if (view === undefined || before === undefined) return false;
+    const result = await this.client.request<SessionHistoryResult>('session/history', {
+      sessionId,
+      before,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    if (view.olderCursor !== before) return view.olderCursor !== undefined; // a snapshot replaced the view meanwhile
+    const known = new Set(view.turns.map((t) => t.turnId));
+    const older: TurnView[] = [];
+    // The page is newest first; the view keeps oldest first.
+    for (const turn of [...result.turns].reverse()) {
+      if (known.has(turn.turnId)) continue;
+      const ids: string[] = [];
+      for (const item of turn.items) {
+        view.items[item.itemId] = item;
+        ids.push(item.itemId);
+      }
+      older.push({ ...turn, items: ids });
+    }
+    view.turns.unshift(...older);
+    view.olderCursor = result.olderCursor;
+    this.changed();
+    return view.olderCursor !== undefined;
   }
 
   private async resolve(sessionId: string, requestId: string, method: string, extra: Record<string, unknown>): Promise<void> {
