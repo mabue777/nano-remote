@@ -1,7 +1,7 @@
 # Nano Remote — what we are building
 
 **A phone app that lets you chat with LLMs and drive coding agents — Claude
-Code, Codex, Kimi — running on your own computer, from anywhere, with the
+Code, Codex, Kimi, Ollama and any other providers — running on your own computer, from anywhere, with the
 polish the big vendors ship in their apps.**
 
 Two modes in one app:
