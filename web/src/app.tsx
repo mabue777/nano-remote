@@ -11,6 +11,7 @@ import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
 import { HomeScreen } from './screens/HomeScreen';
 import type { FetchLike } from './screens/pair-model';
 import { PairScreen } from './screens/PairScreen';
+import { DeviceNames } from './screens/session/approvals/devices';
 import { SessionScreen } from './screens/session/SessionScreen';
 import { StreamClient } from './stream/client';
 
@@ -71,7 +72,8 @@ function Connected({ device, route, router, storage, onUnpaired }: ConnectedProp
   const services = useMemo(() => {
     const client = new StreamClient({ clientId: device.clientId, optOutNotifications: ['item/reasoning/delta'] });
     const replica = new Replica({ client, storage });
-    return { client, replica };
+    const devices = new DeviceNames(client);
+    return { client, replica, deviceName: (clientId: string) => devices.nameOf(clientId) };
   }, [device.clientId, storage]);
 
   useEffect(() => {
@@ -94,7 +96,15 @@ function Connected({ device, route, router, storage, onUnpaired }: ConnectedProp
     case 'home':
       return <HomeScreen client={services.client} replica={services.replica} onOpenSession={open} />;
     case 'session':
-      return <SessionScreen sessionId={route.sessionId} replica={services.replica} onBack={() => router.navigate('/')} />;
+      return (
+        <SessionScreen
+          sessionId={route.sessionId}
+          replica={services.replica}
+          clientId={device.clientId}
+          deviceName={services.deviceName}
+          onBack={() => router.navigate('/')}
+        />
+      );
     case 'notFound':
       return (
         <main class="screen">

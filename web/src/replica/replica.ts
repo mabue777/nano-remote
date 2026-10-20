@@ -58,6 +58,17 @@ export interface ReplicaOptions {
   now?: () => number;
 }
 
+/** How approval/resolve or input/answer ended, when the prompt is gone (spec 5.3, spec 10). */
+export type ResolveOutcome = { status: 'ok' } | { status: 'already_resolved'; resolvedBy?: string } | { status: 'not_found' };
+
+/** Who resolved a request: a clientId, or "agent" when the agent withdrew it. */
+export interface Resolution {
+  resolvedBy: string;
+  decision?: Decision;
+}
+
+const RESOLUTIONS_KEPT = 200;
+
 /** Errors that leave an optimistic send in `sending`: the next stream retries it (same clientMessageId). */
 const RETRY_LATER: ReadonlySet<string> = new Set(['connection_lost', 'timeout']);
 
@@ -92,6 +103,8 @@ export class Replica {
   private readonly syncing = new Map<string, Promise<void>>();
   private readonly catchingUp = new Map<string, Promise<void>>();
   private readonly sends = new Set<string>();
+  /** requestId -> who resolved it, newest last. Not persisted. */
+  private readonly resolutions = new Map<string, Resolution>();
   private readonly unsubscribe: (() => void)[] = [];
 
   constructor(options: ReplicaOptions) {
@@ -375,14 +388,25 @@ export class Replica {
     this.changed();
   }
 
-  /** approval/resolve. On success, already_resolved or not_found the prompt is dropped locally at once. */
-  resolveApproval(sessionId: string, requestId: string, decision: Decision): Promise<void> {
+  /**
+   * approval/resolve. On success, already_resolved or not_found the prompt is dropped locally at once;
+   * the outcome says which (already_resolved carries who answered first). Other errors reject.
+   */
+  resolveApproval(sessionId: string, requestId: string, decision: Decision): Promise<ResolveOutcome> {
     return this.resolve(sessionId, requestId, 'approval/resolve', { decision });
   }
 
   /** input/answer, with the same local handling as resolveApproval. */
-  answerInput(sessionId: string, requestId: string, answers: Record<string, string[]>): Promise<void> {
+  answerInput(sessionId: string, requestId: string, answers: Record<string, string[]>): Promise<ResolveOutcome> {
     return this.resolve(sessionId, requestId, 'input/answer', { answers });
+  }
+
+  /**
+   * Who resolved a request this Replica saw end, from `request/resolved` or an `already_resolved` answer
+   * (spec 5.3). Kept in memory only, for the "answered on another device" notice.
+   */
+  resolution(requestId: string): Resolution | undefined {
+    return this.resolutions.get(requestId);
   }
 
   /** turn/interrupt; the turn ends with turn/completed {status: interrupted} through the Journal. */
@@ -436,11 +460,20 @@ export class Replica {
     return view.olderCursor !== undefined;
   }
 
-  private async resolve(sessionId: string, requestId: string, method: string, extra: Record<string, unknown>): Promise<void> {
+  private async resolve(sessionId: string, requestId: string, method: string, extra: Record<string, unknown>): Promise<ResolveOutcome> {
+    let outcome: ResolveOutcome = { status: 'ok' };
     try {
       await this.client.request(method, { sessionId, requestId, ...extra });
     } catch (error) {
       if (!(error instanceof RequestError) || (error.code !== 'already_resolved' && error.code !== 'not_found')) throw error;
+      if (error.code === 'not_found') {
+        outcome = { status: 'not_found' };
+      } else {
+        const by = error.data?.resolvedBy;
+        const resolvedBy = typeof by === 'string' && by !== '' ? by : undefined;
+        outcome = { status: 'already_resolved', ...(resolvedBy !== undefined ? { resolvedBy } : {}) };
+        if (resolvedBy !== undefined && !this.resolutions.has(requestId)) this.remember(requestId, { resolvedBy });
+      }
     }
     const view = this.views.get(sessionId);
     if (view !== undefined) {
@@ -449,6 +482,17 @@ export class Replica {
       this.updateSummary(view);
     }
     this.changed();
+    return outcome;
+  }
+
+  /** Records a resolution; the oldest go once there are more than RESOLUTIONS_KEPT. */
+  private remember(requestId: string, resolution: Resolution): void {
+    this.resolutions.delete(requestId);
+    this.resolutions.set(requestId, resolution);
+    for (const key of this.resolutions.keys()) {
+      if (this.resolutions.size <= RESOLUTIONS_KEPT) break;
+      this.resolutions.delete(key);
+    }
   }
 
   private optimisticTurn(view: SessionView, clientMessageId: string): TurnView | undefined {
@@ -536,6 +580,10 @@ export class Replica {
     const { seq } = event.params;
     if (seq <= view.cursor) return true; // already applied (idempotent apply, spec 5.2)
     if (seq !== view.cursor + 1) return false;
+    if (event.method === 'request/resolved') {
+      const { requestId, resolvedBy, decision } = event.params;
+      this.remember(requestId, { resolvedBy, ...(decision !== undefined ? { decision } : {}) });
+    }
     applyEvent(view, event);
     reconcile(view);
     this.updateSummary(view);

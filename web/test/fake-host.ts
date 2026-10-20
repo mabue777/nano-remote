@@ -9,7 +9,9 @@
 // does on lock, closeAll(code) closes with a spec 10 code, compact() makes old cursors expire,
 // dropLive() loses one live event, onRequest intercepts requests, refuse() closes new sockets,
 // paceMs plays scripted turns step by step on a timer (so a browser sees deltas arrive), delay() holds
-// back the answer to the next request of a method, and reset() forgets every session.
+// back the answer to the next request of a method, and reset() forgets every session. addRequest() puts
+// any approval or question in front of the user and resolveRequest() answers it from another device;
+// approval/resolve, input/answer and device/list (this stream's device plus a desktop) are answered.
 // For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
 // and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
 // and pages session/list by cursor.
@@ -423,6 +425,38 @@ export class FakeHost {
     this.playTurn(sessionId, turn.turnId, [{ type: 'text', text }], undefined);
   }
 
+  /**
+   * Emits a pending request as an agent would: an approval (`kind` command, fileChange, permission) or a
+   * question (`kind: "input"`). Missing ids are filled in. Returns the requestId.
+   */
+  addRequest(sessionId: string, request: Json): string {
+    const session = this.session(sessionId);
+    const requestId = request.requestId ?? `req_fake_${++this.nextId}`;
+    const body = {
+      sessionId,
+      turnId: session.running?.turnId ?? session.turns.at(-1)?.turnId ?? `trn_fake_${++this.nextId}`,
+      itemId: `itm_fake_${++this.nextId}`,
+      ...(request.kind === 'input' ? {} : { createdAt: 1760930150 + this.nextId, expiresAt: null }),
+      ...request,
+      requestId,
+    };
+    this.emit(sessionId, request.kind === 'input' ? 'input/request' : 'approval/request', { request: body });
+    return requestId;
+  }
+
+  /** Answers any pending request as another device would. */
+  resolveRequest(sessionId: string, requestId: string, by = 'dev_desktop', answer: { decision?: string; answers?: Json } = {}): void {
+    const session = this.session(sessionId);
+    if (session.running?.requestId === requestId) {
+      this.decide(sessionId, requestId, answer.decision ?? 'accept', by);
+      return;
+    }
+    const request = session.approvals.get(requestId) ?? session.inputs.get(requestId);
+    if (request === undefined) throw new Error(`no pending request ${requestId}`);
+    const result = request.kind === 'input' ? { answers: answer.answers ?? {} } : { decision: answer.decision ?? 'accept' };
+    this.emit(sessionId, 'request/resolved', { requestId, kind: request.kind, resolvedBy: by, ...result });
+  }
+
   /** Answers the pending approval as another device would (the phone sees only events). */
   resolveElsewhere(sessionId: string, decision: 'accept' | 'decline' | 'cancel', by = 'dev_desktop'): void {
     const running = this.session(sessionId).running;
@@ -560,15 +594,27 @@ export class FakeHost {
         if (session.running?.turnId !== params.turnId) return { result: { ok: true } };
         return { result: { ok: true }, after: () => this.interruptTurn(params.sessionId) };
       }
-      case 'approval/resolve': {
+      case 'approval/resolve':
+      case 'input/answer': {
         const session = this.session(params.sessionId);
-        if (!session.approvals.has(params.requestId)) {
+        const pending = method === 'approval/resolve' ? session.approvals : session.inputs;
+        if (!pending.has(params.requestId)) {
           const answered = session.journal.find((e) => e.method === 'request/resolved' && e.params.requestId === params.requestId);
           if (answered) throw new HostError({ code: 'already_resolved', message: 'answered', data: { resolvedBy: answered.params.resolvedBy } });
           throw new HostError({ code: 'not_found', message: 'no such request' });
         }
-        return { result: { ok: true }, after: () => this.decide(params.sessionId, params.requestId, params.decision, stream.clientId) };
+        const answer = method === 'approval/resolve' ? { decision: params.decision } : { answers: params.answers };
+        return { result: { ok: true }, after: () => this.resolveRequest(params.sessionId, params.requestId, stream.clientId, answer) };
       }
+      case 'device/list':
+        return {
+          result: {
+            devices: [
+              { clientId: stream.clientId, displayName: 'iPhone (Safari)', platform: 'ios-web', createdAt: 1760900000, lastSeenAt: 1760930400, current: true },
+              { clientId: 'dev_desktop', displayName: 'Mabue MacBook', platform: 'macos', createdAt: 1760800000, lastSeenAt: 1760929000, current: false },
+            ],
+          },
+        };
       case 'host/status':
         return { result: exampleMessage('44').params };
       default:

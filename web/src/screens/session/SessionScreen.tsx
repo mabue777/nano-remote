@@ -1,10 +1,13 @@
-// The session page, /s/:sessionId: the turn list, the pending-request banner and the composer. All state
-// and rules live in SessionModel; this file renders it and owns only the DOM work (scrolling, the
-// pull-down gesture, keeping the reading position when older turns are put in front).
+// The session page, /s/:sessionId: the turn list, the pending-request banner, the approval and question
+// cards (approvals/), and the composer. All state and rules live in SessionModel and ApprovalsModel; this
+// file renders them and owns only the DOM work (scrolling, the pull-down gesture, keeping the reading
+// position when older turns are put in front).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
 import { useModel } from '../use-model';
+import { ApprovalsModel } from './approvals/approvals-model';
+import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import { SessionModel, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 
 /** How far (px) the list must be pulled down at the top before letting go loads older turns. */
@@ -16,14 +19,25 @@ export interface SessionScreenProps {
   sessionId: string;
   replica: Replica;
   onBack: () => void;
+  /** This device's clientId: its own answers leave no "answered on" notice. */
+  clientId?: string;
+  /** Display name of another device (device/list), for "answered on <device>". */
+  deviceName?: (clientId: string) => Promise<string | undefined>;
 }
 
-export function SessionScreen({ sessionId, replica, onBack }: SessionScreenProps) {
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName }: SessionScreenProps) {
   const model = useModel(useMemo(() => new SessionModel({ sessionId, replica }), [sessionId, replica]));
+  const requests = useModel(
+    useMemo(
+      () => new ApprovalsModel({ sessionId, replica, ...(clientId !== undefined ? { clientId } : {}), ...(deviceName !== undefined ? { deviceName } : {}) }),
+      [sessionId, replica, clientId, deviceName],
+    ),
+  );
   useEffect(() => {
     model.start();
     return () => model.dispose();
   }, [model]);
+  useEffect(() => () => requests.dispose(), [requests]);
 
   const scroller = useRef<HTMLElement>(null);
   const keep = useRef<{ height: number; top: number } | undefined>(undefined);
@@ -151,6 +165,7 @@ export function SessionScreen({ sessionId, replica, onBack }: SessionScreenProps
             ))}
           </ul>
         )}
+        <InlineRequests model={requests} />
       </section>
 
       {model.showJumpToLatest && (
@@ -159,6 +174,7 @@ export function SessionScreen({ sessionId, replica, onBack }: SessionScreenProps
         </button>
       )}
 
+      <PinnedQuestions model={requests} />
       <Composer model={model} running={running} />
     </main>
   );

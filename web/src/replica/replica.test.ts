@@ -367,14 +367,15 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     const a = replica.resolveApproval(SID, 'r1', 'accept');
     expect(client.last('approval/resolve').params).toEqual({ sessionId: SID, requestId: 'r1', decision: 'accept' });
     client.last('approval/resolve').resolve({ ok: true });
-    await a;
+    expect(await a).toEqual({ status: 'ok' });
     const b = replica.resolveApproval(SID, 'r2', 'decline');
     client.last('approval/resolve').reject(rpcError('already_resolved', { resolvedBy: 'dev_other' }));
-    await b;
+    expect(await b).toEqual({ status: 'already_resolved', resolvedBy: 'dev_other' });
+    expect(replica.resolution('r2')).toEqual({ resolvedBy: 'dev_other' });
     const c = replica.answerInput(SID, 'r3', { q: ['yes'] });
     expect(client.last('input/answer').params).toEqual({ sessionId: SID, requestId: 'r3', answers: { q: ['yes'] } });
     client.last('input/answer').reject(rpcError('not_found'));
-    await c;
+    expect(await c).toEqual({ status: 'not_found' });
     const view = replica.session(SID)!;
     expect(view.approvals).toEqual({});
     expect(view.inputs).toEqual({});
@@ -385,6 +386,16 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     const e = replica.resolveApproval('elsewhere', 'r9', 'accept');
     client.last('approval/resolve').resolve({ ok: true });
     await e;
+  });
+
+  it('remembers who resolved a request from request/resolved', async () => {
+    const { client, replica } = setup();
+    await openAt(client, replica, 0);
+    client.notify('approval/request', ev(1, 'approval/request', { request: approval('r1') }).params);
+    client.notify('request/resolved', ev(2, 'request/resolved', { requestId: 'r1', kind: 'command', resolvedBy: 'dev_mac', decision: 'decline' }).params);
+    expect(replica.session(SID)!.approvals).toEqual({});
+    expect(replica.resolution('r1')).toEqual({ resolvedBy: 'dev_mac', decision: 'decline' });
+    expect(replica.resolution('r404')).toBeUndefined();
   });
 
   it('interrupt sends turn/interrupt', async () => {

@@ -803,6 +803,9 @@
         },
         "isSecret": {
           "type": "boolean"
+        },
+        "multiSelect": {
+          "type": "boolean"
         }
       }
     },

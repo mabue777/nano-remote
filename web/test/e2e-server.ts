@@ -10,7 +10,10 @@
 // expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them);
 // `POST /test/run {sessionId, text}` starts a scripted turn the way the desktop would;
 // `POST /test/resolve {sessionId, decision}` answers its approval from another device;
-// `POST /test/delay {method, ms}` holds back the answer to the next request of that method.
+// `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
+// `POST /test/request {sessionId, request}` puts any approval or question up (answers {requestId});
+// `POST /test/resolve-request {sessionId, requestId, by?, decision?, answers?}` answers it from another
+// device; `POST /test/last {method}` returns the params of the last request of that method.
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -94,6 +97,13 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/resolve':
               host.resolveElsewhere(body.sessionId, body.decision ?? 'accept');
               return json(200, { ok: true });
+            case '/test/request':
+              return json(200, { requestId: host.addRequest(body.sessionId, body.request) });
+            case '/test/resolve-request':
+              host.resolveRequest(body.sessionId, body.requestId, body.by ?? 'dev_desktop', { decision: body.decision, answers: body.answers });
+              return json(200, { ok: true });
+            case '/test/last':
+              return json(200, { params: host.requestLog.filter((r) => r.method === body.method).at(-1)?.params ?? null });
             case '/test/delay':
               host.delay(body.method, body.ms);
               return json(200, { ok: true });

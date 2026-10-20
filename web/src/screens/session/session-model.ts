@@ -350,7 +350,7 @@ export class SessionModel extends Model {
     return usage === null || usage === undefined ? undefined : usageLine(usage);
   }
 
-  /** Pending requests (spec 5.3); the cards come later, the counters and the banner are here. */
+  /** Pending request counters for the banner (spec 5.3); the cards are approvals/ApprovalsModel. */
   get pending(): { approvals: number; inputs: number; total: number } {
     const view = this.view;
     const counts = view?.loaded

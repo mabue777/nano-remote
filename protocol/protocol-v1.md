@@ -269,8 +269,11 @@ one of them omit it from `availableDecisions`; the client renders only what is l
 `{sessionId, requestId, decision}` → `{ok:true}` or error `already_resolved {resolvedBy}` or `not_found`.
 
 **input/request** event, `request`: `{requestId, kind:"input", sessionId, turnId, itemId, isBlocking,
-questions:[{id, header, question, options:[{label, description}]?, isOther, isSecret}]}` (Codex
-`item/tool/requestUserInput`; Claude `AskUserQuestion` maps onto it).
+questions:[{id, header, question, options:[{label, description}]?, isOther, isSecret, multiSelect?}]}` (Codex
+`item/tool/requestUserInput`; Claude `AskUserQuestion` maps onto it). `multiSelect: true` lets the user pick
+several options (Claude `AskUserQuestion` `multiSelect`); absent or false means pick one. `isOther` adds a
+free-text answer, `isSecret` masks typed text. Each answer is a list of the picked option labels plus any
+free text.
 
 **input/answer** request: `{sessionId, requestId, answers:{<questionId>:[string]}}` → `{ok:true}` or the same errors.
 
