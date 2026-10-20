@@ -123,6 +123,7 @@ export class StreamClient {
   private readonly newStreamId: () => string;
   private unsubscribeLifecycle: (() => void) | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectAtValue: number | undefined;
   private attempt = 0;
   private nextId = 0;
   private readonly queued: Call[] = [];
@@ -150,6 +151,11 @@ export class StreamClient {
   /** The `initialize` result of the current stream; undefined until the first stream is ready. */
   get host(): InitializeResult | undefined {
     return this.initResult;
+  }
+
+  /** While `waiting`: when the next attempt starts (Date.now() milliseconds), for a countdown. */
+  get reconnectAt(): number | undefined {
+    return this.reconnectAtValue;
   }
 
   get streamId(): string | undefined {
@@ -343,14 +349,17 @@ export class StreamClient {
   private scheduleReconnect(minimumMs: number, detail: string): void {
     const backoff = Math.min(this.timing.backoffMaxMs, this.timing.backoffMinMs * 2 ** this.attempt);
     this.attempt += 1;
-    this.setState('waiting', detail);
+    const delay = Math.max(minimumMs, backoff);
     this.clearReconnect();
-    this.reconnectTimer = setTimeout(() => this.connect(), Math.max(minimumMs, backoff));
+    this.reconnectAtValue = Date.now() + delay;
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.setState('waiting', detail);
   }
 
   private clearReconnect(): void {
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
+    this.reconnectAtValue = undefined;
   }
 
   /** Foreground or pageshow: a waiting or suspended client connects now. */

@@ -2,7 +2,8 @@
 
 The Nano Remote phone client: a TypeScript web app built by Vite into `host/public` and served by
 Nano Host over the tailnet (ADR 0004). Added to the iPhone home screen, it gets Web Push from the
-host (ADR 0005). This is the empty scaffold; Phase 2 of `docs/plan/roadmap.md` builds the real UI.
+host (ADR 0005). Phase 2 of `docs/plan/roadmap.md` builds the UI; the first screens (pairing, home with
+host status and the session list, new session) are in.
 
 ## Framework: Vite + Preact
 
@@ -26,12 +27,20 @@ Prefresh (HMR that keeps component state) is wanted during development.
 
 ## Layout
 
-- `index.html`, `src/main.tsx`, `src/app.tsx`: the app shell.
+- `index.html`, `src/main.tsx`, `src/app.tsx`: the app shell (one StreamClient and Replica per paired device).
+- `src/routes/router.ts`: a history router for `/pair`, `/` and `/s/:sessionId`. The host answers these
+  paths with index.html; the pairing code stays in the fragment (`/pair#code=12345678`).
+- `src/screens/`: one view model per screen (`*-model.ts`, plain classes with vitest tests) and the
+  Preact components that render them (`*.tsx`, covered by the Playwright smoke). `device.ts` keeps the
+  clientId from pairing in localStorage; the device token stays in the host's HttpOnly cookie.
 - `src/generated/`: protocol types generated from `protocol/schema/*.json` by
   `host/scripts/generate-types.mjs`; gitignored, regenerated on every verify, never hand-edited.
 - `src/**/*.test.ts`: vitest unit tests (node environment; add `happy-dom` when a test needs the DOM).
-- `e2e/smoke.spec.ts`: Playwright smoke test. It starts `vite preview` on the build output
-  (`host/public`) and checks the index page renders. Phase 2 points it at Nano Host instead.
+- `e2e/smoke.spec.ts`: Playwright smoke at 390 x 844. `playwright.config.ts` starts `test/e2e-host.mjs`,
+  which loads `test/e2e-server.ts` through Vite: the built app (`host/public`), `POST /v1/pair` with
+  single-use codes and a cookie, and the fake host (`test/fake-host.ts`) on `/v1/stream` with three
+  scripted sessions paged by two. The smoke pairs, lands on home, sees the sessions, starts a session,
+  and checks wrong, expired and reused codes.
 
 ## Commands (from the repo root)
 

@@ -64,6 +64,11 @@ export class FakeTransport implements ReplicaTransport {
     this.rules.set(method, rule);
   }
 
+  /** Leaves future `method` requests unanswered again. */
+  unrule(method: string): void {
+    this.rules.delete(method);
+  }
+
   goReady(): void {
     this.state = 'ready';
     for (const fn of this.ready) fn();

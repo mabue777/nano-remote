@@ -416,6 +416,37 @@ describe('Replica: session list', () => {
     expect((await replica.refreshSessions())[0]).toMatchObject({ status: 'error', lastSeq: 99 });
   });
 
+  it('loadMoreSessions fetches the next page by cursor and appends rows until there is none', async () => {
+    const { client, replica } = setup();
+    expect(await replica.loadMoreSessions()).toBe(false);
+    client.rule('session/list', (params) =>
+      params?.cursor === undefined
+        ? { sessions: [summary({ sessionId: 'a', updatedAt: 9 })], nextCursor: 'p2' }
+        : { sessions: [summary({ sessionId: 'a', updatedAt: 1 }), summary({ sessionId: 'b', updatedAt: 5 })] },
+    );
+    await replica.refreshSessions();
+    expect(await replica.loadMoreSessions({ limit: 2 })).toBe(true);
+    expect(client.last('session/list').params).toEqual({ limit: 2, cursor: 'p2' });
+    expect(replica.sessions.map((s) => [s.sessionId, s.updatedAt])).toEqual([['a', 9], ['b', 5]]);
+    expect(replica.sessionsNextCursor).toBeUndefined();
+    expect(await replica.loadMoreSessions()).toBe(false);
+  });
+
+  it('loadMoreSessions drops a page that a refresh overtook', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary({ sessionId: 'a' })], nextCursor: 'p2' }));
+    await replica.refreshSessions();
+    client.unrule('session/list');
+    const more = replica.loadMoreSessions();
+    const pending = client.last('session/list');
+    client.rule('session/list', () => ({ sessions: [summary({ sessionId: 'fresh' })], nextCursor: 'q2' }));
+    await replica.refreshSessions();
+    pending.resolve({ sessions: [summary({ sessionId: 'stale' })] });
+    expect(await more).toBe(true);
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['fresh']);
+    expect(replica.sessionsNextCursor).toBe('q2');
+  });
+
   it('startSession: session/start, then opens the new session', async () => {
     const { client, replica } = setup();
     const started = replica.startSession({ agentId: 'codex', cwd: '/work', input: [{ type: 'text', text: 'go' }] });

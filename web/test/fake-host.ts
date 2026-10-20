@@ -8,6 +8,11 @@
 // Shapes come from protocol/examples via fixtures.ts. Test knobs: kill() drops every socket the way iOS
 // does on lock, closeAll(code) closes with a spec 10 code, compact() makes old cursors expire,
 // dropLive() loses one live event, onRequest intercepts requests, refuse() closes new sockets.
+// For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
+// and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
+// and pages session/list by cursor.
+import type { IncomingMessage, Server } from 'node:http';
+
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { exampleMessage } from './fixtures';
@@ -47,7 +52,27 @@ export type RequestHook = (
 export interface FakeHostOptions {
   /** How many item/delta events the scripted agent message streams (the capture had 752). */
   deltas?: number;
+  /** session/list page size when the request names no limit (the spec default is 50). */
+  pageSize?: number;
+  /** A directory tree for fs/readDirectory: path to its entries. */
+  tree?: Record<string, { name: string; kind: 'dir' | 'file' }[]>;
 }
+
+export interface StartOptions {
+  /** Share this http server (same origin as the page) instead of listening on a port of its own. */
+  server?: Server;
+  /** Decides whether an upgrade belongs to a paired device; false closes the socket with 4003 (spec 8). */
+  authorize?: (request: IncomingMessage) => boolean;
+}
+
+const DEFAULT_TREE: Record<string, { name: string; kind: 'dir' | 'file' }[]> = {
+  '/Users/me': [
+    { name: 'Desktop', kind: 'dir' },
+    { name: 'notes.txt', kind: 'file' },
+  ],
+  '/Users/me/Desktop': [{ name: 'phone-test', kind: 'dir' }],
+  '/Users/me/Desktop/phone-test': [{ name: 'hello.txt', kind: 'file' }],
+};
 
 export class FakeStream {
   clientId = '';
@@ -230,22 +255,34 @@ export class FakeHost {
   private nextSession = 0;
   private nextId = 0;
   private readonly deltas: number;
+  private readonly pageSize: number;
+  private readonly tree: Record<string, { name: string; kind: 'dir' | 'file' }[]>;
 
   constructor(options: FakeHostOptions = {}) {
     this.deltas = options.deltas ?? 12;
+    this.pageSize = options.pageSize ?? 50;
+    this.tree = options.tree ?? DEFAULT_TREE;
   }
 
-  async start(): Promise<string> {
-    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, path: '/v1/stream' });
+  async start(options: StartOptions = {}): Promise<string> {
+    const server =
+      options.server !== undefined
+        ? new WebSocketServer({ server: options.server, path: '/v1/stream' })
+        : new WebSocketServer({ host: '127.0.0.1', port: 0, path: '/v1/stream' });
     this.server = server;
-    await new Promise<void>((resolve) => server.once('listening', () => resolve()));
-    server.on('connection', (socket) => {
+    server.on('connection', (socket, request) => {
       if (this.refusal !== undefined) {
         socket.close(this.refusal.code, this.refusal.reason);
         return;
       }
+      if (options.authorize !== undefined && !options.authorize(request)) {
+        socket.close(4003, 'device token missing, unknown or revoked');
+        return;
+      }
       this.streams.push(new FakeStream(socket, this));
     });
+    if (options.server !== undefined) return '';
+    await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     const address = server.address();
     if (typeof address === 'string' || address === null) throw new Error('no port');
     this.url = `ws://127.0.0.1:${address.port}/v1/stream`;
@@ -346,6 +383,12 @@ export class FakeHost {
     for (const stream of this.openStreams) if (stream.ready) stream.notify(method, params);
   }
 
+  /** Starts the scripted turn without any client, as the desktop would; it stops at the approval request. */
+  runScriptedTurn(sessionId: string, text: string): void {
+    const turn = this.newTurn(this.session(sessionId), undefined);
+    this.playTurn(sessionId, turn.turnId, [{ type: 'text', text }], undefined);
+  }
+
   /** Answers the pending approval as another device would (the phone sees only events). */
   resolveElsewhere(sessionId: string, decision: 'accept' | 'decline' | 'cancel', by = 'dev_desktop'): void {
     const running = this.session(sessionId).running;
@@ -369,8 +412,45 @@ export class FakeHost {
         return { result };
       }
       case 'session/list': {
-        const sessions = [...this.sessions.values()].map((s) => ({ ...s.summary })).sort((a, b) => b.updatedAt - a.updatedAt);
-        return { result: { sessions } };
+        const all = [...this.sessions.values()]
+          .map((s) => ({ ...s.summary }))
+          .filter((s) => params.agentId === undefined || s.agentId === params.agentId)
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+        const start = typeof params.cursor === 'string' ? Number(params.cursor.replace(/^cur_/, '')) : 0;
+        if (!Number.isInteger(start) || start < 0) throw new HostError({ code: 'invalid_params', message: 'bad cursor', data: { path: 'cursor' } });
+        const limit = params.limit ?? this.pageSize;
+        const sessions = all.slice(start, start + limit);
+        const next = start + sessions.length;
+        return { result: next < all.length ? { sessions, nextCursor: `cur_${next}` } : { sessions } };
+      }
+      case 'agent/list':
+        return { result: { agents: exampleMessage('08').result.agents } };
+      case 'model/list': {
+        if (params.agentId !== 'codex' && params.agentId !== 'claude') {
+          throw new HostError({ code: 'agent_unavailable', message: `${params.agentId} is not available`, data: { agentId: params.agentId } });
+        }
+        const models =
+          params.agentId === 'codex'
+            ? [
+                { id: 'gpt-5.5-codex', displayName: 'GPT-5.5 Codex', default: true },
+                { id: 'gpt-5.5-mini', displayName: 'GPT-5.5 mini', default: false },
+              ]
+            : [{ id: 'claude-opus', displayName: 'Claude Opus', default: true }];
+        return { result: { models } };
+      }
+      case 'project/list':
+        return {
+          result: {
+            projects: [
+              { path: '/Users/me/Desktop/phone-test', name: 'phone-test', lastUsedAt: 1760930400, sessions: this.sessions.size },
+            ],
+          },
+        };
+      case 'fs/readDirectory': {
+        const entries = this.tree[params.path];
+        if (entries === undefined) throw new HostError({ code: 'not_found', message: `no directory ${params.path}` });
+        const base = params.path === '/' ? '' : params.path;
+        return { result: { entries: entries.map((e) => ({ ...e, path: `${base}/${e.name}` })) } };
       }
       case 'session/start': {
         const sessionId = this.createSession({ agentId: params.agentId, cwd: params.cwd, title: params.title ?? 'New session' });

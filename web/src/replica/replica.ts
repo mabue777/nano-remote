@@ -170,6 +170,24 @@ export class Replica {
     return this.sessions;
   }
 
+  /**
+   * The next session/list page after `sessionsNextCursor` (infinite scroll); adds its rows. Resolves
+   * false when there is no further page.
+   */
+  async loadMoreSessions(params: { agentId?: string; limit?: number } = {}): Promise<boolean> {
+    const cursor = this.nextCursor;
+    if (cursor === undefined) return false;
+    const result = await this.client.request<SessionListResult>('session/list', { ...params, cursor });
+    if (this.nextCursor !== cursor) return true; // a refresh replaced the list meanwhile
+    for (const summary of result.sessions) {
+      if (!this.summaries.has(summary.sessionId)) this.summaries.set(summary.sessionId, summary);
+    }
+    for (const view of this.views.values()) this.updateSummary(view);
+    this.nextCursor = result.nextCursor;
+    this.changed();
+    return true;
+  }
+
   /** session/start, then opens the new session (snapshot mode, which also subscribes the stream). */
   async startSession(params: SessionStartParams): Promise<SessionStartResult> {
     const result = await this.client.request<SessionStartResult>('session/start', params);

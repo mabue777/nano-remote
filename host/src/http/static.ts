@@ -12,6 +12,9 @@ export const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.ur
 /** Paths the web app routes itself; each answers with index.html. */
 export const CLIENT_ROUTES: readonly string[] = ['/', '/pair'];
 
+/** Session pages, `/s/<sessionId>` (web/src/routes): also index.html, so a reload or a push link works. */
+const SESSION_ROUTE = /^\/s\/[A-Za-z0-9_-]{1,128}$/;
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -44,7 +47,7 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * Client routes map to index.html.
  */
 export function resolveStatic(root: string, urlPath: string): string | null {
-  if (CLIENT_ROUTES.includes(urlPath)) return path.join(root, 'index.html');
+  if (CLIENT_ROUTES.includes(urlPath) || SESSION_ROUTE.test(urlPath)) return path.join(root, 'index.html');
   let decoded: string;
   try {
     decoded = decodeURIComponent(urlPath);

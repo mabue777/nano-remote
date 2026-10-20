@@ -235,6 +235,22 @@ describe('StreamClient close codes and reconnect (spec 2, 10)', () => {
     expect(sockets).toHaveLength(11);
   });
 
+  it('reconnectAt tells when the next attempt starts while waiting, and is cleared on connect', () => {
+    const { client, socket } = setup();
+    client.start();
+    expect(client.reconnectAt).toBeUndefined();
+    const seen: (number | undefined)[] = [];
+    client.on('state', (state) => {
+      if (state === 'waiting') seen.push(client.reconnectAt);
+    });
+    const now = Date.now();
+    socket().serverClose(1006);
+    expect(seen).toEqual([now + DEFAULT_TIMING.backoffMinMs]);
+    vi.advanceTimersByTime(DEFAULT_TIMING.backoffMinMs);
+    expect(client.state).toBe('connecting');
+    expect(client.reconnectAt).toBeUndefined();
+  });
+
   it('4010 (host draining): waits at least the draining delay', () => {
     const { client, sockets, socket, handshake } = setup();
     client.start();

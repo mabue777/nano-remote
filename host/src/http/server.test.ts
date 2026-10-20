@@ -340,6 +340,7 @@ describe('static files', () => {
     const cases: [string, string][] = [
       ['/', 'text/html; charset=utf-8'],
       ['/pair', 'text/html; charset=utf-8'],
+      ['/s/ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D', 'text/html; charset=utf-8'],
       ['/index.html', 'text/html; charset=utf-8'],
       ['/assets/app-Abc12345.js', 'text/javascript; charset=utf-8'],
       ['/assets/style.css', 'text/css; charset=utf-8'],
@@ -354,6 +355,8 @@ describe('static files', () => {
       expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     }
     expect(await (await fetch(`${base}/pair`)).text()).toContain('<title>Nano</title>');
+    expect(await (await fetch(`${base}/s/ses_fake_1`)).text()).toContain('<title>Nano</title>');
+    expect((await fetch(`${base}/s/a/b`)).status).toBe(404);
     expect((await fetch(`${base}/assets/app-Abc12345.js`)).headers.get('cache-control')).toContain('immutable');
     expect((await fetch(`${base}/`)).headers.get('cache-control')).toBe('no-cache');
   });
