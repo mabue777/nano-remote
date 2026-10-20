@@ -19,3 +19,15 @@ _Avoid_: job, task ("task" belongs to the issue tracker), run
 nano-ai's existing mode — the phone chats directly with an Ollama model, no
 host involved.
 _Avoid_: offline chat
+
+**Journal**:
+The host-side, sequence-numbered event log that is the single source of truth
+for a session — messages, streamed output, tool calls, approval requests.
+Clients never wait on it; they subscribe and catch up.
+_Avoid_: buffer, queue, transcript
+
+**Replica**:
+The phone's local copy of a session's Journal, rendered instantly (including
+optimistic "sending" states) and brought current by catching up from its last
+seen event.
+_Avoid_: cache, local copy
