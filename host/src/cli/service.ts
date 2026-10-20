@@ -7,9 +7,11 @@
 // 4010, then every open stream closes with 4010, the engines stop, and the Journal is closed, which
 // checkpoints its write-ahead log into the database file.
 import os, { hostname } from 'node:os';
+import path from 'node:path';
 
 import { CodexAgent } from '../adapters/codex/provider.js';
 import { codexConfig } from '../config/codex.js';
+import { ensurePrivateDir } from '../config/private-files.js';
 import { describeAgent, type AgentProvider } from '../core/adapter.js';
 import { HostCore } from '../core/host-core.js';
 import { DeviceStore, MAX_DISPLAY_NAME_LENGTH } from '../devices/store.js';
@@ -17,12 +19,13 @@ import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
 import { HostServer } from '../http/server.js';
 import { DEFAULT_SNAPSHOT_TURNS, Journal } from '../journal/journal.js';
+import { ensureVapidKeys } from '../push/vapid.js';
 import { MAX_MESSAGE_BYTES } from '../stream/constants.js';
 import { MethodRegistry } from '../stream/router.js';
 import type { HostConfig } from './config.js';
 import { ControlRequestError, ControlServer, ensureControlSecret, type ControlStatus } from './control.js';
 import type { Logger } from './log.js';
-import { controlSecretPath, controlSocketPath } from './paths.js';
+import { controlSecretPath, controlSocketPath, vapidKeysPath } from './paths.js';
 import { HOST_VERSION } from './version.js';
 
 /** How long pongs say `draining` before the streams are closed. */
@@ -109,6 +112,9 @@ export class HostService {
       os: process.platform,
       arch: os.arch(),
     };
+    // The NanoHost folder holds the control secret, the VAPID key and usually the TLS key: 0700 (item 5).
+    ensurePrivateDir(path.dirname(options.configPath));
+    const vapid = ensureVapidKeys(vapidKeysPath(options.configPath));
     const journal = new Journal({
       path: config.journalPath,
       onListenerError: (error, event) => logger.error('journal.listener_failed', { method: event.method, seq: event.params.seq, error }),
@@ -122,8 +128,8 @@ export class HostService {
         host,
         device: { clientId: context.clientId, displayName: devices.get(context.clientId)?.displayName ?? '' },
         agents: agents.map(describeAgent),
-        // Web Push is not built yet: no key, never subscribed (spec 9).
-        push: { vapidPublicKey: '', subscribed: false },
+        // Web Push sending is Phase 3; the key exists from the first start, nobody is subscribed yet (spec 9).
+        push: { vapidPublicKey: vapid.publicKey, subscribed: false },
         limits: { maxMessageBytes: MAX_MESSAGE_BYTES, snapshotTurns: DEFAULT_SNAPSHOT_TURNS },
       })),
     );

@@ -5,10 +5,9 @@
 // connection in WAL mode, so the two never block each other for long. Revoking a device clears its hash
 // and marks the row; a revoked row never authenticates again and is not listed.
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
+import { ensurePrivateFile, tightenSqliteSideFiles } from '../config/private-files.js';
 import { defaultJournalPath } from '../journal/journal.js';
 
 /** Random bytes per device token: 256 bits (spec 8). Security-pass seam. */
@@ -114,9 +113,13 @@ export class DeviceStore {
   constructor(options: DeviceStoreOptions = {}) {
     this.path = options.path ?? defaultJournalPath();
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
-    if (this.path !== ':memory:') mkdirSync(path.dirname(this.path), { recursive: true });
+    // Session content and device hashes: 0600 from the first byte (security pass item 5).
+    if (this.path !== ':memory:') ensurePrivateFile(this.path);
     this.db = new DatabaseSync(this.path, { timeout: 5000 });
-    if (this.path !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL');
+    if (this.path !== ':memory:') {
+      this.db.exec('PRAGMA journal_mode = WAL');
+      tightenSqliteSideFiles(this.path);
+    }
     this.db.exec('PRAGMA synchronous = FULL');
     this.db.exec(SCHEMA);
     this.statements = {

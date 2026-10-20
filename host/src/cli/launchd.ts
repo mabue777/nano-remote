@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { ensurePrivateFile } from '../config/private-files.js';
 import { LAUNCHD_LABEL } from './paths.js';
 
 export const LAUNCHCTL = '/bin/launchctl';
@@ -115,8 +116,9 @@ export async function isLoaded(options: LaunchdOptions): Promise<boolean> {
 export async function install(options: LaunchdOptions & { plist: PlistOptions }): Promise<void> {
   const exec = options.run ?? run;
   mkdirSync(path.dirname(options.plistPath), { recursive: true });
-  mkdirSync(path.dirname(options.plist.stdoutPath), { recursive: true, mode: 0o700 });
-  mkdirSync(path.dirname(options.plist.stderrPath), { recursive: true, mode: 0o700 });
+  // launchd would create the output files 0644; they get the same log lines as host.log, so 0600 first.
+  ensurePrivateFile(options.plist.stdoutPath);
+  ensurePrivateFile(options.plist.stderrPath);
   const { target, service } = domain(options);
   if (await isLoaded(options)) await exec(LAUNCHCTL, ['bootout', service]);
   writeFileSync(options.plistPath, renderPlist(options.plist), { mode: 0o644 });

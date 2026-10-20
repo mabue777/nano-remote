@@ -145,6 +145,32 @@ describe('upgrade and authentication', () => {
     expect(await response.text()).toBe('hello');
   });
 
+  it('security: refuses the bearer header from a browser page and any Origin that is not allowed (4003)', async () => {
+    const server = await start({ allowedOrigins: () => ['https://mac.tail1.ts.net:7420'] });
+    const origin = (value: string) => ({ origin: value });
+    // A page on another origin cannot ride the cookie (cross-site WebSocket hijacking).
+    const foreign = await connect(server, { token: null, cookie: 'nano_device=good-token', headers: origin('https://evil.example') });
+    expect(await foreign.closed).toEqual({ code: CloseCode.unauthorized, reason: 'origin not allowed' });
+    // The host's own page: the cookie works, a bearer header alone does not (native clients only).
+    const page = await connect(server, { token: null, cookie: 'nano_device=good-token', headers: origin('https://mac.tail1.ts.net:7420') });
+    page.ping();
+    await page.until(() => page.frames.find((f) => f.type === 'pong'));
+    const bearerFromPage = await connect(server, { token: 'good-token', headers: origin('https://mac.tail1.ts.net:7420') });
+    expect(await bearerFromPage.closed).toMatchObject({ code: CloseCode.unauthorized });
+    // Without an allow list no page may connect at all.
+    const strict = await start();
+    const anyPage = await connect(strict, { token: null, cookie: 'nano_device=good-token', headers: origin('http://127.0.0.1') });
+    expect(await anyPage.closed).toMatchObject({ code: CloseCode.unauthorized });
+  });
+
+  it('security: a malformed cookie is no token (4003), not a crash', async () => {
+    const server = await start();
+    const client = await connect(server, { token: null, cookie: 'nano_device=%E0%A4%A' });
+    expect(await client.closed).toMatchObject({ code: CloseCode.unauthorized });
+    const after = await ready(server);
+    expect(after.isClosed).toBeUndefined();
+  });
+
   it('reads tokens from bearer or cookie headers', () => {
     const request = (headers: http.IncomingHttpHeaders) => ({ headers }) as http.IncomingMessage;
     expect(tokenFrom(request({ authorization: 'Bearer abc' }))).toBe('abc');
@@ -152,6 +178,9 @@ describe('upgrade and authentication', () => {
     expect(tokenFrom(request({ cookie: 'nano_device=; other=1' }))).toBeNull();
     expect(tokenFrom(request({ cookie: 'novalue; =x' }))).toBeNull();
     expect(tokenFrom(request({}))).toBeNull();
+    expect(tokenFrom(request({ cookie: 'nano_device=%zz' }))).toBeNull();
+    expect(tokenFrom(request({ origin: 'https://h', authorization: 'Bearer abc' }))).toBeNull();
+    expect(tokenFrom(request({ origin: 'https://h', authorization: 'Bearer abc', cookie: 'nano_device=c' }))).toBe('c');
   });
 
   it('serves wss:// with a provided certificate and key', async () => {

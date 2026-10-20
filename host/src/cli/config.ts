@@ -13,11 +13,12 @@
 //     "logFile": "~/Library/Logs/NanoHost/host.log"
 //   }
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import path from 'node:path';
 
 import { DEFAULT_CODEX_BINARY } from '../config/codex.js';
+import { ensurePrivateDir } from '../config/private-files.js';
 import { DEFAULT_PORT, TLS_CERT_FILE, TLS_KEY_FILE } from '../http/server.js';
 import { configDir, logsDir } from './paths.js';
 
@@ -147,10 +148,7 @@ export function writeConfig(file: string, config: HostConfig): void {
   chmodSync(file, 0o600);
 }
 
-export function ensurePrivateDir(dir: string): void {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  chmodSync(dir, 0o700);
-}
+export { ensurePrivateDir };
 
 export interface LoadedConfig {
   config: HostConfig;

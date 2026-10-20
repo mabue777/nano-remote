@@ -1,7 +1,7 @@
 // End-to-end tests of the host's HTTP(S) origin on loopback: pairing, static files, stream auth and the
 // device methods, with real sockets.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { tmpdir } from 'node:os';
@@ -229,6 +229,16 @@ describe('stream authentication', () => {
     expect(await cookie.handshake()).toMatchObject({ result: { device: { clientId } } });
   });
 
+  it('security: accepts the cookie from the host’s own origin and refuses other origins with 4003', async () => {
+    const started = await start();
+    const device = await pairDevice(started);
+    const own = await stream(started, { token: null, cookie: `nano_device=${device.deviceToken}`, clientId: device.clientId, headers: { origin: started.server.origin } });
+    expect(await own.handshake()).toMatchObject({ result: { device: { clientId: device.clientId } } });
+    const otherPort = started.server.origin.replace(/:\d+$/, ':1');
+    const foreign = await stream(started, { token: null, cookie: `nano_device=${device.deviceToken}`, clientId: device.clientId, headers: { origin: otherPort } });
+    expect(await foreign.closed).toEqual({ code: CloseCode.unauthorized, reason: 'origin not allowed' });
+  });
+
   it('closes unknown tokens with 4003', async () => {
     const started = await start();
     const client = await stream(started, { token: 'nope' });
@@ -415,12 +425,17 @@ describe('binding and TLS', () => {
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost',
       '-keyout', files.keyPath, '-out', files.certPath,
     ], { stdio: 'ignore' });
+    chmodSync(files.certPath, 0o644);
+    chmodSync(files.keyPath, 0o644);
     const started = await start({
       tls: files,
       insecureDev: false,
       resolve: async () => ({ dnsName: 'localhost', addresses: ['127.0.0.1', '::1'] }),
     });
     expect(started.server.origin).toBe(`https://localhost:${started.server.port}`);
+    // security: the certificate and key are tightened to 0600 before they are read.
+    expect(statSync(files.certPath).mode & 0o777).toBe(0o600);
+    expect(statSync(files.keyPath).mode & 0o777).toBe(0o600);
     expect(started.server.addresses.map((a) => a.address)).toEqual(['127.0.0.1', '::1']);
     expect(new Set(started.server.addresses.map((a) => a.port)).size).toBe(1);
     expect(started.server.issuePairingCode().url).toMatch(/^https:\/\/localhost:\d+\/pair#code=\d{8}$/);

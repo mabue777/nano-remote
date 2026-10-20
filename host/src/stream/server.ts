@@ -42,14 +42,24 @@ export interface StreamServerOptions {
   status?: () => 'active' | 'degraded';
   /** Handles plain HTTP requests (the web app, pairing). Default answers 404. */
   requestListener?: http.RequestListener;
+  /**
+   * Origins whose pages may open a stream (the host's own origin, which serves the web app). An upgrade
+   * with any other `Origin` closes 4003, so a page on another site or port cannot ride the cookie
+   * (cross-site WebSocket hijacking). Native clients send no `Origin`. Default: none.
+   */
+  allowedOrigins?: () => readonly string[];
   pingTimeoutMs?: number;
   log?: (message: string, error?: unknown) => void;
 }
 
-/** The device token from `Authorization: Bearer` or the `nano_device` cookie (spec 1). */
+/**
+ * The device token from `Authorization: Bearer` or the `nano_device` cookie (spec 1). A request with an
+ * `Origin` header comes from a browser page: only the cookie counts there, the bearer header is for
+ * native clients (security pass item 2). A cookie value that is not valid percent-encoding is no token.
+ */
 export function tokenFrom(request: http.IncomingMessage): string | null {
   const auth = request.headers.authorization;
-  if (auth) {
+  if (auth && request.headers.origin === undefined) {
     const match = /^Bearer\s+(\S+)\s*$/i.exec(auth);
     if (match) return match[1]!;
   }
@@ -57,7 +67,12 @@ export function tokenFrom(request: http.IncomingMessage): string | null {
     const eq = part.indexOf('=');
     if (eq > 0 && part.slice(0, eq).trim() === DEVICE_COOKIE) {
       const value = part.slice(eq + 1).trim();
-      if (value) return decodeURIComponent(value);
+      if (!value) continue;
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return null;
+      }
     }
   }
   return null;
@@ -122,6 +137,10 @@ export class StreamServer {
         CloseCode.unsupportedProtocol,
         `unsupported protocol version; accepted: ${ACCEPTED_PROTOCOL_VERSIONS.join(',')}`,
       );
+    }
+    const origin = request.headers.origin;
+    if (origin !== undefined && !(this.options.allowedOrigins?.() ?? []).includes(origin)) {
+      return reject(CloseCode.unauthorized, 'origin not allowed');
     }
     const token = tokenFrom(request);
     let clientId: string | null = null;

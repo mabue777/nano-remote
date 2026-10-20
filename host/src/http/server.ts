@@ -7,12 +7,13 @@
 // One HTTP(S) server per tailnet address (IPv4 and IPv6), all on the same port. Upgrades on
 // /v1/stream go to the StreamServer, which authenticates the device token against the device store.
 // The StreamServer's own listener is never started; this class owns the sockets.
-import { readFileSync } from 'node:fs';
+import { chmodSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
+import { PRIVATE_FILE_MODE } from '../config/private-files.js';
 import { registerDeviceMethods } from '../devices/methods.js';
 import type { DeviceStore } from '../devices/store.js';
 import { defaultJournalPath } from '../journal/journal.js';
@@ -69,8 +70,11 @@ export interface HostServerOptions {
   log?: (message: string, error?: unknown) => void;
 }
 
+/** Reads the certificate and key, tightening both to 0600 first (security pass item 4). */
 function readTls(files: TlsFiles): { cert: Buffer; key: Buffer } {
   try {
+    chmodSync(files.certPath, PRIVATE_FILE_MODE);
+    chmodSync(files.keyPath, PRIVATE_FILE_MODE);
     return { cert: readFileSync(files.certPath), key: readFileSync(files.keyPath) };
   } catch (error) {
     throw new Error(
@@ -99,6 +103,8 @@ export class HostServer {
       ...options.stream,
       registry: options.registry,
       authenticate: (token) => options.devices.authenticate(token),
+      // URL normalizes case and drops a default port, as browsers do in the Origin header.
+      allowedOrigins: () => [new URL(this.origin).origin],
       log: this.log,
     });
   }

@@ -160,7 +160,7 @@ async function cert(command: Extract<Command, { name: 'cert' }>, env: CliEnv): P
     env.err('HTTPS certificates must be enabled for the tailnet: https://login.tailscale.com/admin/dns');
     return EXIT_FAILURE;
   }
-  if (existsSync(config.tls.keyPath)) chmodSync(config.tls.keyPath, 0o600);
+  for (const file of [config.tls.certPath, config.tls.keyPath]) if (existsSync(file)) chmodSync(file, 0o600);
   env.out(`certificate for ${self.dnsName} written to ${config.tls.certPath} (key ${config.tls.keyPath})`);
   env.out('restart the host to use it: launchctl kickstart -k gui/$(id -u)/' + LAUNCHD_LABEL);
   return EXIT_OK;

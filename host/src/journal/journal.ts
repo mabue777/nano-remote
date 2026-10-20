@@ -6,11 +6,11 @@
 // turns, items, pending requests), so a reader never sees an event without its effects. node:sqlite is
 // synchronous: within one process an append, a read and a subscriber attach never interleave, which is
 // what makes the subscribe guarantee below hold without locks.
-import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite';
 
+import { ensurePrivateFile, tightenSqliteSideFiles } from '../config/private-files.js';
 import { AlreadyResolved, CursorExpired, InvalidParams } from './errors.js';
 import {
   MAX_ITEMS_PER_TURN,
@@ -242,9 +242,13 @@ export class Journal {
       ((error, event) => {
         console.error(`journal: listener failed on ${event.method} seq ${event.params.seq}`, error);
       });
-    if (this.path !== ':memory:') mkdirSync(path.dirname(this.path), { recursive: true });
+    // Session content and device hashes: 0600 from the first byte (security pass item 5).
+    if (this.path !== ':memory:') ensurePrivateFile(this.path);
     this.db = new DatabaseSync(this.path, { timeout: 5000 });
-    if (this.path !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL');
+    if (this.path !== ':memory:') {
+      this.db.exec('PRAGMA journal_mode = WAL');
+      tightenSqliteSideFiles(this.path);
+    }
     // FULL: a committed append survives power loss, not only a crash of the host process.
     this.db.exec('PRAGMA synchronous = FULL');
     this.db.exec(SCHEMA);

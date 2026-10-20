@@ -156,7 +156,8 @@ export class Engine {
     try {
       message = JSON.parse(line) as Record<string, unknown>;
     } catch {
-      this.handlers.log?.(`codex: unparsable line: ${line.slice(0, 200)}`);
+      // The line may be session content (a half-written item): its size goes to the log, never its text.
+      this.handlers.log?.(`codex: unparsable line of ${line.length} characters dropped`);
       return;
     }
     if (message === null || typeof message !== 'object') return;

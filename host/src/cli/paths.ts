@@ -32,3 +32,8 @@ export function controlSocketPath(configPath: string): string {
 export function controlSecretPath(configPath: string): string {
   return path.join(path.dirname(configPath), 'control.secret');
 }
+
+/** The Web Push VAPID key pair (0600), next to the config file. */
+export function vapidKeysPath(configPath: string): string {
+  return path.join(path.dirname(configPath), 'vapid.json');
+}

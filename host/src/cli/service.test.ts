@@ -1,5 +1,6 @@
 // The running service end to end on loopback: config -> HostService -> control channel -> pairing ->
 // stream -> graceful shutdown. Also the bin's commands through runCli with an injected environment.
+import { randomUUID } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import net, { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -8,6 +9,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeAgent } from '../core/testing/fake-adapter.js';
+import { text, waitEvent } from '../core/testing/harness.js';
 import { Journal } from '../journal/journal.js';
 import { CloseCode } from '../stream/constants.js';
 import { TestClient } from '../stream/testing/client.js';
@@ -161,6 +163,72 @@ describe('host service', () => {
     await controlRequest(started.target, 'POST', '/v1/devices/revoke', { clientId: device.clientId });
     expect((await client.closed).code).toBe(CloseCode.unauthorized);
     expect(await controlRequest(started.target, 'GET', '/v1/devices')).toEqual({ devices: [] });
+  });
+
+  it('security: no token, code, cookie or session content in the log; private files; VAPID key in initialize', async () => {
+    const started = await startService();
+    const origin = started.service.server.origin;
+    // Wrong codes, then the real one: none of them may reach the log.
+    const wrong = await fetch(`${origin}/v1/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: '13572468', client: { name: 'x', platform: 'ios-web' } }),
+    });
+    expect(wrong.status).toBe(403);
+    const { code } = await controlRequest<{ code: string }>(started.target, 'POST', '/v1/pair');
+    const response = await fetch(`${origin}/v1/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code, client: { name: 'iPhone', platform: 'ios-web' } }),
+    });
+    const device = (await response.json()) as { clientId: string; deviceToken: string };
+    const cookie = response.headers.get('set-cookie')!;
+
+    // The browser path: the host's own origin and the cookie.
+    const client = await TestClient.connect(`ws://127.0.0.1:${started.service.server.port}/v1/stream`, {
+      token: null,
+      cookie: cookie.split(';')[0]!,
+      clientId: device.clientId,
+      headers: { origin },
+    });
+    clients.push(client);
+    const init = (await client.handshake()).result as { push: { vapidPublicKey: string; subscribed: boolean } };
+    const vapidFile = path.join(home, 'vapid.json');
+    expect(init.push).toEqual({ vapidPublicKey: JSON.parse(readFileSync(vapidFile, 'utf8')).publicKey, subscribed: false });
+    expect(Buffer.from(init.push.vapidPublicKey, 'base64url')).toHaveLength(65);
+
+    const secretText = 'SESSION-CONTENT-7f3a';
+    const { session } = (await client.call('session/start', { agentId: 'fake', cwd: home })).result as { session: { sessionId: string } };
+    await client.call('session/open', { sessionId: session.sessionId });
+    await client.call('turn/start', { sessionId: session.sessionId, input: text(secretText), clientMessageId: randomUUID() });
+    await waitEvent(client, 'turn/completed');
+    expect(JSON.stringify(client.messages)).toContain(secretText); // the content did flow through the host
+
+    await controlRequest(started.target, 'POST', '/v1/devices/revoke', { clientId: device.clientId });
+    expect((await client.closed).code).toBe(CloseCode.unauthorized);
+    const retry = await TestClient.connect(`ws://127.0.0.1:${started.service.server.port}/v1/stream`, {
+      token: device.deviceToken,
+      clientId: device.clientId,
+    });
+    clients.push(retry);
+    expect(await retry.closed).toMatchObject({ code: CloseCode.unauthorized });
+
+    const logFile = path.join(home, 'logs', 'host.log');
+    const log = readFileSync(logFile, 'utf8');
+    const stdout = JSON.stringify(started.lines);
+    for (const secret of [device.deviceToken, code, '13572468', secretText, readFileSync(started.target.secretPath, 'utf8').trim()]) {
+      expect(log).not.toContain(secret);
+      expect(stdout).not.toContain(secret);
+    }
+    expect(log).toContain('"event":"control.device.revoke"');
+
+    // Item 5: the folder 0700, every secret-bearing file 0600.
+    const mode = (file: string) => statSync(file).mode & 0o777;
+    expect(mode(home)).toBe(0o700);
+    for (const file of [started.target.secretPath, vapidFile, path.join(home, 'journal.sqlite'), logFile]) {
+      expect(mode(file)).toBe(0o600);
+    }
+    expect(mode(started.target.socketPath)).toBe(0o600);
   });
 
   it('shuts down gracefully: pongs say draining, streams close with 4010, the Journal is flushed', async () => {

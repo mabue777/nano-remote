@@ -120,7 +120,10 @@ describe('install and uninstall', () => {
     const plistPath = launchAgentPath(home);
     await install({ plistPath, uid: 501, run: launchctl.run, plist: PLIST() });
     expect(readFileSync(plistPath, 'utf8')).toBe(renderPlist(PLIST()));
-    expect(statSync(logsDir(home)).isDirectory()).toBe(true);
+    expect(statSync(logsDir(home)).mode & 0o777).toBe(0o700);
+    // security: launchd's output files exist 0600 before launchd opens them.
+    expect(statSync(PLIST().stdoutPath).mode & 0o777).toBe(0o600);
+    expect(statSync(PLIST().stderrPath).mode & 0o777).toBe(0o600);
     expect(launchctl.calls).toEqual([
       ['print', `gui/501/${LAUNCHD_LABEL}`],
       ['bootstrap', 'gui/501', plistPath],
