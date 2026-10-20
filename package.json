@@ -9,10 +9,5 @@
   "scripts": {
     "generate": "pnpm -C host generate",
     "verify": "pnpm -C host verify && pnpm -C web verify"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

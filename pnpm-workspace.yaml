@@ -1,3 +1,5 @@
 packages:
   - host
   - web
+allowBuilds:
+  esbuild: true
