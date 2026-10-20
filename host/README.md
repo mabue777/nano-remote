@@ -117,4 +117,28 @@ pnpm -C host test:coverage  # vitest with v8 coverage; fails below 95% on src/jo
 NANO_LIVE_CODEX=1 pnpm -C host exec vitest run src/adapters/codex/live.test.ts  # the real Codex engine (login and tokens needed)
 pnpm -C host build       # emit dist/ (excludes tests), including the nano-host bin
 pnpm -C host verify      # generate + typecheck + test; the gate
+pnpm -C host acceptance  # the Phase 1 acceptance against the real host and Codex (below); not in the gate
 ```
+
+## Phase 1 acceptance
+
+`pnpm -C host acceptance` checks the Phase 1 acceptance of `docs/plan/roadmap.md` section 4 end to end:
+the real `nano-host` CLI, the real Codex engine, and a scripted client (`scripts/acceptance.ts`).
+
+- Needs: the Codex engine logged in (the same setup as the live Codex test above). It spends a few real
+  tokens and takes about 15 seconds. It touches nothing outside a temporary folder: its own config folder
+  (config, Journal, control socket, log), a free loopback port, and a temporary project folder for Codex.
+- What it does: generates the protocol types, builds `dist/`, then runs the eight steps: start the host
+  with `start --insecure-dev`; pair two clients with `nano-host pair` and `POST /v1/pair`; start a Codex
+  session (read-only sandbox) and a turn that must write `hello.txt`; accept the approval, wait for
+  `turn/completed` and check the file; SIGKILL the host and start it again with the same config folder; while
+  the first client is away, the second runs a follow-up turn that must name the file (the resumed session
+  remembers); the first client reconnects with its token and `session/open` with its saved cursor returns
+  events mode with exactly the missed events; `session/open` without a cursor returns a snapshot with both
+  turns; `device/list` shows both clients and `device/revoke` closes the second client's stream with 4003.
+- Output: one timestamped line per step on stdout and in `acceptance/host-v0.log` (rewritten on every run).
+  Exit 0 only when every step passes; the last line says `passed` or `FAILED` with the reason. On failure
+  the temporary folder is kept (its path is on the first line) so its `config/host.log` and Journal can be read.
+- Evidence: the committed `acceptance/host-v0.log` is the last passing run. `acceptance/coverage.txt` is the
+  `src/journal` and `src/stream` summary of `pnpm -C host test:coverage` (both at least 95%); refresh it by
+  running that command and copying those rows.

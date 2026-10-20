@@ -1,0 +1,11 @@
+2026-10-20T18:12:00.345Z acceptance host-v0: node v26.5.0, work dir /var/folders/2k/6n8qwl0512d7zm9x1jmmtf7c0000gn/T/nano-acceptance-aEiofg
+2026-10-20T18:12:00.437Z step 1 ok: nano-host start --insecure-dev --config <tmp>/config/config.json; pid 99994, origin http://127.0.0.1:53735, agents [{"id":"codex","status":"ready"}]
+2026-10-20T18:12:00.624Z step 2 ok: nano-host pair printed a code, POST /v1/pair returned clientId dev_60e968fffb3f7e6b with a device token (43 chars); second client dev_05c587b3025abe38 paired the same way
+2026-10-20T18:12:00.939Z step 3 ok: stream open, initialize (host host_24dc9046c2def888, codex ready), session/start ses_0mvh02upjab6a6b3663162bb2 in /var/folders/2k/6n8qwl0512d7zm9x1jmmtf7c0000gn/T/nano-acceptance-aEiofg/project (read-only sandbox), turn/start trn_0mvh02uxvd0ea08a5e52adf0d
+2026-10-20T18:12:05.675Z step 4 ok: approval/request then approval/resolve accept (seq 25 command "/bin/zsh -lc \"printf '%s' hello > hello.txt\"" -> accept), turn/completed status completed, reply "done", hello.txt exists with "hello"; client A saved cursor 53
+2026-10-20T18:12:05.782Z step 5 ok: host pid 99994 killed (SIGKILL; client A stream closed 1006), restarted with the same config folder as pid 221 at http://127.0.0.1:53735
+2026-10-20T18:12:09.073Z gap: client B opened the session (snapshot mode, cursor 54) and ran follow-up turn trn_0mvh02yosfc4ca09f90f8ea06: status completed, reply "hello.txt"; journal head now 84
+2026-10-20T18:12:09.079Z step 6 ok: client A reconnected with the same token; session/open cursor 53 returned mode events with 32 events, seq 54 to 85 (cursor 85), methods status/changed, turn/started, item/started, item/completed, usage/updated, item/delta, turn/completed; the resumed session continued: follow-up turn trn_0mvh02yosfc4ca09f90f8ea06 completed, reply "hello.txt"
+2026-10-20T18:12:09.080Z step 7 ok: session/open without cursor returned mode snapshot, cursor 85, 2 turns: trn_0mvh02uxvd0ea08a5e52adf0d completed (5 items), trn_0mvh02yosfc4ca09f90f8ea06 completed (3 items)
+2026-10-20T18:12:09.084Z step 8 ok: device/list shows dev_05c587b3025abe38 "Acceptance B", dev_60e968fffb3f7e6b "Acceptance A" (current); device/revoke dev_05c587b3025abe38 closed its stream with 4003 "device revoked"
+2026-10-20T18:12:10.135Z acceptance host-v0 passed: all eight steps ok

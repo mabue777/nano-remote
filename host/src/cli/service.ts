@@ -14,6 +14,7 @@ import { codexConfig } from '../config/codex.js';
 import { ensurePrivateDir } from '../config/private-files.js';
 import { describeAgent, type AgentProvider } from '../core/adapter.js';
 import { HostCore } from '../core/host-core.js';
+import { SessionStore } from '../core/store.js';
 import { DeviceStore, MAX_DISPLAY_NAME_LENGTH } from '../devices/store.js';
 import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
@@ -86,6 +87,7 @@ export class HostService {
     readonly server: HostServer,
     readonly core: HostCore,
     readonly journal: Journal,
+    readonly store: SessionStore,
     readonly devices: DeviceStore,
     readonly control: ControlServer,
     private readonly options: ServiceOptions,
@@ -120,8 +122,11 @@ export class HostService {
       onListenerError: (error, event) => logger.error('journal.listener_failed', { method: event.method, seq: event.params.seq, error }),
     });
     const devices = new DeviceStore({ path: config.journalPath });
+    // The engine's session ids (to resume a thread after a restart), archive flags and turn/start
+    // idempotency live beside the Journal in the same file, so they survive a restart too.
+    const store = new SessionStore(config.journalPath);
     const agents = options.agents ?? buildAgents(config, logger);
-    const core = new HostCore({ journal, agents, host, log: logger.forModule('core') });
+    const core = new HostCore({ journal, agents, host, store, log: logger.forModule('core') });
     const registry = core.register(
       new MethodRegistry().register('initialize', (_params, context) => ({
         protocolVersion: 1,
@@ -173,7 +178,7 @@ export class HostService {
         },
         log: (event, fields) => logger.info(event, fields),
       });
-      service = new HostService(server, core, journal, devices, control, options, startedAt);
+      service = new HostService(server, core, journal, store, devices, control, options, startedAt);
       logger.info('host.listening', {
         origin: server.origin,
         addresses: server.addresses.map((a) => a.address),
@@ -186,6 +191,7 @@ export class HostService {
       await server?.close();
       await core.close();
       journal.close();
+      store.close();
       devices.close();
       throw error;
     }
@@ -228,6 +234,7 @@ export class HostService {
     await this.core.close();
     await this.control.close();
     this.journal.close();
+    this.store.close();
     this.devices.close();
     logger.info('host.stopped', { reason });
   }

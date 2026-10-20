@@ -55,7 +55,7 @@ interface Started {
   target: { socketPath: string; secretPath: string };
 }
 
-async function startService(options: { drainMs?: number } = {}): Promise<Started> {
+async function startService(options: { drainMs?: number; agent?: FakeAgent } = {}): Promise<Started> {
   const config = testConfig();
   const configPath = path.join(home, 'config.json');
   const lines: Record<string, unknown>[] = [];
@@ -65,7 +65,7 @@ async function startService(options: { drainMs?: number } = {}): Promise<Started
     configPath,
     logger,
     insecureDev: true,
-    agents: [new FakeAgent()],
+    agents: [options.agent ?? new FakeAgent()],
     publicDir: home,
     drainMs: options.drainMs ?? 0,
   });
@@ -229,6 +229,30 @@ describe('host service', () => {
       expect(mode(file)).toBe(0o600);
     }
     expect(mode(started.target.socketPath)).toBe(0o600);
+  });
+
+  it('a restarted host resumes the engine session instead of starting an empty one', async () => {
+    const first = await startService();
+    const device = await pairDevice(first);
+    const client = await connect(first, device);
+    await client.handshake();
+    const { session } = (await client.call('session/start', { agentId: 'fake', cwd: home })).result as { session: { sessionId: string } };
+    const engineId = first.service.core.sessions.store.get(session.sessionId).engineSessionId;
+    expect(engineId).toMatch(/^eng_fake_/);
+    await first.service.shutdown('test');
+    services = [];
+
+    const agent = new FakeAgent();
+    const second = await startService({ agent });
+    expect(second.service.core.sessions.store.get(session.sessionId).engineSessionId).toBe(engineId);
+    const again = await connect(second, device);
+    await again.handshake();
+    await again.call('session/open', { sessionId: session.sessionId });
+    const { turn } = (await again.call('turn/start', { sessionId: session.sessionId, input: text('still there?'), clientMessageId: randomUUID() }))
+      .result as { turn: { turnId: string } };
+    await waitEvent(again, 'turn/completed', (p) => (p.turn as { turnId: string }).turnId === turn.turnId);
+    expect(agent.last.calls.map((c) => c.method)).not.toContain('start');
+    expect(agent.last.calls.find((c) => c.method === 'resume')?.args[0]).toBe(engineId);
   });
 
   it('shuts down gracefully: pongs say draining, streams close with 4010, the Journal is flushed', async () => {

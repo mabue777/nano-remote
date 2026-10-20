@@ -1,0 +1,28 @@
+# pnpm -C host test:coverage, 2026-10-20T18:12:27Z, node v26.5.0
+# exit 0; thresholds in vitest.config.ts: 95% on every metric (statements, branches, functions, lines) for src/journal and src/stream
+
+Test Files  31 passed | 1 skipped (32)
+Tests  430 passed | 1 skipped (431)
+
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+ src/journal       |     100 |      100 |     100 |     100 |                   
+  errors.ts        |     100 |      100 |     100 |     100 |                   
+  index.ts         |       0 |        0 |       0 |       0 |                   
+  journal.ts       |     100 |      100 |     100 |     100 |                   
+  reconstruct.ts   |     100 |      100 |     100 |     100 |                   
+  types.ts         |       0 |        0 |       0 |       0 |                   
+ src/stream        |   99.27 |    98.36 |     100 |     100 |                   
+  chunking.ts      |     100 |      100 |     100 |     100 |                   
+  connection.ts    |   98.61 |    97.16 |     100 |     100 | 327-337,361       
+  constants.ts     |     100 |      100 |     100 |     100 |                   
+  guard.ts         |     100 |      100 |     100 |     100 |                   
+  index.ts         |       0 |        0 |       0 |       0 |                   
+  presence.ts      |     100 |      100 |     100 |     100 |                   
+  router.ts        |     100 |      100 |     100 |     100 |                   
+  server.ts        |      99 |    95.89 |     100 |     100 | 125,155,224       
+-------------------|---------|----------|---------|---------|-------------------
+
+The 0 rows (index.ts, types.ts) are files with only re-exports or types: no executable statements, so
+nothing to cover; the folder totals above are what the thresholds check, and both are at least 95%.
