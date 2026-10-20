@@ -1,8 +1,10 @@
 # Nano Remote
 
-A phone app (fork of nano-ai) that chats with local Ollama models AND can
-connect to your computer to drive coding agents there — the way Kimi, Claude
-Code, and Codex let you work on your machine from your phone.
+A phone app that chats with LLMs and can connect to your computer to drive
+coding agents there (Claude Code, Codex, Kimi) — the way the Claude, ChatGPT,
+and Kimi mobile apps do it. Fresh codebase; direction and vocabulary
+informed by research on nano-ai, the OpenClaw gateway, and the vendor
+remote-control features (docs/research/).
 
 ## Language
 
@@ -16,8 +18,8 @@ on the host, driven from the phone.
 _Avoid_: job, task ("task" belongs to the issue tracker), run
 
 **Local chat**:
-nano-ai's existing mode — the phone chats directly with an Ollama model, no
-host involved.
+The mode where the phone chats directly with a model provider (Ollama and
+friends), with no host involved.
 _Avoid_: offline chat
 
 **Journal**:

@@ -1,13 +1,16 @@
 # NANO-REMOTE
 
-Fork of [nano-ai](https://github.com/TonyL1u/nano-ai) (React Native / Expo chat
-client for Ollama), extended to run against and drive a computer remotely from
-a phone.
+A phone app that chats with LLMs and drives coding-agent sessions (Claude
+Code, Codex, Kimi) running on the user's computer — the remote-control
+pattern shipped by the Claude, ChatGPT, and Kimi mobile apps, built for a
+fresh codebase. Started as a fork of nano-ai (now removed); design is
+documented in `docs/adr/` and research in `docs/research/`.
 
 ## Repos and remotes
 
-- `origin` — this fork (github.com/mabue777/nano-remote), branch `main` is the working line
-- `upstream` — TonyL1u/nano-ai, kept for pulling upstream updates into this fork
+- `origin` — this project's repo (github.com/mabue777/nano-remote), branch `main`
+  (created as a GitHub fork of nano-ai; upstream code and remote have since
+  been removed after the direction change to a fresh build)
 
 ## Agent skills
 
