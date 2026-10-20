@@ -12,7 +12,7 @@ import { Journal } from '../../journal/journal.js';
 import type { JournalEvent } from '../../journal/types.js';
 import type { TestClient } from '../../stream/testing/client.js';
 import { SessionStore } from '../../core/store.js';
-import { eventsOf, rpc, rpcError, startHarness, text, waitEvent, type Harness } from '../../core/testing/harness.js';
+import { eventsOf, openAfterTurn, rpc, rpcError, startHarness, text, waitEvent, type Harness } from '../../core/testing/harness.js';
 import { CodexAgent } from './provider.js';
 import { fakeCodex, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
@@ -262,9 +262,9 @@ describe('session core end to end with the Codex adapter', () => {
       input: text('Create a file named hello.txt'),
     });
     expect(result.session.title).toBe('Create a file named hello.txt');
-    await rpc(phone, 'session/open', { sessionId: result.session.sessionId });
-    await waitEvent(phone, 'turn/completed');
-    const opened = await rpc<{ turns: { items: { type: string; text?: string }[] }[] }>(phone, 'session/open', { sessionId: result.session.sessionId });
+    // The turn may finish before this client subscribes; openAfterTurn reads the snapshot first.
+    const opened = await openAfterTurn(phone, result.session.sessionId, result.turn.turnId);
+    expect(opened.turns[0]!.status).toBe('completed');
     expect(opened.turns[0]!.items[1]).toMatchObject({ type: 'agentMessage', text: 'You said: Create a file named hello.txt' });
   });
 

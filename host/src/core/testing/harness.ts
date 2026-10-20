@@ -110,6 +110,28 @@ export function waitEvent(
   );
 }
 
+interface OpenedTurns {
+  turns: { turnId: string; status: string; items: { type: string; text?: string }[] }[];
+}
+
+/**
+ * Opens a session and returns its snapshot once the given turn has finished, whatever the timing.
+ * A turn started by session/start may finish before the client subscribes; the snapshot then already
+ * shows it, and no live turn/completed will come. Otherwise the open subscribes this client in the same
+ * tick, so the live event cannot be missed; wait for it and read the snapshot again.
+ */
+export async function openAfterTurn<T extends OpenedTurns = OpenedTurns>(
+  client: TestClient,
+  sessionId: string,
+  turnId: string,
+): Promise<T> {
+  const finished = (snapshot: T) => snapshot.turns.some((t) => t.turnId === turnId && t.status !== 'inProgress');
+  const first = await rpc<T>(client, 'session/open', { sessionId });
+  if (finished(first)) return first;
+  await waitEvent(client, 'turn/completed', (p) => (p.turn as { turnId?: string } | undefined)?.turnId === turnId);
+  return rpc<T>(client, 'session/open', { sessionId });
+}
+
 /** Sends a request; resolves with `result`, rejects with an Error carrying `code` and `data`. */
 export async function rpc<T = Record<string, unknown>>(
   client: TestClient,

@@ -365,6 +365,10 @@ because the device has no token yet.
 3. The host answers `{clientId, deviceToken, host:{hostId, name}}` and sets the `nano_device` cookie.
    The token is a 256-bit random value stored hashed on the host; the client keeps it in the cookie
    (browser) or its keychain (native).
+   Failures answer `{error:{code, message, data?}}` (section 10 codes): 400 `invalid_params` (`data.path`),
+   403 `unauthorized` for a wrong, expired or used code (one message for all three), 415 when the body is
+   not `application/json`, 429 `rate_limited` (`data.retryAfterMs`, plus `Retry-After`) after 5 failed
+   codes within a minute from one address.
 4. From now on the client opens streams as in section 1.
 
 Over the stream: `device/list` → `{devices:[{clientId, displayName, platform, createdAt, lastSeenAt, current}]}`;

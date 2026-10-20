@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { JournalEvent } from '../journal/types.js';
 import type { TestClient } from '../stream/testing/client.js';
-import { eventsOf, rpc, rpcError, startHarness, text, waitEvent, type Harness, type HarnessOptions } from './testing/harness.js';
+import { eventsOf, openAfterTurn, rpc, rpcError, startHarness, text, waitEvent, type Harness, type HarnessOptions } from './testing/harness.js';
 
 let harness: Harness | undefined;
 
@@ -265,10 +265,10 @@ describe('session core end to end', () => {
     });
     expect(result.session.sessionId).toMatch(/^ses_/);
     expect(result.session.title).toBe('Create a file named hello.txt and then list every file in t…');
-    expect(result.turn.status).toBe('completed');
-    const opened = await rpc<{ turns: { items: { type: string; text?: string }[] }[] }>(phone, 'session/open', {
-      sessionId: result.session.sessionId,
-    });
+    expect(result.turn.turnId).toEqual(expect.any(String));
+    // The turn may finish before or after this client subscribes; openAfterTurn handles both.
+    const opened = await openAfterTurn(phone, result.session.sessionId, result.turn.turnId);
+    expect(opened.turns[0]!.status).toBe('completed');
     expect(opened.turns[0]!.items[1]).toMatchObject({
       type: 'agentMessage',
       text: 'You said: Create a file named hello.txt and then list every file in this folder, please',
