@@ -27,6 +27,8 @@
     "src",
     "e2e",
     "test",
+    "build",
+    "scripts/icons.d.mts",
     "vite.config.ts",
     "playwright.config.ts"
   ]

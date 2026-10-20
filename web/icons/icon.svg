@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The single source for every app icon (web/scripts/icons.mjs renders the PNGs at build).
+       Full bleed and opaque: iOS rounds the corners itself, and a maskable icon must fill the square.
+       The glyph, a terminal prompt, stays inside the central 60% so any mask shape keeps it whole. -->
+  <rect width="512" height="512" fill="#2f5bd3"/>
+  <path d="M168 188 L240 256 L168 324" fill="none" stroke="#ffffff" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="262" y="306" width="96" height="36" rx="18" fill="#ffffff"/>
+</svg>

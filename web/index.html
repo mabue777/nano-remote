@@ -2,9 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- viewport-fit=cover: the page draws edge to edge and styles.css pads by the safe-area insets.
+         width=device-width also removes the 300 ms tap delay (with touch-action in styles.css). -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="color-scheme" content="light dark" />
+    <!-- Home-screen app (ADR 0004). manifest.webmanifest, sw.js and the PNG icons are written by
+         web/build/pwa.ts; the theme colors match --bg in styles.css and the manifest. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Nano Remote" />
+    <!-- default: dark status bar text on the light theme color, light text on the dark one. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <title>Nano Remote</title>
   </head>
   <body>

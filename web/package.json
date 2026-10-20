@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
+    "@resvg/resvg-wasm": "^2.6.2",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^4.1.12",

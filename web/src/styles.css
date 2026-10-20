@@ -17,7 +17,15 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.4;
+  /* No font inflation when the phone rotates to landscape. */
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Safe-area insets (index.html sets viewport-fit=cover): the notch, the home indicator and, in
+     landscape, the rounded sides. Every edge-touching layout pads by these. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +44,11 @@
   box-sizing: border-box;
 }
 
+html {
+  /* No 300 ms double-tap-zoom delay on taps; pinch zoom still works. */
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -46,7 +59,7 @@ body {
   max-width: 560px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 24px);
+  padding: calc(var(--safe-top) + 12px) calc(var(--safe-right) + 16px) calc(var(--safe-bottom) + 24px) calc(var(--safe-left) + 16px);
 }
 
 h1 {
@@ -406,7 +419,7 @@ textarea {
   overflow-y: auto;
   background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0;
-  padding: 16px 16px calc(env(safe-area-inset-bottom) + 20px);
+  padding: 16px calc(var(--safe-right) + 16px) calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 16px);
 }
 
 .sheet-head {
@@ -722,7 +735,7 @@ textarea {
 .jump-pill {
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 132px);
+  bottom: calc(var(--safe-bottom) + 132px);
   transform: translateX(-50%);
   border-radius: 999px;
   min-height: 36px;
@@ -734,7 +747,7 @@ textarea {
   flex: none;
   border-top: 1px solid var(--line);
   margin: 0 -16px;
-  padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+  padding: 8px 16px calc(var(--safe-bottom) + 12px);
   background: var(--bg);
 }
 
@@ -1188,4 +1201,24 @@ button.danger {
 
 .diff-line.meta {
   color: var(--muted);
+}
+
+/* ---- new version prompt (src/pwa/UpdatePrompt.tsx) ---- */
+.update-prompt {
+  position: fixed;
+  top: calc(var(--safe-top) + 8px);
+  left: calc(var(--safe-left) + 12px);
+  right: calc(var(--safe-right) + 12px);
+  max-width: 536px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.15);
+  z-index: 20;
 }

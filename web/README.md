@@ -47,6 +47,23 @@ Prefresh (HMR that keeps component state) is wanted during development.
   fake host paces scripted turns so deltas arrive one by one, and test hooks reset the sessions, start
   a turn, approve from "another device" and delay a reply (see the header of `test/e2e-server.ts`).
 
+## Home-screen app
+
+- `icons/icon.svg` is the one icon source. `scripts/icons.mjs` renders it to `apple-touch-icon.png`
+  (180), `icon-192.png` and `icon-512.png` with resvg compiled to WebAssembly, so there is no native
+  dependency. Run `node scripts/icons.mjs <dir>` to look at the output.
+- `build/pwa.ts` is a Vite build plugin. After the bundle is written it adds the icons,
+  `manifest.webmanifest` (standalone, theme colors) and `sw.js`, made from `build/service-worker.js`
+  with the build version (a hash of every shipped file) and the list of shell files.
+- The service worker caches the app shell only. It never answers `/v1` (pairing, API, stream) or any
+  other path outside the shell; page loads go to the network first and fall back to the cached shell.
+  A new build waits until the user taps Reload in the prompt (`src/pwa/`). The dev server registers no
+  worker.
+- `index.html` carries the iOS tags; `src/styles.css` pads edge-touching layout by `--safe-top`,
+  `--safe-right`, `--safe-bottom` and `--safe-left`, which read `env(safe-area-inset-*)`.
+- `e2e/installable.spec.ts` checks the manifest and icons, the worker and its cache, the safe-area
+  padding under an emulated notch at 390 x 844, and the reload prompt (`POST /test/new-build`).
+
 ## Commands (from the repo root)
 
 ```

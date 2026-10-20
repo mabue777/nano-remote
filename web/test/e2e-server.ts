@@ -17,9 +17,11 @@
 // `POST /test/review {sessionId, chunks}` starts a turn whose command streams `chunks` (answers {itemId}),
 // `POST /test/review-finish {sessionId, changes}` completes it with those file changes, and
 // `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session.
+// `POST /test/new-build {version}` serves /sw.js under that build version, as after a redeploy (a reset
+// goes back to the built one).
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +36,8 @@ const TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json',
 };
 
 export const SEEDED_TITLES = ['Create hello.txt and list files', 'Run the test suite', 'Sketch the README'];
@@ -64,6 +68,7 @@ interface Code {
 
 export async function startE2eHost(port: number): Promise<{ url: string; close: () => Promise<void> }> {
   const codes = new Map<string, Code>();
+  let swVersion: string | null = null; // POST /test/new-build
   const tokens = new Map<string, string>(); // token -> clientId
   let devices = 0;
   const issue = (lifetimeMs: number) => {
@@ -93,6 +98,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
           switch (url.pathname) {
             case '/test/reset':
               seed(host);
+              swVersion = null;
               return json(200, { ok: true });
             case '/test/run':
               host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.');
@@ -114,6 +120,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/no-diffs':
               host.noDiffs.add(body.sessionId);
+              return json(200, { ok: true });
+            case '/test/new-build':
+              swVersion = String(body.version);
               return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);
@@ -166,6 +175,10 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
       return;
     }
     response.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+    if (url.pathname === '/sw.js' && swVersion !== null) {
+      const version = JSON.stringify(swVersion);
+      return void response.end(readFileSync(file, 'utf8').replace(/^const VERSION = .*;$/m, () => `const VERSION = ${version};`));
+    }
     createReadStream(file).pipe(response);
   });
 
