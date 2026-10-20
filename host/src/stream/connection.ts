@@ -250,11 +250,19 @@ export class Connection {
       this.respondError(id, { code: 'not_initialized', message: 'send initialize first' });
       return;
     }
+    const after: (() => void)[] = [];
     try {
-      const result = await this.deps.registry.dispatch(method, request.params, this.context());
+      const result = await this.deps.registry.dispatch(method, request.params, this.context(after));
       this.respond(id, result);
     } catch (error) {
       this.respondFailure(id, method, error);
+    }
+    for (const fn of after) {
+      try {
+        fn();
+      } catch (error) {
+        this.deps.log(`stream ${this.streamIdValue}: after-response hook of ${method} failed`, error);
+      }
     }
   }
 
@@ -293,7 +301,8 @@ export class Connection {
     }
   }
 
-  private context(): RequestContext {
+  /** Request-scoped context; `after` collects the request's after-response hooks. */
+  private context(after: (() => void)[] = []): RequestContext {
     return {
       clientId: this.clientId,
       streamId: this.streamIdValue,
@@ -301,6 +310,10 @@ export class Connection {
         if (this.finished) fn();
         else this.closeHandlers.push(fn);
       },
+      afterResponse: (fn) => {
+        after.push(fn);
+      },
+      isOptedOut: (method) => this.optOut.has(method),
     };
   }
 

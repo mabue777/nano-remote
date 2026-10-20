@@ -102,6 +102,14 @@ export interface RequestContext {
   streamId: string;
   /** Registers cleanup for when the stream closes (spec 6: closing the socket unsubscribes everything). */
   onClose(fn: () => void): void;
+  /**
+   * Runs `fn` right after this request's response (result or error) went out on the stream. Session
+   * open uses it to start live delivery only after its response, so no event overtakes it (spec 6).
+   * Hooks registered by the `initialize` handler are not run.
+   */
+  afterResponse(fn: () => void): void;
+  /** True when the client named `method` in `optOutNotifications` at `initialize` (spec 4). */
+  isOptedOut(method: string): boolean;
 }
 
 export type Handler<M extends MethodName> = (

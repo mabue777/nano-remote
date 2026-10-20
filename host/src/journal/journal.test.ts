@@ -378,6 +378,15 @@ describe('snapshot and history', () => {
     expect(older.olderCursor).toBeUndefined();
   });
 
+  it('looks up one turn by id, merged across turn/started and turn/completed', () => {
+    journal.append('ses_a', turnStarted('trn_1'));
+    expect(journal.turn('ses_a', 'trn_1')?.status).toBe('inProgress');
+    journal.append('ses_a', turnCompleted('trn_1', 'interrupted'));
+    expect(journal.turn('ses_a', 'trn_1')).toMatchObject({ turnId: 'trn_1', status: 'interrupted', completedAt: 200 });
+    expect(journal.turn('ses_a', 'trn_missing')).toBeUndefined();
+    expect(journal.turn('ses_missing', 'trn_1')).toBeUndefined();
+  });
+
   it('honours the turns argument and omits olderCursor when nothing is older', () => {
     appendTurn('ses_a', 'trn_1', 1);
     appendTurn('ses_a', 'trn_2', 1);

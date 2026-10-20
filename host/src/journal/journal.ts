@@ -518,6 +518,12 @@ export class Journal {
     });
   }
 
+  /** One turn as journaled (`items` lists item ids in `turn/started`/`turn/completed`), or undefined. */
+  turn(sessionId: string, turnId: string): Turn | undefined {
+    const row = this.sql.turn!.get(sessionId, turnId);
+    return row ? parse<Turn>(row.data) : undefined;
+  }
+
   /** `session/history`: up to `limit` turns (default 5) older than `before`, newest first, items in full. */
   history(sessionId: string, before: string, limit?: number): HistoryResult {
     const ordinal = parseTurnCursor(before);

@@ -27,3 +27,6 @@ const CONTENT_TYPES: Record<string, string> = {
 export function contentTypeFor(file: string): string {
   return CONTENT_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
 }
+
+export * as core from './core/index.js';
+export { FakeAdapter, FakeAgent, echoScript, scripted } from './core/testing/fake-adapter.js';

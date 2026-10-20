@@ -118,7 +118,13 @@ describe('presence registry', () => {
 });
 
 describe('method registry and errors', () => {
-  const context: RequestContext = { clientId: 'dev', streamId: 's', onClose: vi.fn() };
+  const context: RequestContext = {
+    clientId: 'dev',
+    streamId: 's',
+    onClose: vi.fn(),
+    afterResponse: vi.fn(),
+    isOptedOut: () => false,
+  };
 
   it('dispatches typed handlers, checks params and rejects duplicates and unknown methods', async () => {
     const registry = new MethodRegistry().register('session/close', (params) => {
