@@ -1,0 +1,21 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/initialize.params", "at": "params"},
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 1,
+  "message": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": 1,
+      "client": {
+        "name": "Nano Remote Web",
+        "version": "0.1.0",
+        "platform": "ios-web",
+        "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1"
+      },
+      "optOutNotifications": ["item/reasoning/delta", "usage/updated"]
+    }
+  }
+}

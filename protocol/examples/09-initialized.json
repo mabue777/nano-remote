@@ -1,0 +1,8 @@
+{
+  "$expect": {"schema": "events.json#/$defs/initialized", "at": "params"},
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 2,
+  "message": {"method": "initialized", "params": {}}
+}

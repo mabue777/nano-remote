@@ -1,0 +1,22 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/initialize.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 1,
+  "message": {
+    "id": 1,
+    "result": {
+      "protocolVersion": 1,
+      "host": {"hostId": "host_2b7d4e90", "name": "mabue-mbp", "version": "0.1.0", "os": "darwin", "arch": "arm64"},
+      "device": {"clientId": "dev_8f3a9c21", "displayName": "iPhone (Safari)"},
+      "agents": [
+        {"id": "codex", "name": "Codex", "status": "ready", "version": "0.163.0"},
+        {"id": "claude", "name": "Claude Code", "status": "ready"},
+        {"id": "kimi", "name": "Kimi", "status": "unavailable", "reason": "CLI not found"}
+      ],
+      "push": {"vapidPublicKey": "BOrExampleVapidPublicKeyForDocumentation", "subscribed": true},
+      "limits": {"maxMessageBytes": 16777216, "snapshotTurns": 5}
+    }
+  }
+}

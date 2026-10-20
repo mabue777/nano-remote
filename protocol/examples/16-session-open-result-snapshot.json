@@ -1,0 +1,41 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/session~1open.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 5,
+  "message": {
+    "id": "c-21",
+    "result": {
+      "mode": "snapshot",
+      "session": {
+        "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+        "agentId": "codex",
+        "title": "Create hello.txt and list files",
+        "cwd": "/Users/me/Desktop/phone-test",
+        "status": "idle",
+        "createdAt": 1760930000,
+        "updatedAt": 1760930400,
+        "lastSeq": 814,
+        "pending": {"approvals": 0, "inputs": 0},
+        "settings": {"model": "gpt-5-codex", "approvalMode": "onRequest", "sandbox": "workspace-write"}
+      },
+      "turns": [
+        {
+          "turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC",
+          "status": "completed",
+          "startedAt": 1760930100,
+          "completedAt": 1760930400,
+          "error": null,
+          "items": [
+            {"itemId": "itm_01JFQ3KB4R2GQ1M9T0ZWXC5N8E", "type": "userMessage", "turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC", "status": "completed", "content": [{"type": "text", "text": "Create a file named hello.txt in the current directory."}], "clientMessageId": "6f1b0c2e-8a4d-4f3e-9b7a-1d2c3e4f5a6b"},
+            {"itemId": "itm_01JFQ3KC7YDV3S6HFA1M0JK9QW", "type": "agentMessage", "turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC", "status": "completed", "text": "Done. Created hello.txt in the current directory."}
+          ]
+        }
+      ],
+      "olderCursor": "cur_older_4f2a",
+      "cursor": 814,
+      "pending": {"approvals": [], "inputs": []}
+    }
+  }
+}

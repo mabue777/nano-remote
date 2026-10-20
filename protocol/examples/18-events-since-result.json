@@ -1,0 +1,18 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/events~1since.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 6,
+  "message": {
+    "id": "c-31",
+    "result": {
+      "events": [
+        {"method": "turn/started", "params": {"sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D", "seq": 813, "turn": {"turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC", "status": "inProgress", "startedAt": 1760930100, "completedAt": null, "error": null, "items": []}}},
+        {"method": "status/changed", "params": {"sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D", "seq": 814, "status": "running"}}
+      ],
+      "cursor": 814,
+      "complete": true
+    }
+  }
+}

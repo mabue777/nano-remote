@@ -1,0 +1,35 @@
+{
+  "$expect": {"schema": "events.json#/$defs/input~1request", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 18,
+  "message": {
+    "method": "input/request",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 838,
+      "request": {
+        "requestId": "req_01JFQ3N1E7CZR5J9B3QWT8MK6D",
+        "kind": "input",
+        "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+        "turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8",
+        "itemId": "itm_01JFQ3QE8G4K0S2XC9AN5YD8QF",
+        "isBlocking": true,
+        "questions": [
+          {
+            "id": "folder",
+            "header": "Folder",
+            "question": "Which folder should the file go in?",
+            "options": [
+              {"label": "Current folder", "description": "Create hello.txt where the session starts."},
+              {"label": "Desktop", "description": "Create hello.txt on the Desktop."}
+            ],
+            "isOther": true,
+            "isSecret": false
+          }
+        ]
+      }
+    }
+  }
+}

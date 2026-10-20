@@ -1,0 +1,16 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/turn~1start.params", "at": "params"},
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 7,
+  "message": {
+    "id": "c-40",
+    "method": "turn/start",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "input": [{"type": "text", "text": "Now list the files in this folder."}],
+      "clientMessageId": "9a0e3c5d-1b2f-4a7e-8d6c-3f4e5a6b7c8d"
+    }
+  }
+}

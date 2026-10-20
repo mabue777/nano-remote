@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-remote.dev/schema/v1/methods.json",
+  "title": "Nano Remote client-to-host request params and results (sections 4, 5.3, 6, 7, 8, 9)",
+  "description": "Each request method M has M.params and M.result. Pointer keys escape / as ~1, e.g. #/$defs/session~1open.params.",
+  "$defs": {
+    "initialize.params": {
+      "type": "object",
+      "required": ["protocolVersion", "client"],
+      "properties": {
+        "protocolVersion": {"type": "integer", "minimum": 1},
+        "client": {"$ref": "common.json#/$defs/ClientInfo"},
+        "optOutNotifications": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "initialize.result": {
+      "type": "object",
+      "required": ["protocolVersion", "host", "device", "agents", "push", "limits"],
+      "properties": {
+        "protocolVersion": {"type": "integer", "minimum": 1},
+        "host": {"$ref": "common.json#/$defs/Host"},
+        "device": {"$ref": "common.json#/$defs/DeviceIdentity"},
+        "agents": {"type": "array", "items": {"$ref": "common.json#/$defs/Agent"}},
+        "push": {
+          "type": "object",
+          "required": ["vapidPublicKey", "subscribed"],
+          "properties": {
+            "vapidPublicKey": {"type": "string"},
+            "subscribed": {"type": "boolean"}
+          }
+        },
+        "limits": {
+          "type": "object",
+          "required": ["maxMessageBytes", "snapshotTurns"],
+          "properties": {
+            "maxMessageBytes": {"type": "integer", "minimum": 1},
+            "snapshotTurns": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+
+    "host/status.params": {"type": "object"},
+    "host/status.result": {"$ref": "common.json#/$defs/HostStatus"},
+
+    "agent/list.params": {"type": "object"},
+    "agent/list.result": {
+      "type": "object",
+      "required": ["agents"],
+      "properties": {
+        "agents": {"type": "array", "items": {"$ref": "common.json#/$defs/Agent"}}
+      }
+    },
+
+    "model/list.params": {
+      "type": "object",
+      "required": ["agentId"],
+      "properties": {"agentId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "model/list.result": {
+      "type": "object",
+      "required": ["models"],
+      "properties": {
+        "models": {"type": "array", "items": {"$ref": "common.json#/$defs/ModelInfo"}}
+      }
+    },
+
+    "fs/readDirectory.params": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {"path": {"type": "string"}}
+    },
+    "fs/readDirectory.result": {
+      "type": "object",
+      "required": ["entries"],
+      "properties": {
+        "entries": {"type": "array", "items": {"$ref": "common.json#/$defs/DirEntry"}}
+      }
+    },
+
+    "project/list.params": {"type": "object"},
+    "project/list.result": {
+      "type": "object",
+      "required": ["projects"],
+      "properties": {
+        "projects": {"type": "array", "items": {"$ref": "common.json#/$defs/ProjectEntry"}}
+      }
+    },
+
+    "session/list.params": {
+      "type": "object",
+      "properties": {
+        "agentId": {"$ref": "common.json#/$defs/Id"},
+        "cursor": {"type": "string"},
+        "limit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "session/list.result": {
+      "type": "object",
+      "required": ["sessions"],
+      "properties": {
+        "sessions": {"type": "array", "items": {"$ref": "common.json#/$defs/SessionSummary"}},
+        "nextCursor": {"type": "string"}
+      }
+    },
+
+    "session/start.params": {
+      "type": "object",
+      "required": ["agentId", "cwd"],
+      "properties": {
+        "agentId": {"$ref": "common.json#/$defs/Id"},
+        "cwd": {"type": "string"},
+        "title": {"type": "string"},
+        "settings": {"type": "object"},
+        "input": {"type": "array", "items": {"$ref": "common.json#/$defs/InputPart"}}
+      }
+    },
+    "session/start.result": {
+      "type": "object",
+      "required": ["session"],
+      "properties": {
+        "session": {"$ref": "common.json#/$defs/Session"},
+        "turn": {"$ref": "common.json#/$defs/Turn"}
+      }
+    },
+
+    "session/open.params": {
+      "type": "object",
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "cursor": {"$ref": "common.json#/$defs/Count"},
+        "turns": {"type": "integer", "minimum": 1}
+      }
+    },
+    "session/open.result": {
+      "oneOf": [
+        {"$ref": "#/$defs/session~1open.result.events"},
+        {"$ref": "#/$defs/session~1open.result.snapshot"}
+      ]
+    },
+    "session/open.result.events": {
+      "type": "object",
+      "required": ["mode", "session", "events", "cursor", "pending"],
+      "properties": {
+        "mode": {"const": "events"},
+        "session": {"$ref": "common.json#/$defs/Session"},
+        "events": {"type": "array", "items": {"$ref": "events.json#/$defs/JournalEvent"}},
+        "cursor": {"$ref": "common.json#/$defs/Count"},
+        "pending": {"$ref": "common.json#/$defs/Pending"}
+      }
+    },
+    "session/open.result.snapshot": {
+      "type": "object",
+      "required": ["mode", "session", "turns", "cursor", "pending"],
+      "properties": {
+        "mode": {"const": "snapshot"},
+        "session": {"$ref": "common.json#/$defs/Session"},
+        "turns": {"type": "array", "items": {"$ref": "common.json#/$defs/TurnWithItems"}},
+        "olderCursor": {"type": "string"},
+        "cursor": {"$ref": "common.json#/$defs/Count"},
+        "pending": {"$ref": "common.json#/$defs/Pending"}
+      }
+    },
+
+    "events/since.params": {
+      "type": "object",
+      "required": ["sessionId", "cursor"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "cursor": {"$ref": "common.json#/$defs/Count"},
+        "limit": {"type": "integer", "minimum": 1},
+        "includeOptedOut": {"type": "boolean"}
+      }
+    },
+    "events/since.result": {
+      "type": "object",
+      "required": ["events", "cursor", "complete"],
+      "properties": {
+        "events": {"type": "array", "items": {"$ref": "events.json#/$defs/JournalEvent"}},
+        "cursor": {"$ref": "common.json#/$defs/Count"},
+        "complete": {"type": "boolean"}
+      }
+    },
+
+    "session/history.params": {
+      "type": "object",
+      "required": ["sessionId", "before"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "before": {"type": "string"},
+        "limit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "session/history.result": {
+      "type": "object",
+      "required": ["turns"],
+      "properties": {
+        "turns": {"type": "array", "items": {"$ref": "common.json#/$defs/TurnWithItems"}},
+        "olderCursor": {"type": "string"}
+      }
+    },
+
+    "session/close.params": {
+      "type": "object",
+      "required": ["sessionId"],
+      "properties": {"sessionId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "session/close.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "session/archive.params": {
+      "type": "object",
+      "required": ["sessionId"],
+      "properties": {"sessionId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "session/archive.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "session/delete.params": {
+      "type": "object",
+      "required": ["sessionId"],
+      "properties": {"sessionId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "session/delete.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "session/rename.params": {
+      "type": "object",
+      "required": ["sessionId", "title"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "title": {"type": "string"}
+      }
+    },
+    "session/rename.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "turn/start.params": {
+      "type": "object",
+      "required": ["sessionId", "input", "clientMessageId"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "input": {"type": "array", "items": {"$ref": "common.json#/$defs/InputPart"}},
+        "clientMessageId": {"$ref": "common.json#/$defs/Uuid"}
+      }
+    },
+    "turn/start.result": {
+      "type": "object",
+      "required": ["turn"],
+      "properties": {"turn": {"$ref": "common.json#/$defs/Turn"}}
+    },
+
+    "turn/steer.params": {
+      "type": "object",
+      "required": ["sessionId", "turnId", "input", "clientMessageId"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "turnId": {"$ref": "common.json#/$defs/Id"},
+        "input": {"type": "array", "items": {"$ref": "common.json#/$defs/InputPart"}},
+        "clientMessageId": {"$ref": "common.json#/$defs/Uuid"}
+      }
+    },
+    "turn/steer.result": {
+      "type": "object",
+      "required": ["turn"],
+      "properties": {"turn": {"$ref": "common.json#/$defs/Turn"}}
+    },
+
+    "turn/interrupt.params": {
+      "type": "object",
+      "required": ["sessionId", "turnId"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "turnId": {"$ref": "common.json#/$defs/Id"}
+      }
+    },
+    "turn/interrupt.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "turn/diff.params": {
+      "type": "object",
+      "required": ["sessionId", "turnId"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "turnId": {"$ref": "common.json#/$defs/Id"}
+      }
+    },
+    "turn/diff.result": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "files": {"type": "array", "items": {"$ref": "common.json#/$defs/FileChange"}}
+      }
+    },
+
+    "approval/resolve.params": {
+      "type": "object",
+      "required": ["sessionId", "requestId", "decision"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "requestId": {"$ref": "common.json#/$defs/Id"},
+        "decision": {"$ref": "common.json#/$defs/Decision"}
+      }
+    },
+    "approval/resolve.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "input/answer.params": {
+      "type": "object",
+      "required": ["sessionId", "requestId", "answers"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "requestId": {"$ref": "common.json#/$defs/Id"},
+        "answers": {
+          "type": "object",
+          "additionalProperties": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "input/answer.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "device/list.params": {"type": "object"},
+    "device/list.result": {
+      "type": "object",
+      "required": ["devices"],
+      "properties": {
+        "devices": {"type": "array", "items": {"$ref": "common.json#/$defs/Device"}}
+      }
+    },
+
+    "device/revoke.params": {
+      "type": "object",
+      "required": ["clientId"],
+      "properties": {"clientId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "device/revoke.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "device/rename.params": {
+      "type": "object",
+      "required": ["clientId", "displayName"],
+      "properties": {
+        "clientId": {"$ref": "common.json#/$defs/Id"},
+        "displayName": {"type": "string"}
+      }
+    },
+    "device/rename.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "push/subscribe.params": {
+      "type": "object",
+      "required": ["subscription"],
+      "properties": {"subscription": {"$ref": "common.json#/$defs/PushSubscription"}}
+    },
+    "push/subscribe.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "push/unsubscribe.params": {
+      "type": "object",
+      "required": ["endpoint"],
+      "properties": {"endpoint": {"type": "string", "minLength": 1}}
+    },
+    "push/unsubscribe.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "push/test.params": {"type": "object"},
+    "push/test.result": {"$ref": "common.json#/$defs/Ok"}
+  }
+}

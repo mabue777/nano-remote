@@ -1,0 +1,13 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/turn~1start.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 7,
+  "message": {
+    "id": "c-40",
+    "result": {
+      "turn": {"turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8", "status": "inProgress", "startedAt": 1760930600, "completedAt": null, "error": null, "items": []}
+    }
+  }
+}

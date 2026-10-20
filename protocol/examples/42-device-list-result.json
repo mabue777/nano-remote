@@ -1,0 +1,16 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/device~1list.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 22,
+  "message": {
+    "id": "c-70",
+    "result": {
+      "devices": [
+        {"clientId": "dev_8f3a9c21", "displayName": "iPhone (Safari)", "platform": "ios-web", "createdAt": 1760900000, "lastSeenAt": 1760930400, "current": true},
+        {"clientId": "dev_1c9e02ab", "displayName": "Mabue MacBook", "platform": "macos", "createdAt": 1760800000, "lastSeenAt": 1760929000, "current": false}
+      ]
+    }
+  }
+}

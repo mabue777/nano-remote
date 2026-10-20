@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-remote.dev/schema/v1/events.json",
+  "title": "Nano Remote notifications (sections 5.2, 6, 8, 9)",
+  "description": "Each notification M has $defs[M] describing its params. Journal events (sequenced) require sessionId and seq.",
+  "$defs": {
+    "JournalPosition": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "seq"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "JournalEvent": {
+      "description": "A Journal event as {method, params}; the shape used inside session/open and events/since results.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "session/changed"
+            },
+            "params": {
+              "$ref": "#/$defs/session~1changed"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "status/changed"
+            },
+            "params": {
+              "$ref": "#/$defs/status~1changed"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "turn/started"
+            },
+            "params": {
+              "$ref": "#/$defs/turn~1started"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "turn/completed"
+            },
+            "params": {
+              "$ref": "#/$defs/turn~1completed"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "item/started"
+            },
+            "params": {
+              "$ref": "#/$defs/item~1started"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "item/delta"
+            },
+            "params": {
+              "$ref": "#/$defs/item~1delta"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "item/completed"
+            },
+            "params": {
+              "$ref": "#/$defs/item~1completed"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "approval/request"
+            },
+            "params": {
+              "$ref": "#/$defs/approval~1request"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "input/request"
+            },
+            "params": {
+              "$ref": "#/$defs/input~1request"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "request/resolved"
+            },
+            "params": {
+              "$ref": "#/$defs/request~1resolved"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "usage/updated"
+            },
+            "params": {
+              "$ref": "#/$defs/usage~1updated"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "const": "session/closed"
+            },
+            "params": {
+              "$ref": "#/$defs/session~1closed"
+            }
+          }
+        }
+      ]
+    },
+    "session/changed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "session"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "common.json#/$defs/Session"
+            }
+          }
+        }
+      ]
+    },
+    "status/changed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "common.json#/$defs/SessionStatus"
+            }
+          }
+        }
+      ]
+    },
+    "turn/started": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "turn"
+          ],
+          "properties": {
+            "turn": {
+              "$ref": "common.json#/$defs/Turn"
+            }
+          }
+        }
+      ]
+    },
+    "turn/completed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "turn"
+          ],
+          "properties": {
+            "turn": {
+              "$ref": "common.json#/$defs/Turn",
+              "properties": {
+                "status": {
+                  "enum": [
+                    "completed",
+                    "interrupted",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "item/started": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "item",
+            "turnId"
+          ],
+          "properties": {
+            "item": {
+              "$ref": "common.json#/$defs/Item"
+            },
+            "turnId": {
+              "$ref": "common.json#/$defs/Id"
+            }
+          }
+        }
+      ]
+    },
+    "item/delta": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "itemId",
+            "turnId",
+            "field",
+            "delta"
+          ],
+          "properties": {
+            "itemId": {
+              "$ref": "common.json#/$defs/Id"
+            },
+            "turnId": {
+              "$ref": "common.json#/$defs/Id"
+            },
+            "field": {
+              "enum": [
+                "text",
+                "summary",
+                "output",
+                "patch"
+              ]
+            },
+            "delta": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "item/completed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "item",
+            "turnId"
+          ],
+          "properties": {
+            "item": {
+              "$ref": "common.json#/$defs/Item"
+            },
+            "turnId": {
+              "$ref": "common.json#/$defs/Id"
+            }
+          }
+        }
+      ]
+    },
+    "approval/request": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "request"
+          ],
+          "properties": {
+            "request": {
+              "$ref": "common.json#/$defs/ApprovalRequest"
+            }
+          }
+        }
+      ]
+    },
+    "input/request": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "request"
+          ],
+          "properties": {
+            "request": {
+              "$ref": "common.json#/$defs/InputRequest"
+            }
+          }
+        }
+      ]
+    },
+    "request/resolved": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "requestId",
+            "kind",
+            "resolvedBy"
+          ],
+          "properties": {
+            "requestId": {
+              "$ref": "common.json#/$defs/Id"
+            },
+            "kind": {
+              "enum": [
+                "command",
+                "fileChange",
+                "permission",
+                "input"
+              ]
+            },
+            "resolvedBy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision": {
+              "$ref": "common.json#/$defs/Decision"
+            },
+            "answers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "usage/updated": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "usage"
+          ],
+          "properties": {
+            "usage": {
+              "$ref": "common.json#/$defs/Usage"
+            }
+          }
+        }
+      ]
+    },
+    "session/closed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JournalPosition"
+        },
+        {
+          "type": "object",
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "session/updated": {
+      "description": "Unsequenced. Session list update.",
+      "type": "object",
+      "required": [
+        "summary"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "common.json#/$defs/SessionSummary"
+        }
+      }
+    },
+    "host/status/changed": {
+      "description": "Unsequenced. Same shape as the host/status result.",
+      "$ref": "common.json#/$defs/HostStatus"
+    },
+    "initialized": {
+      "description": "Client to host notification, sent once after a successful initialize.",
+      "type": "object"
+    }
+  }
+}

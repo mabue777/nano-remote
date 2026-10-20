@@ -1,0 +1,17 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/push~1subscribe.params", "at": "params"},
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 12,
+  "message": {
+    "id": "c-60",
+    "method": "push/subscribe",
+    "params": {
+      "subscription": {
+        "endpoint": "https://web.push.example.invalid/send/dev_8f3a9c21",
+        "keys": {"p256dh": "BNcRdreALRFXTkOOUHK5EXAMPLEKEY", "auth": "tBHItJI5svbpez7KI4CCXg"}
+      }
+    }
+  }
+}

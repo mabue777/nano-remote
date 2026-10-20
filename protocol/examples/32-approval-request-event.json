@@ -1,0 +1,27 @@
+{
+  "$expect": {"schema": "events.json#/$defs/approval~1request", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 17,
+  "message": {
+    "method": "approval/request",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 837,
+      "request": {
+        "requestId": "req_01JFQ3M5W8KAP2H6D0YXS4VN3T",
+        "kind": "command",
+        "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+        "turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8",
+        "itemId": "itm_01JFQ3QD6F3J9R1WB8ZM4XC7PE",
+        "createdAt": 1760930150,
+        "expiresAt": null,
+        "command": "/bin/zsh -lc \"echo hello > hello.txt\"",
+        "cwd": "/Users/me/Desktop/phone-test",
+        "reason": "May I create hello.txt in the current directory?",
+        "availableDecisions": ["accept", "acceptForSession", "decline", "cancel"]
+      }
+    }
+  }
+}

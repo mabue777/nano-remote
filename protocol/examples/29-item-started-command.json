@@ -1,0 +1,16 @@
+{
+  "$expect": {"schema": "events.json#/$defs/item~1started", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 14,
+  "message": {
+    "method": "item/started",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 834,
+      "turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8",
+      "item": {"itemId": "itm_01JFQ3QC2D7E4N0YT9JS6BM1KL", "type": "command", "turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8", "status": "inProgress", "command": "/bin/zsh -lc \"echo hello > hello.txt\"", "cwd": "/Users/me/Desktop/phone-test", "output": ""}
+    }
+  }
+}

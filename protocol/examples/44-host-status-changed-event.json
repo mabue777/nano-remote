@@ -1,0 +1,19 @@
+{
+  "$expect": {"schema": "events.json#/$defs/host~1status~1changed", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 24,
+  "message": {
+    "method": "host/status/changed",
+    "params": {
+      "host": {"hostId": "host_2b7d4e90", "name": "mabue-mbp", "version": "0.1.0", "os": "darwin", "arch": "arm64"},
+      "agents": [
+        {"id": "codex", "name": "Codex", "status": "degraded", "reason": "adapter restarting"},
+        {"id": "claude", "name": "Claude Code", "status": "ready"}
+      ],
+      "sessionsActive": 1,
+      "uptimeSeconds": 86400
+    }
+  }
+}

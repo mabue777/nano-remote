@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-remote.dev/schema/v1/envelope.json",
+  "title": "Nano Remote envelope (protocol v1, section 2)",
+  "description": "One WebSocket text frame. Unknown fields are ignored (section 12), so additionalProperties is true.",
+  "oneOf": [
+    {"$ref": "#/$defs/client_message"},
+    {"$ref": "#/$defs/client_message_chunk"},
+    {"$ref": "#/$defs/server_message"},
+    {"$ref": "#/$defs/server_message_chunk"},
+    {"$ref": "#/$defs/ack"},
+    {"$ref": "#/$defs/ping"},
+    {"$ref": "#/$defs/pong"},
+    {"$ref": "#/$defs/client_closed"}
+  ],
+  "$defs": {
+    "clientId": {"type": "string", "minLength": 1},
+    "streamId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "seqId": {"type": "integer", "minimum": 1},
+    "header": {
+      "type": "object",
+      "required": ["client_id", "stream_id", "seq_id"],
+      "properties": {
+        "client_id": {"$ref": "#/$defs/clientId"},
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "seq_id": {"$ref": "#/$defs/seqId"}
+      }
+    },
+    "noMessage": {"not": {"required": ["message"]}},
+    "chunkBody": {
+      "type": "object",
+      "required": ["segment_id", "segment_count", "message_size_bytes", "message_chunk_base64"],
+      "properties": {
+        "segment_id": {"type": "integer", "minimum": 0},
+        "segment_count": {"type": "integer", "minimum": 1},
+        "message_size_bytes": {"type": "integer", "minimum": 1, "maximum": 16777216},
+        "message_chunk_base64": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 136536,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      }
+    },
+    "client_message": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": {"const": "client_message"},
+            "message": {"$ref": "message.json"}
+          }
+        }
+      ]
+    },
+    "server_message": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": {"const": "server_message"},
+            "message": {"$ref": "message.json"}
+          }
+        }
+      ]
+    },
+    "client_message_chunk": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {"$ref": "#/$defs/chunkBody"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {"type": {"const": "client_message_chunk"}}
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    },
+    "server_message_chunk": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {"$ref": "#/$defs/chunkBody"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {"type": {"const": "server_message_chunk"}}
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    },
+    "ack": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {"type": {"const": "ack"}}
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    },
+    "ping": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type", "state"],
+          "properties": {
+            "type": {"const": "ping"},
+            "state": {"enum": ["foreground", "background"]}
+          }
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    },
+    "pong": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type", "status"],
+          "properties": {
+            "type": {"const": "pong"},
+            "status": {"enum": ["active", "degraded", "draining"]}
+          }
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    },
+    "client_closed": {
+      "allOf": [
+        {"$ref": "#/$defs/header"},
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {"const": "client_closed"},
+            "reason": {"enum": ["background", "user", "error"]}
+          }
+        },
+        {"$ref": "#/$defs/noMessage"}
+      ]
+    }
+  }
+}

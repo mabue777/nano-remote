@@ -1,0 +1,1123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-remote.dev/schema/v1/common.json",
+  "title": "Nano Remote shared objects (sections 4, 5, 6, 8, 9)",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "UnixSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Ok": {
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        }
+      }
+    },
+    "SessionStatus": {
+      "enum": [
+        "idle",
+        "running",
+        "waiting_approval",
+        "waiting_input",
+        "error",
+        "closed"
+      ]
+    },
+    "TurnStatus": {
+      "enum": [
+        "inProgress",
+        "completed",
+        "interrupted",
+        "failed"
+      ]
+    },
+    "ItemStatus": {
+      "enum": [
+        "inProgress",
+        "completed",
+        "failed",
+        "declined"
+      ]
+    },
+    "ApprovalKind": {
+      "enum": [
+        "command",
+        "fileChange",
+        "permission"
+      ]
+    },
+    "Decision": {
+      "enum": [
+        "accept",
+        "acceptForSession",
+        "decline",
+        "cancel"
+      ]
+    },
+    "FileChangeKind": {
+      "enum": [
+        "add",
+        "modify",
+        "delete"
+      ]
+    },
+    "PendingCounts": {
+      "type": "object",
+      "required": [
+        "approvals",
+        "inputs"
+      ],
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/Count"
+        },
+        "inputs": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "SessionSummary": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "agentId",
+        "title",
+        "cwd",
+        "status",
+        "createdAt",
+        "updatedAt",
+        "lastSeq",
+        "pending"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "agentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SessionStatus"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "lastSeq": {
+          "$ref": "#/$defs/Count"
+        },
+        "pending": {
+          "$ref": "#/$defs/PendingCounts"
+        },
+        "preview": {
+          "type": "string"
+        }
+      }
+    },
+    "Settings": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        }
+      }
+    },
+    "Session": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/SessionSummary"
+        },
+        {
+          "type": "object",
+          "required": [
+            "settings"
+          ],
+          "properties": {
+            "settings": {
+              "$ref": "#/$defs/Settings"
+            }
+          }
+        }
+      ]
+    },
+    "TurnError": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "TurnBase": {
+      "type": "object",
+      "required": [
+        "turnId",
+        "status",
+        "startedAt",
+        "completedAt",
+        "error"
+      ],
+      "properties": {
+        "turnId": {
+          "$ref": "#/$defs/Id"
+        },
+        "status": {
+          "$ref": "#/$defs/TurnStatus"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "completedAt": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TurnError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "itemsTruncated": {
+          "type": "boolean",
+          "description": "Snapshot returned only the newest 100 items of this turn."
+        }
+      }
+    },
+    "Turn": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/TurnBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "TurnWithItems": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/TurnBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Item"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ItemBase": {
+      "type": "object",
+      "required": [
+        "itemId",
+        "type",
+        "turnId",
+        "status"
+      ],
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/Id"
+        },
+        "type": {
+          "type": "string"
+        },
+        "turnId": {
+          "$ref": "#/$defs/Id"
+        },
+        "status": {
+          "$ref": "#/$defs/ItemStatus"
+        }
+      }
+    },
+    "Item": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemUserMessage"
+        },
+        {
+          "$ref": "#/$defs/ItemAgentMessage"
+        },
+        {
+          "$ref": "#/$defs/ItemReasoning"
+        },
+        {
+          "$ref": "#/$defs/ItemCommand"
+        },
+        {
+          "$ref": "#/$defs/ItemFileChange"
+        },
+        {
+          "$ref": "#/$defs/ItemToolCall"
+        },
+        {
+          "$ref": "#/$defs/ItemPlan"
+        },
+        {
+          "$ref": "#/$defs/ItemOther"
+        }
+      ]
+    },
+    "ItemUserMessage": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "content"
+          ],
+          "properties": {
+            "type": {
+              "const": "userMessage"
+            },
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InputPart"
+              }
+            },
+            "clientMessageId": {
+              "$ref": "#/$defs/Uuid"
+            }
+          }
+        }
+      ]
+    },
+    "ItemAgentMessage": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "agentMessage"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ItemReasoning": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "summary"
+          ],
+          "properties": {
+            "type": {
+              "const": "reasoning"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ItemCommand": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "command",
+            "cwd",
+            "output"
+          ],
+          "properties": {
+            "type": {
+              "const": "command"
+            },
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "output": {
+              "type": "string"
+            },
+            "exitCode": {
+              "type": "integer"
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "ItemFileChange": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "changes"
+          ],
+          "properties": {
+            "type": {
+              "const": "fileChange"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileChange"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ItemToolCall": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "tool",
+            "arguments"
+          ],
+          "properties": {
+            "type": {
+              "const": "toolCall"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "server": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "object"
+            },
+            "result": {},
+            "error": {}
+          }
+        }
+      ]
+    },
+    "ItemPlan": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "plan"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ItemOther": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ItemBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "raw"
+          ],
+          "properties": {
+            "type": {
+              "const": "other"
+            },
+            "raw": {}
+          }
+        }
+      ]
+    },
+    "InputPart": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InputText"
+        },
+        {
+          "$ref": "#/$defs/InputImage"
+        },
+        {
+          "$ref": "#/$defs/InputMention"
+        }
+      ]
+    },
+    "InputText": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "InputImage": {
+      "type": "object",
+      "required": [
+        "type",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "InputMention": {
+      "type": "object",
+      "required": [
+        "type",
+        "name",
+        "path"
+      ],
+      "properties": {
+        "type": {
+          "const": "mention"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "FileChange": {
+      "type": "object",
+      "required": [
+        "path",
+        "kind",
+        "diff"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileChangeKind"
+        },
+        "diff": {
+          "type": "string"
+        }
+      }
+    },
+    "ApprovalBase": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "kind",
+        "sessionId",
+        "turnId",
+        "itemId",
+        "createdAt",
+        "expiresAt",
+        "reason",
+        "availableDecisions"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApprovalKind"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "turnId": {
+          "$ref": "#/$defs/Id"
+        },
+        "itemId": {
+          "$ref": "#/$defs/Id"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "expiresAt": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        },
+        "availableDecisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "ApprovalCommand": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ApprovalBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "command",
+            "cwd"
+          ],
+          "properties": {
+            "kind": {
+              "const": "command"
+            },
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ApprovalFileChange": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ApprovalBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "changes"
+          ],
+          "properties": {
+            "kind": {
+              "const": "fileChange"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileChange"
+              }
+            },
+            "grantRoot": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ApprovalPermission": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ApprovalBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "permissions",
+            "scope"
+          ],
+          "properties": {
+            "kind": {
+              "const": "permission"
+            },
+            "permissions": {
+              "type": "object"
+            },
+            "scope": {
+              "enum": [
+                "turn",
+                "session"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ApprovalRequest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ApprovalCommand"
+        },
+        {
+          "$ref": "#/$defs/ApprovalFileChange"
+        },
+        {
+          "$ref": "#/$defs/ApprovalPermission"
+        }
+      ]
+    },
+    "InputOption": {
+      "type": "object",
+      "required": [
+        "label",
+        "description"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "InputQuestion": {
+      "type": "object",
+      "required": [
+        "id",
+        "header",
+        "question",
+        "isOther",
+        "isSecret"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "header": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputOption"
+          }
+        },
+        "isOther": {
+          "type": "boolean"
+        },
+        "isSecret": {
+          "type": "boolean"
+        }
+      }
+    },
+    "InputRequest": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "kind",
+        "sessionId",
+        "turnId",
+        "itemId",
+        "isBlocking",
+        "questions"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "const": "input"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "turnId": {
+          "$ref": "#/$defs/Id"
+        },
+        "itemId": {
+          "$ref": "#/$defs/Id"
+        },
+        "isBlocking": {
+          "type": "boolean"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputQuestion"
+          }
+        }
+      }
+    },
+    "Pending": {
+      "type": "object",
+      "required": [
+        "approvals",
+        "inputs"
+      ],
+      "properties": {
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApprovalRequest"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputRequest"
+          }
+        }
+      }
+    },
+    "Agent": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "Host": {
+      "type": "object",
+      "required": [
+        "hostId",
+        "name",
+        "version",
+        "os",
+        "arch"
+      ],
+      "properties": {
+        "hostId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        }
+      }
+    },
+    "HostStatus": {
+      "type": "object",
+      "required": [
+        "host",
+        "agents",
+        "sessionsActive",
+        "uptimeSeconds"
+      ],
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/Host"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Agent"
+          }
+        },
+        "sessionsActive": {
+          "$ref": "#/$defs/Count"
+        },
+        "uptimeSeconds": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "ClientInfo": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "platform"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "userAgent": {
+          "type": "string"
+        }
+      }
+    },
+    "DeviceIdentity": {
+      "type": "object",
+      "required": [
+        "clientId",
+        "displayName"
+      ],
+      "properties": {
+        "clientId": {
+          "$ref": "#/$defs/Id"
+        },
+        "displayName": {
+          "type": "string"
+        }
+      }
+    },
+    "Device": {
+      "type": "object",
+      "required": [
+        "clientId",
+        "displayName",
+        "platform",
+        "createdAt",
+        "lastSeenAt",
+        "current"
+      ],
+      "properties": {
+        "clientId": {
+          "$ref": "#/$defs/Id"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "current": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Usage": {
+      "type": "object",
+      "required": [
+        "inputTokens",
+        "outputTokens"
+      ],
+      "properties": {
+        "inputTokens": {
+          "$ref": "#/$defs/Count"
+        },
+        "outputTokens": {
+          "$ref": "#/$defs/Count"
+        },
+        "contextPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "PushSubscription": {
+      "type": "object",
+      "required": [
+        "endpoint",
+        "keys"
+      ],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "type": "object",
+          "required": [
+            "p256dh",
+            "auth"
+          ],
+          "properties": {
+            "p256dh": {
+              "type": "string"
+            },
+            "auth": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "ProjectEntry": {
+      "type": "object",
+      "required": [
+        "path",
+        "name",
+        "lastUsedAt",
+        "sessions"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "sessions": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "DirEntry": {
+      "type": "object",
+      "required": [
+        "name",
+        "kind",
+        "path"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "dir",
+            "file"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "ModelInfo": {
+      "type": "object",
+      "required": [
+        "id",
+        "displayName",
+        "default"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

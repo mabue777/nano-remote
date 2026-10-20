@@ -1,0 +1,10 @@
+{
+  "type": "client_message_chunk",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 13,
+  "segment_id": 0,
+  "segment_count": 2,
+  "message_size_bytes": 150000,
+  "message_chunk_base64": "eyJpZCI6ImMtNTEiLCJtZXRob2QiOiJpbnB1dC9hbnN3ZXIiLCJwYXJhbXMiOnsic2Vzc2lvbklkIjoic2VzXzAxSkZRM0s4TTJYVzdaNFI5VkJOVEg2QzVEIiwicmVxdWVzdElkIjoicmVxXzAxSkZRM04xRTdDWlI1SjlCM1FXVDhNSzZEIiwiYW5zd2VycyI6eyJmb2xkZXIiOlsiQ3VycmVudCBmb2xkZXIiXX19fQ=="
+}

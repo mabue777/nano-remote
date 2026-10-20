@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-remote.dev/schema/v1/message.json",
+  "title": "Nano Remote message (protocol v1, section 3)",
+  "description": "JSON-RPC-shaped message carried in the envelope message field. Exactly one of four shapes.",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/response"},
+    {"$ref": "#/$defs/error_response"},
+    {"$ref": "#/$defs/notification"}
+  ],
+  "$defs": {
+    "id": {"type": ["string", "integer"]},
+    "method": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]*(/[a-z][A-Za-z0-9]*)*$"
+    },
+    "params": {"type": "object"},
+    "request": {
+      "type": "object",
+      "required": ["id", "method"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "method": {"$ref": "#/$defs/method"},
+        "params": {"$ref": "#/$defs/params"}
+      },
+      "not": {"anyOf": [{"required": ["result"]}, {"required": ["error"]}]}
+    },
+    "response": {
+      "type": "object",
+      "required": ["id", "result"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "result": {"type": "object"}
+      },
+      "not": {"anyOf": [{"required": ["method"]}, {"required": ["error"]}]}
+    },
+    "error_response": {
+      "type": "object",
+      "required": ["id", "error"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "error": {"$ref": "#/$defs/error"}
+      },
+      "not": {"anyOf": [{"required": ["method"]}, {"required": ["result"]}]}
+    },
+    "notification": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {"$ref": "#/$defs/method"},
+        "params": {"$ref": "#/$defs/params"}
+      },
+      "not": {"anyOf": [{"required": ["id"]}, {"required": ["result"]}, {"required": ["error"]}]}
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "not_initialized",
+            "unsupported_protocol",
+            "unauthorized",
+            "invalid_params",
+            "method_not_found",
+            "not_found",
+            "session_busy",
+            "turn_mismatch",
+            "already_resolved",
+            "cursor_expired",
+            "agent_unavailable",
+            "not_supported",
+            "rate_limited",
+            "internal"
+          ]
+        },
+        "message": {"type": "string"},
+        "data": {"type": "object"}
+      }
+    }
+  }
+}

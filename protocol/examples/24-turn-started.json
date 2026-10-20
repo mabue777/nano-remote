@@ -1,0 +1,15 @@
+{
+  "$expect": {"schema": "events.json#/$defs/turn~1started", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 9,
+  "message": {
+    "method": "turn/started",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 815,
+      "turn": {"turnId": "trn_01JFQ3PX9K4M2T7VB0RWHD1ZQ8", "status": "inProgress", "startedAt": 1760930600, "completedAt": null, "error": null, "items": ["itm_01JFQ3QA5M8B2W4XE7NT0GR3DC"]}
+    }
+  }
+}
