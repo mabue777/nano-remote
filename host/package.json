@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Nano Host: the always-on service on the Mac that drives coding agents and serves the web client from host/public",
+  "bin": {
+    "nano-host": "dist/cli/main.js"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -12,7 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js",
     "verify": "node scripts/generate-types.mjs && tsc --noEmit -p tsconfig.json && vitest run"
   },
   "devDependencies": {

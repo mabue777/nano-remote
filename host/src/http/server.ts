@@ -25,7 +25,7 @@ import { checkBindAddresses, resolveTailnet, type TailnetSelf } from './bind.js'
 import { PUBLIC_DIR, SECURITY_HEADERS, serveStatic } from './static.js';
 
 /** Port the host listens on unless configured otherwise. */
-export const DEFAULT_PORT = 8443;
+export const DEFAULT_PORT = 7420;
 
 /** Certificate and key the CLI writes with `tailscale cert --cert-file ... --key-file ...`. */
 export const TLS_CERT_FILE = 'tls-cert.pem';
