@@ -29,4 +29,6 @@ export function contentTypeFor(file: string): string {
 }
 
 export * as core from './core/index.js';
+export * as codex from './adapters/codex/index.js';
+export * as config from './config/index.js';
 export { FakeAdapter, FakeAgent, echoScript, scripted } from './core/testing/fake-adapter.js';

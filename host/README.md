@@ -21,6 +21,17 @@ of `docs/plan/roadmap.md` fills it in.
   ping/pong with the 90 s timeout and the presence registry, chunking both ways, close codes 4001 to
   4010, and the typed method registry behind the initialize-first rule. `StreamServer.notifyStream` and
   `notifyClient` are the send API for the rest of the host.
+- `src/adapters/codex/` is the Codex adapter (protocol-v1.md section 11): `codex app-server` over stdio
+  JSON-RPC, one engine process per session in its own process group. `CodexAgent` is the agent the host
+  registers (health from the engine binary, models from `model/list`); `CodexAdapter` maps threads,
+  turns, items, the three approval kinds and questions onto the session core's adapter events, reports a
+  dead engine as `agent/exited`, and resumes the thread on a new engine at the next call. Its tests run
+  against `testing/fake-app-server.ts`, a fixture-driven fake engine. `live.test.ts` drives the real
+  engine and runs only with `NANO_LIVE_CODEX=1` (never in the gate).
+- `src/config/` holds host configuration. `codexConfig()`: engine binary (default: the one bundled with
+  ChatGPT.app, or `NANO_CODEX_BIN`), engine home (`NANO_CODEX_HOME`, else `CODEX_HOME`, else
+  `~/.config/codex`), the default sandbox (`workspace-write`, or `NANO_CODEX_SANDBOX`) and the fixed
+  approval policy `on-request`. The default model is never taken from the user's config.toml.
 
 Commands (from the repo root):
 
@@ -28,7 +39,8 @@ Commands (from the repo root):
 pnpm -C host generate    # regenerate protocol types for host/ and web/
 pnpm -C host typecheck   # tsc --noEmit
 pnpm -C host test        # vitest run
-pnpm -C host test:coverage  # vitest with v8 coverage; fails below 95% on src/journal or src/stream (on demand, not in the gate)
+pnpm -C host test:coverage  # vitest with v8 coverage; fails below 95% on src/journal or src/stream, 90% on src/core or src/adapters/codex (on demand, not in the gate)
+NANO_LIVE_CODEX=1 pnpm -C host exec vitest run src/adapters/codex/live.test.ts  # the real Codex engine (login and tokens needed)
 pnpm -C host build       # emit dist/ (excludes tests)
 pnpm -C host verify      # generate + typecheck + test; the gate
 ```
