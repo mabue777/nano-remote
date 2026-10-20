@@ -1,0 +1,30 @@
+{
+  "name": "@nano-remote/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nano Remote phone client: a Vite + Preact web app built into host/public and served by Nano Host over the tailnet",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "node ../host/scripts/generate-types.mjs",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "smoke": "playwright test",
+    "verify": "node ../host/scripts/generate-types.mjs && tsc --noEmit -p tsconfig.json && vitest run && vite build && playwright test"
+  },
+  "dependencies": {
+    "preact": "^10.25.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0"
+  }
+}

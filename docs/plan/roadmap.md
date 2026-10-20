@@ -100,7 +100,8 @@ Total: about 13 to 16 weeks of calendar time with parallel dispatch; Phases 1 an
 
 ```
 host/        TypeScript, Node 22+, pnpm; vitest + tsc; verify: pnpm -C host verify
-web/         TypeScript web app (framework chosen in the scaffold ticket), built into host/public; verify: vitest + tsc + playwright smoke
+web/         TypeScript web app (Vite + Preact, see web/README.md), built into host/public; verify: pnpm -C web verify (vitest + tsc + playwright smoke)
+scripts/     verify.sh: protocol check + both package verifies in one gate; bootstrap.sh: first install
 protocol/    protocol-v1.md + JSON Schemas (single source; host and web generate types from it)
 spikes/      throwaway, never dispatched to production paths
 (ios/ appears only if Phase 7 is ever started)

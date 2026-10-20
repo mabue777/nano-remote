@@ -7,6 +7,18 @@
 # dependencies
 node_modules/
 
+# web build output served by the host (pnpm -C web build writes it)
+host/public/
+
+# protocol types generated from protocol/schema by host/scripts/generate-types.mjs
+host/src/generated/
+web/src/generated/
+
+# playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+
 # Expo
 .expo/
 dist/

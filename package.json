@@ -1,0 +1,18 @@
+{
+  "name": "nano-remote",
+  "private": true,
+  "description": "Nano Remote monorepo: host/ (Node service), web/ (phone client built into host/public), protocol/ (JSON Schemas, the single source of types)",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "generate": "pnpm -C host generate",
+    "verify": "pnpm -C host verify && pnpm -C web verify"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

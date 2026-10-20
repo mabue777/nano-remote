@@ -1,0 +1,23 @@
+{
+  "name": "@nano-remote/host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nano Host: the always-on service on the Mac that drives coding agents and serves the web client from host/public",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-types.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "verify": "node scripts/generate-types.mjs && tsc --noEmit -p tsconfig.json && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "json-schema-to-typescript": "^15.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0"
+  }
+}
