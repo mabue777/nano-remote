@@ -12,15 +12,18 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## File structure
 
-This repo is **single-context** — one `CONTEXT.md` + `docs/adr/` at the repo root:
+This repo is **single-context** — one `CONTEXT.md` + `docs/adr/` at the repo root. The layout follows
+`docs/plan/roadmap.md` section 5:
 
 ```
 /
 ├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-example-decision.md
-│   └── 0002-another-decision.md
-└── app/                      ← Expo app source
+├── host/        ← Nano Host daemon (TypeScript, Node, vitest); one adapter per agent
+├── web/         ← web client (Vite + Preact), built into host/public and served by the host
+├── protocol/    ← protocol-v1.md + JSON Schemas (host and web generate types from them)
+├── spikes/      ← throwaway experiments, never production paths
+├── scripts/     ← verify.sh (the full gate) and bootstrap.sh
+└── docs/        ← vision.md, adr/, plan/, research/, agents/
 ```
 
 ## Use the glossary's vocabulary

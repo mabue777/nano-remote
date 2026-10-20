@@ -34,10 +34,13 @@ has moved since it was written.
 ## Status notes (2026-10-20, after the list was written)
 
 - 3b: the Odysseus behavior inventory is complete (`docs/research/rea/odysseus-behaviors.md`).
+- 4a: done; vision.md, docs/agents/domain.md and CONTEXT.md now match ADR 0003 to 0005.
 - 4b: done; research, ADRs, plan and tickets are committed (not yet pushed).
-- 5: in progress in the planning session (`protocol/protocol-v1.md`).
+- 5: done; protocol v1 is frozen (`protocol/protocol-v1.md`, schemas in `protocol/schema/`).
 - 5a: done and closed (`docs/plan/provider-connection.md`).
-- 8: "Phase 2 (iOS)" is now Phase 2 (web client); see ADR 0004.
+- 6: done; the host-drive spike passed for Codex and Claude Code (`spikes/host-drive/NOTES.md`). Kimi stays a separate spike.
+- 7: done; repo scaffold and the full verify gate (`scripts/verify.sh`) are in place and registered with BROCODE.
+- 8: done; the tickets exist in bd under the Phase 1 (host) and Phase 2 (web client) epics, with blocking links. "Phase 2 (iOS)" is now Phase 2 (web client); see ADR 0004.
 - 9: superseded by ADR 0004 and 0005. No Apple Developer Program, no APNs, no TestFlight for v1.
   Replaced by: Tailscale HTTPS certificate for the host, VAPID key on the host, home-screen install.
 - 10: still applies; add Web Push subscription storage and VAPID key handling to the pass.

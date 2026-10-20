@@ -1,6 +1,6 @@
-# Nano Remote protocol v1 (draft)
+# Nano Remote protocol v1 (frozen)
 
-Status: draft for review, 2026-10-20. Ticket: protocol-v1-draft (Phase 0). Freezes at the end of Phase 0.
+Status: Frozen 2026-10-20 at the end of Phase 0 (host-drive spike passed). Changes follow section 12: additive only within v1; removing or renaming anything is v2.
 Owner of the vocabulary: `CONTEXT.md`. Decisions this spec depends on: ADR 0001 (tailnet transport),
 ADR 0002 (host Journal, phone Replica), ADR 0003 (bespoke Nano Host with one adapter per agent),
 ADR 0004 (web client first), ADR 0005 (Web Push from the host).
@@ -411,22 +411,31 @@ unauthorized or revoked, 4008 ping timeout, 4009 message too large, 4010 host dr
 
 ## 11. Adapter mapping (what each agent must provide)
 
-The host has one adapter per agent; each produces the section 5 vocabulary. Unverified rows are what the
-host-drive spike must prove.
+The host has one adapter per agent; each produces the section 5 vocabulary. The Codex column is verified
+by the capture and the host-drive spike, the Claude Code column by the spike, except cells marked
+"unverified", "not probed" or "did not occur". The Kimi column is still unverified.
 
-| Protocol | Codex (app-server over stdio, verified by capture) | Claude Code (Agent SDK, unverified) | Kimi (CLI stream-json, unverified) |
+| Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by spike) | Kimi (CLI stream-json, unverified) |
 |---|---|---|---|
 | `session/start` | `thread/start` | `query()` with a new session | spawn CLI with cwd |
 | `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | host Journal only |
 | `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | write prompt to stdin or new invocation |
-| `turn/steer` | `turn/steer {expectedTurnId}` | queued input (verify) | `not_supported` likely |
+| `turn/steer` | `turn/steer {expectedTurnId}` | queued input (unverified) | `not_supported` likely |
 | `turn/interrupt` | `turn/interrupt` | `query.interrupt()` | SIGINT |
 | `item/*` | `item/started`, `item/*/delta`, `item/completed` | stream message blocks and tool_use/tool_result | stream-json events |
-| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` callback (verify it fires for Bash) | unknown; may need `--yolo` off and prompt parsing |
-| `approval/request` fileChange | `item/fileChange/requestApproval` | `canUseTool` for Edit/Write | unknown |
-| `input/request` | `item/tool/requestUserInput` | `AskUserQuestion` tool via `canUseTool` | unknown |
+| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | unknown; may need `--yolo` off and prompt parsing |
+| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed) and Edit (same callback, not probed separately) | unknown |
+| `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | unknown |
 | `status/changed` | `thread/status/changed` | derived from stream state | derived |
 | `usage/updated` | `thread/tokenUsage/updated` | result message usage | unknown |
+
+The Claude Code approvals and questions reach `canUseTool` only when the adapter passes
+`permissionMode: "default"` and `settingSources: []`. With the user's own settings loaded, auto mode
+approves Bash and Write silently and a deny rule hides `AskUserQuestion` from the model, so the adapter
+must not inherit them. The evidence for this column and for the Codex resume path is
+`spikes/host-drive/NOTES.md` with its logs in `spikes/host-drive/logs/`. For the captured command
+approval, Codex offered only `accept` and `cancel` (plus an object-valued amendment decision the adapter
+drops), so adapters forward the engine's `availableDecisions` list instead of assuming all four decisions.
 
 Engine churn note: the Codex engine is an alpha; the adapter is the only file that knows its method names.
 The schema in `docs/research/rea/codex-app-server-schema/` is regenerated when the bundled engine updates.

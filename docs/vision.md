@@ -57,7 +57,7 @@ We copy the pattern's shape and substitute its one piece we don't own:
 | --- | --- | --- |
 | Agent runtime on the computer | Their desktop app | Host daemon on your Mac |
 | Middle (relay + transcript store) | OpenAI's cloud | **Your Tailscale tailnet + a Journal on the host** |
-| Phone client | ChatGPT iOS app | Our app |
+| Phone client | ChatGPT iOS app | A web app served by the host over the tailnet (native app optional later) |
 
 - **Transport: Tailscale (recorded decision).** The phone reaches the Mac
   over the user's existing tailnet — a private, encrypted, stable address
@@ -72,30 +72,41 @@ We copy the pattern's shape and substitute its one piece we don't own:
   appear the moment you tap send, marked "sending" until the host quietly
   acknowledges. Opening the app shows the last known state immediately and
   then fills in what it missed. Disconnects become catch-up events, not
-  failures. Push notifications (and glanceable Live Activities) only wake the
-  app; they never carry the payload.
+  failures. Push notifications only wake the app; they never carry the
+  payload.
 
 This is what makes the app feel like a native app instead of a remote
 terminal — the exact quality gap felt in earlier experiments.
 
-## The host side (working direction, pending final confirmation)
+## The host side (decided)
 
-The **OpenClaw gateway** — already running locally — is the recommended host
-daemon, rather than building one from scratch. It is Tailscale-native
-(loopback daemon with tailnet serving built in), has cryptographic device
-pairing, and exposes both a plain chat endpoint (compatible with standard LLM
-API clients — phase one) and a full event socket with sessions, approvals,
-and run state (phase two). Claude Code driving is built in; Codex goes
-through its harness; Kimi driving is the open gap the prototype phase must
-validate — with a bespoke daemon as the documented fallback if validation
-fails.
+- **Nano Host, our own daemon (ADR 0003).** A bespoke TypeScript daemon on
+  the Mac, installed as a launchd service, with one adapter per agent: Codex
+  through its `app-server` engine, Claude Code through the Claude Agent SDK,
+  Kimi through its streaming CLI. Each adapter turns its agent into the one
+  protocol vocabulary (`protocol/protocol-v1.md`), so engine changes touch
+  one file. The host owns the Journal, pairing, devices and the tailnet
+  endpoint itself; no third-party gateway sits in between.
+- **The first phone client is a web app (ADR 0004).** Nano Host serves it
+  over the tailnet with Tailscale's HTTPS certificate; you add it to the
+  iPhone home screen. No Apple Developer account, no re-signing, updates on
+  the next open. A native app stays an option for later and would reuse the
+  same protocol.
+- **Notifications are Web Push from the host (ADR 0005).** The phone
+  subscribes through the browser, the host stores the subscription and signs
+  each push with its own key. A push carries only a short title and a link,
+  never session content.
+
+The OpenClaw gateway was studied during research and remains a reference
+for ideas only (docs/research/); it is not part of the build.
 
 ## Where we are
 
-Design records so far (docs/adr/): transport = Tailscale, no cloud relay
-(0001); session state = host Journal with phone Replica (0002). Full vendor
-feature research and OpenClaw protocol recon live in docs/research/.
+Design records (docs/adr/): transport = Tailscale, no cloud relay (0001);
+session state = host Journal with phone Replica (0002); our own host daemon
+with one adapter per agent (0003); web client first, native optional (0004);
+Web Push from the host (0005). Protocol v1 is frozen
+(`protocol/protocol-v1.md`), and the host-drive spike proved an approval round
+trip and resume for Codex and Claude Code (`spikes/host-drive/NOTES.md`).
 
-Next: a prototype validates driving the three coding agents (approvals above
-all) through the host; then the plan becomes a spec and tickets; then build
-work is dispatched.
+Next: Phase 1 builds the host, Phase 2 the web client (docs/plan/roadmap.md).
