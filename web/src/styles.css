@@ -966,3 +966,226 @@ button.danger {
   border: 1px dashed var(--line);
   color: var(--muted);
 }
+
+/* ---- item detail sheet (views/) ---- */
+.item-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-row.user {
+  align-self: flex-end;
+  align-items: flex-end;
+  max-width: 85%;
+}
+
+.item-row.user .msg.user {
+  max-width: 100%;
+}
+
+.open-detail {
+  align-self: flex-end;
+  padding: 2px 0 0;
+  color: var(--muted);
+}
+
+.detail-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 92dvh;
+}
+
+.detail-title {
+  min-width: 0;
+}
+
+.detail-title h2 {
+  margin: 0;
+}
+
+.detail-subtitle {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tab.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+#detail-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mono,
+.output-text,
+.diff-lines,
+.output-command {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.output-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.output-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.output-command {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.output-text {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: 10px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-status {
+  padding: 8px 0;
+}
+
+.diff-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff-file {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.diff-file-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-kind {
+  font-weight: 600;
+  font-size: 0.8rem;
+  flex: none;
+}
+
+.file-kind.added {
+  color: var(--ok);
+}
+
+.file-kind.deleted {
+  color: var(--error);
+}
+
+.file-kind.modified {
+  color: var(--warn);
+}
+
+.file-kind.renamed {
+  color: var(--accent);
+}
+
+.diff-counts {
+  flex: none;
+}
+
+.diff-counts .plus {
+  color: var(--ok);
+}
+
+.diff-counts .minus {
+  color: var(--error);
+}
+
+.diff-body {
+  border-top: 1px solid var(--line);
+}
+
+.diff-body > p {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.diff-lines {
+  margin: 0;
+  padding: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-line {
+  display: block;
+  padding: 0 10px 0 0;
+}
+
+.diff-line .gutter {
+  display: inline-block;
+  width: 1.6em;
+  text-align: center;
+  user-select: none;
+  color: var(--muted);
+}
+
+.diff-line.add {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+}
+
+.diff-line.add .gutter {
+  color: var(--ok);
+}
+
+.diff-line.remove {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+
+.diff-line.remove .gutter {
+  color: var(--error);
+}
+
+.diff-line.hunk {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.diff-line.meta {
+  color: var(--muted);
+}

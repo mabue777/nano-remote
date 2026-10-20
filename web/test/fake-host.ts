@@ -14,7 +14,9 @@
 // approval/resolve, input/answer and device/list (this stream's device plus a desktop) are answered.
 // For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
 // and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
-// and pages session/list by cursor.
+// and pages session/list by cursor. turn/diff is computed from the turn's fileChange items (the last
+// change per path), or refused `not_supported` for sessions in `noDiffs`. runReviewTurn() plays a turn
+// whose command streams colored output until finishReviewTurn() ends it with file edits.
 import type { IncomingMessage, Server } from 'node:http';
 
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -265,6 +267,8 @@ export class FakeHost {
   onRequest: RequestHook | undefined;
   /** When above 0, scripted turns emit one step per this many ms instead of all at once. */
   paceMs = 0;
+  /** Sessions whose agent "does not provide diffs": turn/diff answers not_supported. */
+  readonly noDiffs = new Set<string>();
   private readonly delays = new Map<string, number>();
   private server: WebSocketServer | undefined;
   private refusal: { code: number; reason: string } | undefined;
@@ -364,6 +368,7 @@ export class FakeHost {
     for (const session of this.sessions.values()) clearTimeout(session.running?.timer);
     this.sessions.clear();
     this.delays.clear();
+    this.noDiffs.clear();
     this.nextSession = 0;
   }
 
@@ -615,6 +620,18 @@ export class FakeHost {
             ],
           },
         };
+      case 'turn/diff': {
+        const session = this.session(params.sessionId);
+        if (this.noDiffs.has(params.sessionId)) throw new HostError({ code: 'not_supported', message: 'this adapter has no diffs' });
+        const turn = session.turns.find((t) => t.turnId === params.turnId);
+        if (turn === undefined) throw new HostError({ code: 'not_found', message: `no turn ${params.turnId}` });
+        const files = new Map<string, Json>();
+        for (const id of turn.items) {
+          const item = session.items.get(id);
+          if (item?.type === 'fileChange') for (const change of item.changes) files.set(change.path, change);
+        }
+        return { result: { files: [...files.values()] } };
+      }
       case 'host/status':
         return { result: exampleMessage('44').params };
       default:
@@ -715,6 +732,45 @@ export class FakeHost {
       this.emit(sessionId, 'status/changed', { status: 'waiting_approval' });
     });
     this.play(session, steps);
+  }
+
+  /**
+   * A turn for the review views: a command whose output (with ANSI colors) streams one chunk per paced
+   * step and keeps running until finishReviewTurn(). Returns the command's itemId.
+   */
+  runReviewTurn(sessionId: string, chunks: string[], command = '/bin/zsh -lc "npm test"'): string {
+    const session = this.session(sessionId);
+    const turn = this.newTurn(session, undefined);
+    const running = session.running!;
+    const turnId = turn.turnId;
+    const itemId = running.commandItemId;
+    const steps: (() => void)[] = [
+      () => {
+        this.emit(sessionId, 'turn/started', { turn: { ...turn, items: [] } });
+        this.emit(sessionId, 'status/changed', { status: 'running' });
+        this.emit(sessionId, 'item/started', { turnId, item: { itemId, type: 'command', turnId, status: 'inProgress', command, cwd: session.summary.cwd, output: '' } });
+      },
+      ...chunks.map((delta) => () => {
+        this.emit(sessionId, 'item/delta', { itemId, turnId, field: 'output', delta });
+      }),
+    ];
+    this.play(session, steps);
+    return itemId;
+  }
+
+  /** Ends the review turn: the command completes, files are changed, the turn completes. */
+  finishReviewTurn(sessionId: string, changes: Json[]): void {
+    const session = this.session(sessionId);
+    const running = session.running;
+    if (running === undefined) throw new Error('no review turn running');
+    clearTimeout(running.timer);
+    const turnId = running.turnId;
+    const command = session.items.get(running.commandItemId);
+    this.emit(sessionId, 'item/completed', { turnId, item: { ...command, status: 'completed', exitCode: 0, durationMs: 1500 } });
+    const item = { itemId: `itm_fake_${++this.nextId}`, type: 'fileChange', turnId, status: 'completed', changes };
+    this.emit(sessionId, 'item/started', { turnId, item: { ...item, status: 'inProgress' } });
+    this.emit(sessionId, 'item/completed', { turnId, item });
+    this.finishTurn(sessionId, 'completed');
   }
 
   /** P7 and P8: the decision, then the rest of the turn. */

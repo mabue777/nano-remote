@@ -15,6 +15,7 @@ import type {
   SessionOpenResult,
   SessionStartParams,
   SessionStartResult,
+  TurnDiffResult,
   TurnStartResult,
   TurnSteerResult,
 } from '../generated/methods';
@@ -420,6 +421,11 @@ export class Replica {
    */
   steer(sessionId: string, turnId: string, input: InputPart[], clientMessageId: string): Promise<TurnSteerResult> {
     return this.client.request<TurnSteerResult>('turn/steer', { sessionId, turnId, input, clientMessageId });
+  }
+
+  /** turn/diff: the net change of a turn, for the diff view; adapters without diffs reject not_supported. */
+  turnDiff(sessionId: string, turnId: string): Promise<TurnDiffResult> {
+    return this.client.request<TurnDiffResult>('turn/diff', { sessionId, turnId });
   }
 
   /** A fresh clientMessageId (the same source sendMessage uses). */

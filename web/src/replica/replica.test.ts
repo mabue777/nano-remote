@@ -415,6 +415,15 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     client.last('turn/steer').resolve({ turn: turn('t1') });
     await expect(done).resolves.toEqual({ turn: turn('t1') });
   });
+
+  it('turnDiff sends turn/diff and returns the files', async () => {
+    const { client, replica } = setup();
+    const done = replica.turnDiff(SID, 't1');
+    expect(client.last('turn/diff').params).toEqual({ sessionId: SID, turnId: 't1' });
+    const files = [{ path: 'a.txt', kind: 'add', diff: '@@ -0,0 +1 @@\n+a\n' }];
+    client.last('turn/diff').resolve({ files });
+    await expect(done).resolves.toEqual({ files });
+  });
 });
 
 describe('Replica: older turns (session/history, spec 6)', () => {

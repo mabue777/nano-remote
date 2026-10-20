@@ -265,6 +265,8 @@ export class SessionModel extends Model {
   openError: string | undefined;
   /** Bumped when the view should scroll to the bottom (after a send). */
   scrollRequest = 0;
+  /** The item whose detail sheet (views/ItemDetailSheet) is open. */
+  detailItemId: string | undefined;
   private interruptingTurn: string | undefined;
   private readonly replica: SessionReplica;
   private readonly expanded = new Set<string>();
@@ -518,6 +520,19 @@ export class SessionModel extends Model {
 
   toggleReasoning(itemId: string): void {
     if (!this.expanded.delete(itemId)) this.expanded.add(itemId);
+    this.changed();
+  }
+
+  /** Opens the detail sheet (output, changes) for an item of the turn list. */
+  openItem(itemId: string): void {
+    if (this.view?.items[itemId] === undefined || this.detailItemId === itemId) return;
+    this.detailItemId = itemId;
+    this.changed();
+  }
+
+  closeItem(): void {
+    if (this.detailItemId === undefined) return;
+    this.detailItemId = undefined;
     this.changed();
   }
 

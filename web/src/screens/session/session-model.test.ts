@@ -194,6 +194,15 @@ describe('SessionModel: what the screen shows', () => {
     expect(model.turns[0]!.items[2]).toMatchObject({ expanded: true });
     model.toggleReasoning('r1');
     expect(model.turns[0]!.items[2]).toMatchObject({ expanded: false });
+    // The detail sheet opens for a known item only, once; closing twice is harmless.
+    model.openItem('nope');
+    expect(model.detailItemId).toBeUndefined();
+    model.openItem('r1');
+    model.openItem('r1');
+    expect(model.detailItemId).toBe('r1');
+    model.closeItem();
+    model.closeItem();
+    expect(model.detailItemId).toBeUndefined();
     expect(model.usage).toBe('1,200 in · 340 out · 4% of context');
     expect(model.status).toMatchObject({ label: 'Finished', tone: 'ok' });
     expect(model.mode).toBe('send');

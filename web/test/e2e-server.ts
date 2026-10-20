@@ -13,7 +13,10 @@
 // `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
 // `POST /test/request {sessionId, request}` puts any approval or question up (answers {requestId});
 // `POST /test/resolve-request {sessionId, requestId, by?, decision?, answers?}` answers it from another
-// device; `POST /test/last {method}` returns the params of the last request of that method.
+// device; `POST /test/last {method}` returns the params of the last request of that method;
+// `POST /test/review {sessionId, chunks}` starts a turn whose command streams `chunks` (answers {itemId}),
+// `POST /test/review-finish {sessionId, changes}` completes it with those file changes, and
+// `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session.
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -104,6 +107,14 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/last':
               return json(200, { params: host.requestLog.filter((r) => r.method === body.method).at(-1)?.params ?? null });
+            case '/test/review':
+              return json(200, { itemId: host.runReviewTurn(body.sessionId, body.chunks ?? []) });
+            case '/test/review-finish':
+              host.finishReviewTurn(body.sessionId, body.changes ?? []);
+              return json(200, { ok: true });
+            case '/test/no-diffs':
+              host.noDiffs.add(body.sessionId);
+              return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);
               return json(200, { ok: true });

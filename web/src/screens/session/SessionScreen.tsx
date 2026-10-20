@@ -1,5 +1,5 @@
 // The session page, /s/:sessionId: the turn list, the pending-request banner, the approval and question
-// cards (approvals/), and the composer. All state and rules live in SessionModel and ApprovalsModel; this
+// cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this
 // file renders them and owns only the DOM work (scrolling, the pull-down gesture, keeping the reading
 // position when older turns are put in front).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -9,6 +9,7 @@ import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import { SessionModel, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import { ItemDetailSheet } from './views/ItemDetailSheet';
 
 /** How far (px) the list must be pulled down at the top before letting go loads older turns. */
 const PULL_THRESHOLD = 70;
@@ -176,6 +177,9 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
 
       <PinnedQuestions model={requests} />
       <Composer model={model} running={running} />
+      {model.detailItemId !== undefined && (
+        <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} onClose={() => model.closeItem()} />
+      )}
     </main>
   );
 }
@@ -184,7 +188,7 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
   return (
     <li class={`turn ${turn.status}`} data-turn-status={turn.status}>
       {turn.items.map((item) => (
-        <Item key={item.itemId} item={item} model={model} />
+        <OpenableItem key={item.itemId} item={item} model={model} />
       ))}
       {turn.label !== '' && <p class={`turn-state small ${turn.tone}`}>{turn.label}</p>}
       {turn.error !== undefined && (
@@ -211,6 +215,41 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
         </div>
       )}
     </li>
+  );
+}
+
+/** What a short label of an item says, for the button that opens its detail sheet. */
+const ITEM_NAME: Record<ItemRow['kind'], string> = {
+  user: 'message',
+  agent: 'agent message',
+  reasoning: 'thinking',
+  command: 'command',
+  fileChange: 'file change',
+  tool: 'tool call',
+  plan: 'plan',
+  other: 'activity',
+};
+
+/**
+ * An item of the turn list that opens the detail sheet: a tap anywhere on it that does not hit one of its
+ * own controls, or its details button (keyboard and screen readers).
+ */
+function OpenableItem({ item, model }: { item: ItemRow; model: SessionModel }) {
+  return (
+    <div
+      class={`item-row ${item.kind === 'user' ? 'user' : ''}`}
+      data-item-id={item.itemId}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, a, summary, input, textarea, select') !== null) return;
+        if (window.getSelection()?.isCollapsed === false) return; // selecting text, not opening
+        model.openItem(item.itemId);
+      }}
+    >
+      <Item item={item} model={model} />
+      <button type="button" class="link small open-detail" aria-label={`Details of ${ITEM_NAME[item.kind]}`} onClick={() => model.openItem(item.itemId)}>
+        {item.kind === 'command' ? 'Output ›' : 'Details ›'}
+      </button>
+    </div>
   );
 }
 
@@ -245,12 +284,6 @@ function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
             <span class={`state small ${item.tone}`}>{item.state}</span>
             <code class="summary">{item.summary}</code>
           </div>
-          {item.output !== '' && (
-            <details>
-              <summary class="small muted">Output</summary>
-              <pre>{item.output}</pre>
-            </details>
-          )}
         </div>
       );
     case 'fileChange':
