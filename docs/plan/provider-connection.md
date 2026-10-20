@@ -3,7 +3,7 @@
 Status: design note for Phase 0 (ticket provider-connection-design). Inputs: operator's request to copy
 the ease of odysseus-dev/odysseus; `docs/research/odysseus-providers.md`;
 `docs/research/rea/odysseus-behaviors.md` (items 17 to 59, 107 to 113). Odysseus is AGPL-3.0, so we
-copy patterns, never code. Scope: local chat mode on the phone (ADR 0004) and, where noted, the host's
+copy patterns, never code. Scope: local chat mode in the web client (ADR 0004) and, where noted, the host's
 agent picker. Vocabulary: a **Provider** is a reachable model endpoint; a **Model** belongs to one Provider.
 
 ## 1. The rule: a Provider is a URL plus a key
@@ -72,8 +72,9 @@ OAuth identities, a terms-of-service risk the Odysseus inventory flagged).
 
 ## 5. Storage, security, portability
 
-- Keys only in the Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`); records in the app's
-  SQLite; exports never include keys.
+- Keys for local chat live either on the host (preferred when a host is paired; the phone never
+  sees them) or, for host-less use, in the web app's storage on the phone, encrypted with a key held
+  in the browser's credential store; exports never include keys. (A native client would use the Keychain.)
 - Export and import of provider configs as JSON without secrets, plus a QR for sharing a provider's
   URL and name between the user's own devices. This is a gap Odysseus has (no endpoint export).
 - Local network: iOS requires the local-network permission for LAN hosts; request it only when the

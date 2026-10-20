@@ -37,35 +37,33 @@ its hooks (permission request events) or its streaming JSON CLI mode driven by t
 OpenClaw is not used: it would add a fast-moving third-party gateway for one agent and a different
 approval model from the other two. The recon memo in `docs/research/openclaw-remote.md` stays as history.
 
-### D2. Phone app stack: native SwiftUI, or Expo/React Native (nano-ai heritage)?
-Recommendation: **native SwiftUI, iOS 18+, iPhone first.** Why: the bar is the ChatGPT iOS app, whose
-polish comes from native Live Activities, Dynamic Island, Face ID lock, keychain-held device keys,
-time-sensitive notifications, and tight background behavior. nano-ai's Expo code was already removed from
-this repo; its UX ideas (chat feel, settings, provider picker) carry over as design, not code. The
-OpenClawKit Swift client in the sibling repo is a working reference for a tailnet WebSocket client.
-Cost: no Android in v1. If Android is a must, choose Expo now and accept weaker Live Activity and
-background behavior; do not plan to switch later.
+### D2. Phone client: web app served by the host first; native optional later
+Decided 2026-10-20 (ADR 0004). The operator does not want the Apple Developer Program to be required.
+Without it a native app has no push, no Live Activity updates, weekly re-signing and no sharing. So the
+first client is a web app that Nano Host serves over the tailnet (HTTPS from Tailscale), added to the
+home screen, with Web Push. The host and protocol are client-agnostic; a native SwiftUI client is a
+documented later option if the operator ever enrolls. nano-ai's UX ideas carry over as design.
+Cost: no Dynamic Island or Live Activities in v1; passcode or WebAuthn lock instead of native Face ID.
 
-### D3. Push notifications without a cloud relay
-Recommendation: **a minimal "push wake" service we run, carrying no content.** Why: Apple only delivers
-pushes from a server holding the app's APNs key. Embedding that key in a host binary on users' Macs is a
-leak. The service accepts `{device_token, kind}` from a host and forwards an empty wake to APNs; all
-content stays on the tailnet, which matches the spirit of ADR 0001 (no traffic relay) and the letter of
-ADR 0002 (pushes only wake the app). The captures show the rule to copy: push completion only when the
-phone's stream is closed, push approvals always, and replay pending approvals when the phone resumes.
-Alternative: no push at all in v1 and rely on the roughly 30 s of background socket iOS allows after lock.
-That fails the "start it from the train" bar in the vision.
+### D3. Notifications: Web Push sent by the host, no service of our own
+Decided 2026-10-20 (ADR 0005). The host stores the phone's Web Push subscription and signs pushes with
+its own VAPID key; no Apple account, no APNs, no server of ours. Pushes carry a title and a link only.
+Rules copied from the captures: push completion only when the phone's stream is closed, push approvals
+always, replay pending approvals on resume. A native client, if ever built, would need APNs and a small
+content-free wake service; that is a future decision.
 
 ## 3. Architecture (what the decisions imply)
 
 ```
- iPhone (SwiftUI)                 Tailnet                    Mac
+ iPhone (home-screen web app)     Tailnet                    Mac
  Replica per session   <== WSS envelope stream ==>   Nano Host (Node, launchd)
- device key (SE)       pair: QR = tailnet addr + code    Journal (SQLite, seq per session)
- local chat (Ollama…)  ---- direct HTTPS to provider      Adapters: Codex app-server (stdio JSON-RPC)
-                                                                    Claude Agent SDK
-                                                                    Kimi CLI (stream-json)
- APNs  <-- push wake service <-- host (empty wake, kind only)
+ WebAuthn device key   pair: QR = tailnet addr + code    serves the web app over HTTPS (Tailscale cert)
+ local chat (Ollama…)  ---- direct HTTPS to provider      Journal (SQLite, seq per session)
+                                                           Adapters: Codex app-server (stdio JSON-RPC)
+                                                                     Claude Agent SDK
+                                                                     Kimi CLI (stream-json)
+ browser push service  <-- Web Push (VAPID) <-- host (title + link only)
+ (optional later: native SwiftUI client on the same protocol)
 ```
 
 - **Protocol v1** (documented in `protocol/`): envelope `{type, client_id, stream_id, seq_id, cursor?, message}`
@@ -89,22 +87,23 @@ from the planning session. Durations are calendar estimates for one operator rev
 |---|---|---|---|
 | 0 Decide | ADR 0003 to 0005; spike repo `spikes/host-drive` driving Codex and Claude to an approval round trip from a scripted client; protocol v1 draft | Spike log shows `approval/request` → `accept` → turn completed for both agents | 1 week |
 | 1 Host v0 | `host/` package: Codex adapter, Journal, envelope server, pairing, device list, launchd installer, `nano-host` CLI | Scripted client: pair, open session, turn, approval, kill and resume with catch-up from cursor; 95% test coverage on Journal and envelope layers; verify gate green | 2 to 3 weeks |
-| 2 iOS v0 | `ios/` app: pairing scanner, host list with online dots, session list, session view with Replica, composer, approvals, questions, output and diff views, interrupt | On-device over tailnet, away from home: send appears instantly, approval round trip under 1 s, lock and reopen shows catch-up; TestFlight build | 3 to 4 weeks |
-| 3 Wake and glance | Push wake service, APNs registration, notification rules from the captures, Live Activity with task count and state | Locked phone gets completion push only when disconnected, approval push always; Live Activity updates | 2 weeks |
+| 2 Web client v0 | `web/` app served by the host: pairing by QR, host status, session list, session view with Replica, composer, approvals, questions, output and diff views, interrupt; installable to the home screen | On the phone over the tailnet, away from home: send appears instantly, approval round trip under 1 s, lock and reopen shows catch-up | 3 to 4 weeks |
+| 3 Wake | Web Push subscription and VAPID signing on the host, notification rules from the captures, badge and in-app task states | Locked phone gets completion push only when disconnected, approval push always; tapping opens the session | 1 week |
 | 4 More agents | Claude Code adapter (SDK), Kimi adapter (spike first), per-session agent picker, per-agent approval mapping | Same acceptance as Phase 1 for each adapter; Kimi either passes or is cut from v1 marketing | 2 to 3 weeks |
 | 5 Local chat | Provider settings, model picker, streaming chat, nano-ai feature parity list | Works with Ollama on LAN and a cloud OpenAI-compatible endpoint; no host required | 2 weeks |
-| 6 Polish and ship | Onboarding, empty and error states, accessibility, settings, host installer (Homebrew), App Store listing, privacy text | Impeccable-style audit passed; crash-free TestFlight week; release checklist done | 2 weeks |
+| 6 Polish and ship | Onboarding (including Tailscale and home-screen install), empty and error states, accessibility, settings, host installer (Homebrew), privacy text | Impeccable-style audit passed; a week of daily use without a reload bug; release checklist done | 2 weeks |
+| 7 Optional | Native SwiftUI client on the same protocol (Live Activities, Dynamic Island, Face ID), only if the operator enrolls in the Apple Developer Program | Same acceptance as Phase 2 plus push via APNs | later |
 
-Total: about 14 to 17 weeks of calendar time with parallel dispatch; Phases 1 and 2 overlap once protocol v1 is frozen.
+Total: about 13 to 16 weeks of calendar time with parallel dispatch; Phases 1 and 2 overlap once protocol v1 is frozen.
 
 ## 5. Repository layout and gates
 
 ```
 host/        TypeScript, Node 22+, pnpm; vitest + tsc; verify: pnpm -C host verify
-ios/         Xcode project, Swift Package for NanoKit (protocol client, Replica); verify: xcodebuild test
-protocol/    protocol-v1.md + JSON Schemas (single source; host and iOS generate types from it)
-push/        tiny Node service (Phase 3); verify: vitest
+web/         TypeScript web app (framework chosen in the scaffold ticket), built into host/public; verify: vitest + tsc + playwright smoke
+protocol/    protocol-v1.md + JSON Schemas (single source; host and web generate types from it)
 spikes/      throwaway, never dispatched to production paths
+(ios/ appears only if Phase 7 is ever started)
 docs/        vision, adr, plan, research
 ```
 Dispatch prerequisites per the BROCODE rules: a confirmed verification command per package, runs under
@@ -126,10 +125,10 @@ ten minutes, no full reinstalls. Each ticket states its evidence: a log, a test,
   in CI, and keep the adapter behind our own vocabulary so a protocol change touches one file.
 - **Claude approvals through the SDK.** Unverified until the Phase 0 spike; fallback is Claude Code's hooks or its streaming CLI mode, inside the same adapter.
 - **Kimi driving.** Unknown; the plan treats it as a spike with a cut line.
-- **iOS background limits.** The captures show about 30 s of socket after lock. Design assumes it; push wake covers the rest.
+- **iOS background limits.** The captures show about 30 s of socket after lock. Design assumes it; Web Push covers the rest.
+- **Web Push on iOS** needs the app installed to the home screen and iOS 16.4+; onboarding must walk the user through it.
 - **Tailscale on the phone.** Requires the Tailscale app and its VPN profile; onboarding must detect and explain it.
-- **Push service is a cloud piece.** Keep it stateless and content-free; document it in ADR 0003 so it does
-  not grow into the relay ADR 0001 rejected.
+- **Web vs native feel.** No Live Activities or Dynamic Island; the chat view must be tuned (virtualized list, optimistic Replica) to feel instant.
 - **Scope creep from the vendor feature list.** v1 is sessions, approvals, questions, output, diffs,
   interrupt, push, and local chat. Voice, screen sharing, computer use, and cloud agents are out.
 
