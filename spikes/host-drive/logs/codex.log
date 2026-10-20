@@ -1,0 +1,8 @@
+2026-10-20T09:10:18.300Z  1. session/start  ok sessionId=ses_2pevdf8x engineSession=01a15893-68f5-7e81-b285-adc704bd6f0d cwd=/tmp/nano-host-drive/codex enginePid=59117
+2026-10-20T09:10:18.316Z  2. turn/start  ok turnId=01a15893-69c1-7550-a0f3-3b336f60a79c engineSession=01a15893-68f5-7e81-b285-adc704bd6f0d prompt="Create a file named hello.txt in the current directory conta..."
+2026-10-20T09:10:28.804Z  3. approval/request received  seq=11 requestId=req_0 kind=command engineMethod=item/commandExecution/requestApproval command="/bin/zsh -lc \"python3 -c 'from pathlib import Path; Path(\\\"hello.txt\\\").write_text(\\\"hello\\\")'\"" availableDecisions=accept,cancel
+2026-10-20T09:10:28.804Z  4. approval/resolve (accept) sent  requestId=req_0 reply={"ok":true}
+2026-10-20T09:10:35.315Z  5. turn/completed  seq=22 turnId=01a15893-69c1-7550-a0f3-3b336f60a79c status=completed hello.txt="hello"
+2026-10-20T09:10:35.325Z  6. process killed  pid=59117 signal=SIGKILL exitCode=null phoneOffline cursor=22
+2026-10-20T09:10:39.984Z  7. session resumed  newPid=59225 engineSession=01a15893-68f5-7e81-b285-adc704bd6f0d (same id) thread/resume returned 1 prior turn(s) [completed]; follow-up turnId=01a15893-adcd-7a21-9cc4-322703a196db ran while phone offline, journal head=31
+2026-10-20T09:10:39.985Z  8. catch-up delivered  session/open mode=events cursor 22->31 events=9 [status/changedx3 turn/startedx1 item/startedx2 item/completedx2 turn/completedx1] pendingApprovals=0 phone.lastApplied=31 followUpReply="hello.txt"
