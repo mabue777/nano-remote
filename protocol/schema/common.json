@@ -136,6 +136,10 @@
         },
         "preview": {
           "type": "string"
+        },
+        "lastTurnStatus": {
+          "$ref": "#/$defs/TurnStatus",
+          "description": "Status of the session's newest turn; absent while the session has no turn."
         }
       }
     },

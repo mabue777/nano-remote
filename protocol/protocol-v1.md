@@ -195,6 +195,9 @@ with the same shape whenever an agent's status changes.
 ```
 `status`: `idle` | `running` | `waiting_approval` | `waiting_input` | `error` | `closed`. (Codex:
 `idle`, `active{activeFlags}`, `systemError`; Claude and Kimi map to the same five.)
+Optional `lastTurnStatus` (a Turn `status`, below) is the status of the newest turn, absent while the
+session has none; the list shows "finished", "interrupted" or "failed" from it without opening the session
+(additive within v1).
 
 **Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model`).
 
