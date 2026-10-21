@@ -3,12 +3,20 @@
 import type { PushSubscription } from '../generated/common.js';
 import { isObject } from '../stream/guard.js';
 import { RpcError, type MethodRegistry } from '../stream/router.js';
+import { PUSH_TTL, type PushSender } from './sender.js';
 import type { PushSubscriptionStore } from './subscriptions.js';
+
+/** The body of the `push/test` notification. */
+export const TEST_PUSH_BODY = 'Test notification from Nano Host';
 
 export interface PushMethodsOptions {
   subscriptions: PushSubscriptionStore;
   /** Event name and clientId only: the endpoint and keys are capabilities and are never logged. */
   log?: (event: string, clientId: string) => void;
+  /** Sends `push/test`; without it `push/test` answers `not_supported`. */
+  sender?: PushSender;
+  /** The test notification's title: this Mac's name. */
+  hostName?: () => string;
 }
 
 type Params = Record<string, unknown>;
@@ -52,8 +60,35 @@ export function registerPushMethods(registry: MethodRegistry, options: PushMetho
       log('push.unsubscribed', context.clientId);
       return { ok: true as const };
     })
-    .register('push/test', () => {
-      // The sender (RFC 8291 encryption, VAPID JWT) comes in the next step of Phase 3.
-      throw new RpcError('not_supported', 'push/test is not available yet');
+    .register('push/test', async (_params, context) => {
+      const { sender } = options;
+      if (!sender) throw new RpcError('not_supported', 'push sending is not configured on this host');
+      const stored = subscriptions.get(context.clientId);
+      if (!stored) {
+        throw new RpcError('not_found', 'this device has no push subscription; turn notifications on first', {
+          reason: 'no_subscription',
+        });
+      }
+      const payload = { title: options.hostName?.() ?? 'Nano Host', body: TEST_PUSH_BODY, url: '/' };
+      const result = await sender.send(context.clientId, stored.subscription, payload, { ttl: PUSH_TTL.approval, topic: 'push-test' });
+      switch (result.outcome) {
+        case 'delivered':
+          return { ok: true as const };
+        case 'gone':
+          // The push service dropped the subscription: forget it so initialize says subscribed: false.
+          subscriptions.deleteByEndpoint(stored.subscription.endpoint);
+          log('push.expired', context.clientId);
+          throw new RpcError('not_found', 'the push subscription expired; turn notifications on again', {
+            reason: 'subscription_expired',
+            status: result.status,
+          });
+        case 'failed':
+          throw new RpcError('internal', `the push service refused the message (HTTP ${result.status})`, {
+            reason: 'push_failed',
+            status: result.status,
+          });
+        case 'error':
+          throw new RpcError('internal', `the push could not be sent (${result.reason})`, { reason: result.reason });
+      }
     });
 }

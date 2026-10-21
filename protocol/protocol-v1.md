@@ -384,6 +384,10 @@ The security pass before Phase 1 (todo item 10) owns code lifetime, token storag
 
 - `push/subscribe {subscription}` stores the browser's `PushSubscription` JSON for this `clientId`;
   `push/unsubscribe` removes it; `push/test` sends one. The VAPID public key comes from `initialize`.
+- `push/test` answers `{ok: true}` once the push service accepted the message. Errors the web app shows:
+  `not_found` with `data.reason` `no_subscription`, or `subscription_expired` (the push service answered
+  404 or 410 and the host deleted the subscription; subscribe again); `internal` with `data.reason`
+  `push_failed` (`data.status`), `timeout` or `network`.
 - Payload: `{title, body, url}` only; `url` deep-links to the session. Never session content beyond a one-line title.
 - Rules, copied from the captured behavior (runtime-capture N1 to N3):
 

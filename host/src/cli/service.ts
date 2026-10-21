@@ -20,7 +20,9 @@ import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
 import { HostServer } from '../http/server.js';
 import { DEFAULT_SNAPSHOT_TURNS, Journal } from '../journal/journal.js';
+import { PushSender } from '../push/sender.js';
 import { ensureVapidKeys } from '../push/vapid.js';
+import { VapidSigner } from '../push/vapid-jwt.js';
 import { MAX_MESSAGE_BYTES } from '../stream/constants.js';
 import { MethodRegistry } from '../stream/router.js';
 import type { HostConfig } from './config.js';
@@ -117,6 +119,8 @@ export class HostService {
     // The NanoHost folder holds the control secret, the VAPID key and usually the TLS key: 0700 (item 5).
     ensurePrivateDir(path.dirname(options.configPath));
     const vapid = ensureVapidKeys(vapidKeysPath(options.configPath));
+    // One log line per push: clientId, outcome, status code, duration. Never the endpoint, keys or payload.
+    const pushSender = new PushSender({ signer: new VapidSigner({ keys: vapid }), log: (fields) => logger.info('push.sent', { ...fields }) });
     const journal = new Journal({
       path: config.journalPath,
       onListenerError: (error, event) => logger.error('journal.listener_failed', { method: event.method, seq: event.params.seq, error }),
@@ -145,6 +149,7 @@ export class HostService {
       server = await HostServer.start({
         registry,
         devices,
+        pushSender,
         host: () => ({ hostId: host.hostId, name: host.name }),
         port: config.port,
         resolve: listenPlan(config, insecureDev, options.resolve ?? (() => resolveTailnet())),

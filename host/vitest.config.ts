@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 // `pnpm test` (and the verify gate) runs plain tests. `pnpm test:coverage` adds v8 coverage and fails
 // when the Journal or the envelope stream drops below 95%, or the session core, the Codex adapter, the HTTPS
-// server, pairing or the device store below 90%, on any metric. Tests (the live Codex test included) and
+// server, pairing, the device store or Web Push below 90%, on any metric. Tests (the live Codex test included) and
 // testing/ helpers are not measured.
 export default defineConfig({
   test: {
@@ -20,6 +20,7 @@ export default defineConfig({
         'src/http/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         'src/pairing/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         'src/devices/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
+        'src/push/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
       },
     },
   },

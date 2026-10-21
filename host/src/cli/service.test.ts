@@ -13,6 +13,7 @@ import { text, waitEvent } from '../core/testing/harness.js';
 import { Journal } from '../journal/journal.js';
 import { CloseCode } from '../stream/constants.js';
 import { TestClient } from '../stream/testing/client.js';
+import { decrypt, FakePushService, newReceiver } from '../push/testing/web-push.js';
 import { EXIT_FAILURE, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli, stableNodePath, type CliEnv } from './commands.js';
 import { defaultConfig, type HostConfig } from './config.js';
 import { controlRequest } from './control.js';
@@ -167,7 +168,7 @@ describe('push subscriptions over the stream', () => {
     }
     expect(devices.push.list()).toEqual([]);
 
-    expect(await third.call('push/test', {})).toMatchObject({ error: { code: 'not_supported' } });
+    expect(await third.call('push/test', {})).toMatchObject({ error: { code: 'not_found', data: { reason: 'no_subscription' } } });
 
     // Revoking drops the subscription with the device.
     await third.call('push/subscribe', { subscription });
@@ -179,6 +180,58 @@ describe('push subscriptions over the stream', () => {
     expect(log).toContain(`push.subscribed clientId=${phone.clientId}`);
     expect(log).toContain(`push.unsubscribed clientId=${phone.clientId}`);
     for (const secret of ['QSECRET-ENDPOINT', 'BPUBLIC-P256DH', 'AUTH-SECRET']) expect(log).not.toContain(secret);
+  });
+});
+
+describe('push/test over the stream', () => {
+  it('delivers the test notification, maps 500 and 410, and forgets an expired subscription', async () => {
+    const pushService = await FakePushService.start();
+    try {
+      const started = await startService();
+      const phone = await pairDevice(started, 'Phone');
+      const client = await connect(started, phone);
+      await client.handshake();
+      const receiver = newReceiver();
+      const endpoint = pushService.endpoint('QSECRET-ENDPOINT');
+      expect(await client.call('push/subscribe', { subscription: { endpoint, keys: receiver.keys } })).toMatchObject({ result: { ok: true } });
+
+      expect(await client.call('push/test', {})).toMatchObject({ result: { ok: true } });
+      const [push] = pushService.received;
+      expect(push!.headers).toMatchObject({ 'content-encoding': 'aes128gcm', ttl: '60', urgency: 'high' });
+      const vapidPublicKey = JSON.parse(readFileSync(path.join(home, 'vapid.json'), 'utf8')).publicKey as string;
+      expect(push!.headers.authorization).toContain(`k=${vapidPublicKey}`);
+      expect(JSON.parse(decrypt(push!.body, receiver.privateKey, receiver.keys.auth).plaintext.toString())).toEqual({
+        title: shortHostname(),
+        body: 'Test notification from Nano Host',
+        url: '/',
+      });
+
+      pushService.status = 500;
+      expect(await client.call('push/test', {})).toMatchObject({ error: { code: 'internal', data: { reason: 'push_failed', status: 500 } } });
+      expect(started.service.devices.push.isSubscribed(phone.clientId)).toBe(true);
+
+      pushService.status = 410;
+      expect(await client.call('push/test', {})).toMatchObject({
+        error: { code: 'not_found', data: { reason: 'subscription_expired', status: 410 } },
+      });
+      expect(started.service.devices.push.isSubscribed(phone.clientId)).toBe(false);
+      expect(await client.call('push/test', {})).toMatchObject({ error: { code: 'not_found', data: { reason: 'no_subscription' } } });
+
+      const sends = started.lines.filter((line) => line.event === 'push.sent');
+      expect(sends.map((line) => [line.clientId, line.outcome, line.statusCode])).toEqual([
+        [phone.clientId, 'delivered', 201],
+        [phone.clientId, 'failed', 500],
+        [phone.clientId, 'gone', 410],
+      ]);
+      expect(sends.every((line) => typeof line.durationMs === 'number')).toBe(true);
+      const log = readFileSync(testConfig().logFile, 'utf8') + JSON.stringify(started.lines);
+      expect(log).toContain(`push.expired clientId=${phone.clientId}`);
+      for (const secret of ['QSECRET-ENDPOINT', receiver.keys.auth, receiver.keys.p256dh, 'Test notification']) {
+        expect(log).not.toContain(secret);
+      }
+    } finally {
+      await pushService.close();
+    }
   });
 });
 
