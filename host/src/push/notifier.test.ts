@@ -145,7 +145,7 @@ describe('push rules (spec 9)', () => {
       {
         clientId: phone,
         subscription: devices.push.get(phone)!.subscription,
-        payload: { title: TITLE, body: PUSH_BODY.approval, url: `/session/${SESSION}` },
+        payload: { title: TITLE, body: PUSH_BODY.approval, url: `/s/${SESSION}` },
         options: { ttl: 60, topic: 'req_a1' },
       },
     ]);
@@ -163,9 +163,9 @@ describe('push rules (spec 9)', () => {
     const close = connectStream(phone);
     await emit(input('req_i2'));
     close();
-    expect(sender.sent.map((s) => [s.payload.body, s.options])).toEqual([
-      ['Question waiting', { ttl: 60, topic: 'req_i1' }],
-      ['Question waiting', { ttl: 60, topic: 'req_i2' }],
+    expect(sender.sent.map((s) => [s.payload.body, s.payload.url, s.options])).toEqual([
+      ['Question waiting', `/s/${SESSION}`, { ttl: 60, topic: 'req_i1' }],
+      ['Question waiting', `/s/${SESSION}`, { ttl: 60, topic: 'req_i2' }],
     ]);
   });
 
@@ -180,9 +180,9 @@ describe('push rules (spec 9)', () => {
     const phone = pair('phone');
     await emit(completed('completed', 'trn_1'), completed('failed', 'trn_2'), completed('interrupted', 'trn_3'));
     expect(sender.sent.map((s) => [s.clientId, s.payload, s.options])).toEqual([
-      [phone, { title: TITLE, body: 'Turn finished', url: `/session/${SESSION}` }, { ttl: 3600, topic: 'trn_1' }],
-      [phone, { title: TITLE, body: 'Turn failed', url: `/session/${SESSION}` }, { ttl: 3600, topic: 'trn_2' }],
-      [phone, { title: TITLE, body: 'Turn interrupted', url: `/session/${SESSION}` }, { ttl: 3600, topic: 'trn_3' }],
+      [phone, { title: TITLE, body: 'Turn finished', url: `/s/${SESSION}` }, { ttl: 3600, topic: 'trn_1' }],
+      [phone, { title: TITLE, body: 'Turn failed', url: `/s/${SESSION}` }, { ttl: 3600, topic: 'trn_2' }],
+      [phone, { title: TITLE, body: 'Turn interrupted', url: `/s/${SESSION}` }, { ttl: 3600, topic: 'trn_3' }],
     ]);
   });
 
@@ -196,7 +196,9 @@ describe('push rules (spec 9)', () => {
   it('status/changed to error pushes to a client without an open stream, session id topic', async () => {
     const phone = pair('phone');
     await emit(statusChanged('error'));
-    expect(sender.sent.map((s) => [s.clientId, s.payload.body, s.options])).toEqual([[phone, 'Session error', { ttl: 3600, topic: SESSION }]]);
+    expect(sender.sent.map((s) => [s.clientId, s.payload.body, s.payload.url, s.options])).toEqual([
+      [phone, 'Session error', `/s/${SESSION}`, { ttl: 3600, topic: SESSION }],
+    ]);
   });
 
   it('status/changed to anything but error never pushes', async () => {

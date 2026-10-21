@@ -27,6 +27,7 @@
 //
 // Payloads are `{title, body, url}` only: the title is the session title cut to one line of at most 60
 // characters, the body a fixed phrase. No command text, path, item content or error message is ever sent.
+// The url is `/s/<sessionId>`, the session route of the web app (SESSION in web/src/routes/router.ts).
 import type { JournalEvent } from '../journal/types.js';
 import type { PresenceRegistry } from '../stream/presence.js';
 import { PUSH_TTL, type PushPayload, type PushSender, type SendOptions, type SendResult } from './sender.js';
@@ -175,7 +176,7 @@ export class PushNotifier {
     const payload: PushPayload = {
       title: pushTitle(this.options.title(plan.sessionId)),
       body: plan.body,
-      url: `/session/${encodeURIComponent(plan.sessionId)}`,
+      url: `/s/${encodeURIComponent(plan.sessionId)}`,
     };
     const sendOptions: SendOptions = { ttl: plan.ttl, topic: plan.topic };
     await Promise.all(targets.map((stored) => this.sendOne(plan, stored, payload, sendOptions)));

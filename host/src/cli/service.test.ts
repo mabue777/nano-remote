@@ -281,7 +281,7 @@ describe('event pushes (spec 9 rules)', () => {
       expect(JSON.parse(decrypt(push!.body, receiver.privateKey, receiver.keys.auth).plaintext.toString())).toEqual({
         title: 'Run the secret migration',
         body: 'Turn finished',
-        url: `/session/${session.sessionId}`,
+        url: `/s/${session.sessionId}`,
       });
       const sends = started.lines.filter((line) => line.event === 'push.sent');
       expect(sends.map((line) => [line.clientId, line.outcome])).toEqual([[phone.clientId, 'delivered']]);
