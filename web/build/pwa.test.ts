@@ -98,6 +98,10 @@ describe('writeInstallableShell', () => {
     const sw = readFileSync(path.join(dir, 'sw.js'), 'utf8');
     expect(sw).toContain(`const VERSION = "${first.version}";`);
     expect(sw).toContain(`const SHELL = ${JSON.stringify(first.shell)};`);
+    // Web Push (spec 9): the built worker carries the three push handlers.
+    for (const event of ['push', 'notificationclick', 'pushsubscriptionchange']) {
+      expect(sw, event).toContain(`self.addEventListener('${event}',`);
+    }
 
     expect((await writeInstallableShell(dir)).version).toBe(first.version); // rebuilding is idempotent
     writeFileSync(path.join(dir, 'assets', 'index-abc12345.js'), 'console.log(2)');
@@ -125,30 +129,90 @@ type Listener = (event: FakeEvent) => void;
 interface FakeEvent {
   request?: { method: string; url: string; mode: string };
   data?: unknown;
+  notification?: FakeNotification;
+  oldSubscription?: unknown;
+  newSubscription?: unknown;
   waitUntil(promise: Promise<unknown>): void;
   respondWith(response: Promise<unknown>): void;
 }
 
+interface FakeNotification {
+  data?: { url?: string };
+  closed: boolean;
+  close(): void;
+}
+
+class FakeWindowClient {
+  messages: unknown[] = [];
+  focusCalls = 0;
+  constructor(readonly focused = false) {}
+  postMessage(message: unknown) {
+    this.messages.push(message);
+  }
+  async focus() {
+    this.focusCalls++;
+    return this;
+  }
+}
+
+class FakeResponse {
+  constructor(private readonly body: string) {}
+  static error() {
+    return 'response-error';
+  }
+  async text() {
+    return this.body;
+  }
+}
+
 function loadWorker(shell: string[], version = 'v2', network: (url: string) => Promise<string> = async (url) => `net:${url}`) {
-  const listeners = new Map<string, Listener>();
-  const stores = new Map<string, Map<string, string>>([['nano-remote-shell-v1', new Map()], ['other-app', new Map()]]);
-  const calls = { skipWaiting: 0, claim: 0, fetched: [] as string[] };
+  const listeners = new Map<string, Listener[]>();
+  const stores = new Map<string, Map<string, unknown>>([['nano-remote-shell-v1', new Map()], ['other-app', new Map()]]);
+  const calls = {
+    skipWaiting: 0,
+    claim: 0,
+    fetched: [] as string[],
+    shown: [] as { title: string; options: unknown }[],
+    opened: [] as string[],
+    matched: [] as unknown[],
+    subscribed: [] as unknown[],
+  };
+  const windows: FakeWindowClient[] = [];
+  const pushControl = { failSubscribe: false };
   const self = {
     location: { origin: 'https://mac.tailnet.ts.net' },
-    addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
+    addEventListener: (type: string, listener: Listener) => listeners.set(type, [...(listeners.get(type) ?? []), listener]),
     skipWaiting: () => void calls.skipWaiting++,
-    clients: { claim: async () => void calls.claim++ },
+    clients: {
+      claim: async () => void calls.claim++,
+      matchAll: async (options: unknown) => {
+        calls.matched.push(options);
+        return [...windows];
+      },
+      openWindow: async (url: string) => void calls.opened.push(url),
+    },
+    registration: {
+      showNotification: async (title: string, options: unknown) => void calls.shown.push({ title, options }),
+      pushManager: {
+        subscribe: async (options: unknown) => {
+          calls.subscribed.push(options);
+          if (pushControl.failSubscribe) throw new Error('push service down');
+          return { endpoint: 'https://push.example/new' };
+        },
+      },
+    },
   };
   const caches = {
     keys: async () => [...stores.keys()],
     delete: async (key: string) => stores.delete(key),
     open: async (key: string) => {
-      const store = stores.get(key) ?? new Map<string, string>();
+      const store = stores.get(key) ?? new Map<string, unknown>();
       stores.set(key, store);
       return {
         addAll: async (paths: string[]) => {
           for (const p of paths) store.set(p, `cached:${p}`);
         },
+        put: async (p: string, response: unknown) => void store.set(p, response),
         match: async (p: string) => store.get(p),
       };
     },
@@ -157,19 +221,33 @@ function loadWorker(shell: string[], version = 'v2', network: (url: string) => P
     calls.fetched.push(request.url);
     return network(request.url);
   };
-  const Response = { error: () => 'response-error' };
   const source = renderServiceWorker(TEMPLATE, version, shell);
-  new Function('self', 'caches', 'fetch', 'Response', 'URL', source)(self, caches, fetchFn, Response, URL);
+  new Function('self', 'caches', 'fetch', 'Response', 'URL', source)(self, caches, fetchFn, FakeResponse, URL);
 
   async function dispatch(type: string, init: Partial<FakeEvent> = {}): Promise<{ waited: unknown; responded: unknown; handled: boolean }> {
-    let waited: Promise<unknown> | undefined;
+    const waits: Promise<unknown>[] = [];
     let responded: Promise<unknown> | undefined;
-    listeners.get(type)!({ ...init, waitUntil: (p) => (waited = p), respondWith: (p) => (responded = p) });
-    return { waited: await waited, responded: await responded, handled: responded !== undefined };
+    for (const listener of listeners.get(type) ?? []) {
+      listener({ ...init, waitUntil: (p) => waits.push(p), respondWith: (p) => (responded = p) });
+    }
+    const waited = await Promise.all(waits);
+    return { waited: waited.length === 1 ? waited[0] : waited.length === 0 ? undefined : waited, responded: await responded, handled: responded !== undefined };
   }
   const get = (pathname: string, mode = 'no-cors', origin = self.location.origin) =>
     dispatch('fetch', { request: { method: 'GET', url: origin + pathname, mode } });
-  return { dispatch, get, stores, calls };
+  const notification = (data?: { url?: string }): FakeNotification => ({
+    data,
+    closed: false,
+    close() {
+      this.closed = true;
+    },
+  });
+  return { dispatch, get, stores, calls, windows, notification, pushControl, listeners };
+}
+
+/** A push event's data: what PushMessageData.json() gives, or throws for a payload that is not JSON. */
+function pushData(text: string) {
+  return { json: () => JSON.parse(text) };
 }
 
 describe('service worker', () => {
@@ -237,5 +315,109 @@ describe('service worker', () => {
     expect((await worker.get('/s/ses_1', 'navigate')).responded).toBe('cached:/index.html');
     worker.stores.get('nano-remote-shell-v2')!.clear();
     expect((await worker.get('/', 'navigate')).responded).toBe('response-error');
+  });
+
+  it('a push shows its title, body and link, tagged by the link, with the app icon', async () => {
+    const worker = loadWorker(SHELL);
+    await worker.dispatch('push', { data: pushData(JSON.stringify({ title: 'Needs approval', body: 'Run the test suite: npm test', url: '/s/ses_2' })) });
+    expect(worker.calls.shown).toEqual([
+      {
+        title: 'Needs approval',
+        options: { body: 'Run the test suite: npm test', data: { url: '/s/ses_2' }, tag: '/s/ses_2', renotify: false, icon: '/icon-192.png' },
+      },
+    ]);
+  });
+
+  it('a push that names a topic is tagged by it; a missing body is empty', async () => {
+    const worker = loadWorker(SHELL);
+    await worker.dispatch('push', { data: pushData(JSON.stringify({ title: 'Done', url: '/s/ses_1', topic: 'ses_1' })) });
+    expect(worker.calls.shown[0]!.options).toMatchObject({ body: '', tag: 'ses_1', data: { url: '/s/ses_1' } });
+  });
+
+  it('a payload that fails to parse, has no title, or no data shows the generic notification linking to /', async () => {
+    const worker = loadWorker(SHELL);
+    await worker.dispatch('push', { data: pushData('not json') });
+    await worker.dispatch('push', { data: pushData(JSON.stringify({ body: 'no title' })) });
+    await worker.dispatch('push', {});
+    expect(worker.calls.shown).toHaveLength(3);
+    for (const shown of worker.calls.shown) {
+      expect(shown.title).toBe('Nano Remote');
+      expect(shown.options).toMatchObject({ data: { url: '/' }, tag: '/', renotify: false, icon: '/icon-192.png' });
+      expect((shown.options as { body: string }).body).not.toBe('');
+    }
+  });
+
+  it('a push never links off the app', async () => {
+    const worker = loadWorker(SHELL);
+    for (const url of ['https://evil.example/', '//evil.example/x', 42]) {
+      await worker.dispatch('push', { data: pushData(JSON.stringify({ title: 'x', body: 'y', url })) });
+    }
+    expect(worker.calls.shown.map((shown) => (shown.options as { data: { url: string } }).data.url)).toEqual(['/', '/', '/']);
+  });
+
+  it('a tap with no window open closes the notification and opens the session', async () => {
+    const worker = loadWorker(SHELL);
+    const notification = worker.notification({ url: '/s/ses_2' });
+    await worker.dispatch('notificationclick', { notification });
+    expect(notification.closed).toBe(true);
+    expect(worker.calls.matched).toEqual([{ type: 'window', includeUncontrolled: true }]);
+    expect(worker.calls.opened).toEqual(['/s/ses_2']);
+  });
+
+  it('a tap with a window open focuses it (the focused one first) and tells it where to go', async () => {
+    const worker = loadWorker(SHELL);
+    const background = new FakeWindowClient(false);
+    const front = new FakeWindowClient(true);
+    worker.windows.push(background, front);
+    await worker.dispatch('notificationclick', { notification: worker.notification({ url: '/s/ses_9' }) });
+    expect(front.messages).toEqual([{ type: 'navigate', url: '/s/ses_9' }]);
+    expect(front.focusCalls).toBe(1);
+    expect(background.messages).toEqual([]);
+    expect(worker.calls.opened).toEqual([]);
+
+    const only = loadWorker(SHELL);
+    const window = new FakeWindowClient(false);
+    only.windows.push(window);
+    await only.dispatch('notificationclick', { notification: only.notification(undefined) });
+    expect(window.messages).toEqual([{ type: 'navigate', url: '/' }]);
+  });
+
+  it('pushsubscriptionchange subscribes again with the stored key and tells every open page', async () => {
+    const worker = loadWorker(SHELL);
+    await worker.dispatch('message', { data: { type: 'push-key', key: 'BKey' } });
+    await worker.dispatch('message', { data: { type: 'push-key', key: 42 } }); // ignored
+    await worker.dispatch('activate'); // the stored key survives a new build
+    const page = new FakeWindowClient();
+    worker.windows.push(page);
+    await worker.dispatch('pushsubscriptionchange', {});
+    expect(worker.calls.subscribed).toEqual([{ userVisibleOnly: true, applicationServerKey: 'BKey' }]);
+    expect(page.messages).toEqual([{ type: 'pushsubscriptionchange' }]);
+  });
+
+  it('pushsubscriptionchange prefers the old subscription key, takes a new subscription as is, and survives failures', async () => {
+    const worker = loadWorker(SHELL);
+    const key = new Uint8Array([4, 1, 2]).buffer;
+    await worker.dispatch('pushsubscriptionchange', { oldSubscription: { options: { applicationServerKey: key } } });
+    expect(worker.calls.subscribed).toEqual([{ userVisibleOnly: true, applicationServerKey: key }]);
+
+    const given = loadWorker(SHELL);
+    const page = new FakeWindowClient();
+    given.windows.push(page);
+    await given.dispatch('pushsubscriptionchange', { newSubscription: { endpoint: 'https://push.example/n' } });
+    expect(given.calls.subscribed).toEqual([]);
+    expect(page.messages).toEqual([{ type: 'pushsubscriptionchange' }]);
+
+    const keyless = loadWorker(SHELL); // no key stored: nothing to subscribe with, the page still hears
+    keyless.windows.push(new FakeWindowClient());
+    await keyless.dispatch('pushsubscriptionchange', {});
+    expect(keyless.calls.subscribed).toEqual([]);
+    expect(keyless.windows[0]!.messages).toEqual([{ type: 'pushsubscriptionchange' }]);
+
+    const failing = loadWorker(SHELL);
+    failing.pushControl.failSubscribe = true;
+    await failing.dispatch('message', { data: { type: 'push-key', key: 'BKey' } });
+    failing.windows.push(new FakeWindowClient());
+    await failing.dispatch('pushsubscriptionchange', {});
+    expect(failing.windows[0]!.messages).toEqual([{ type: 'pushsubscriptionchange' }]);
   });
 });

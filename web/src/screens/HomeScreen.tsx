@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
+import type { PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { HomeModel, type Connection, type HostView, type SessionRow } from './home-model';
@@ -12,10 +13,12 @@ const PULL_THRESHOLD = 70;
 export interface HomeScreenProps {
   client: StreamClient;
   replica: Replica;
+  /** The Notifications card; absent where the app has no service worker (the dev server). */
+  notifications?: PushModel;
   onOpenSession: (sessionId: string) => void;
 }
 
-export function HomeScreen({ client, replica, onOpenSession }: HomeScreenProps) {
+export function HomeScreen({ client, replica, notifications, onOpenSession }: HomeScreenProps) {
   const model = useModel(useMemo(() => new HomeModel({ client, replica }), [client, replica]));
   useEffect(() => () => model.dispose(), [model]);
   const [creating, setCreating] = useState(false);
@@ -33,6 +36,7 @@ export function HomeScreen({ client, replica, onOpenSession }: HomeScreenProps) 
         {pull.distance > 0 && <span>{pull.distance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}</span>}
       </div>
       <HostCard host={model.host} />
+      {notifications !== undefined && <NotificationsCard push={notifications} />}
       <section class="sessions" aria-labelledby="sessions-title">
         <div class="section-head">
           <h2 id="sessions-title">Sessions</h2>
@@ -122,6 +126,69 @@ function HostCard({ host }: { host: HostView | undefined }) {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** Web Push: a switch that subscribes this phone, and a test button once it is on (web/src/pwa/push.ts). */
+function NotificationsCard({ push }: { push: PushModel }) {
+  useModel(push);
+  const state = push.state;
+  const test = push.test;
+  const switchable = state.kind === 'off' || state.kind === 'on' || state.kind === 'error' || state.kind === 'subscribing';
+  return (
+    <section class="card notifications" aria-label="Notifications" data-state={state.kind}>
+      <div class="notifications-line">
+        <h2 id="notifications-title">Notifications</h2>
+        {switchable && (
+          <button
+            type="button"
+            role="switch"
+            class={`switch${state.kind === 'on' ? ' on' : ''}`}
+            aria-checked={state.kind === 'on' || state.kind === 'subscribing'}
+            aria-labelledby="notifications-title"
+            disabled={state.kind === 'subscribing'}
+            // turnOn asks for permission inside this tap: iOS allows it only from a user gesture.
+            onClick={() => void (state.kind === 'on' ? push.turnOff() : push.turnOn())}
+          >
+            <span class="knob" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {state.kind === 'unsupported' && <p class="muted small">This browser cannot show notifications from Nano Remote.</p>}
+      {state.kind === 'needs-install' && (
+        <p class="muted small">Install to the home screen from Safari to get notifications: tap Share, then Add to Home Screen, and open Nano Remote from there.</p>
+      )}
+      {state.kind === 'denied' && (
+        <p class="muted small">
+          Notifications are blocked for Nano Remote. To turn them back on, open Settings, then Notifications, then Nano Remote, and allow them (in a
+          browser: the site settings for this page).
+        </p>
+      )}
+      {state.kind === 'off' && <p class="muted small">Get a notification when an agent needs you or finishes while the app is closed.</p>}
+      {state.kind === 'subscribing' && <p class="muted small">Turning on…</p>}
+      {state.kind === 'error' && (
+        <p class="error small" role="alert">
+          {state.message}
+        </p>
+      )}
+      {state.kind === 'on' && (
+        <div class="notifications-test">
+          <button type="button" class="ghost" disabled={test.kind === 'sending'} onClick={() => void push.sendTest()}>
+            {test.kind === 'sending' ? 'Sending…' : 'Send test notification'}
+          </button>
+          {test.kind === 'sent' && (
+            <span class="muted small" role="status">
+              Sent. It should arrive in a moment.
+            </span>
+          )}
+          {test.kind === 'failed' && (
+            <span class="error small" role="alert">
+              {test.message}
+            </span>
+          )}
+        </div>
+      )}
     </section>
   );
 }

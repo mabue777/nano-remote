@@ -45,3 +45,84 @@ self.addEventListener('fetch', (event) => {
   if (!SHELL.includes(url.pathname)) return;
   event.respondWith(caches.open(CACHE).then((cache) => cache.match(url.pathname)).then((hit) => hit || fetch(request)));
 });
+
+// ---- Web Push (spec 9, ADR 0005) ----
+// The host sends {title, body, url}; url is an in-app path (/s/<sessionId>). A tap opens it: in the open
+// window when there is one (the page routes on the navigate message, web/src/pwa/navigate.ts), else in
+// a new one. The page posts the VAPID key (web/src/pwa/push.ts) so pushsubscriptionchange can subscribe
+// again while no page is open; it lives in its own cache, which activate never deletes.
+const PUSH_STORE = 'nano-remote-push';
+const PUSH_KEY_PATH = '/push-key';
+const FALLBACK = { title: 'Nano Remote', body: 'Something on your computer needs a look.', url: '/' };
+
+/** A same-origin path, or '/' for anything else. */
+function inAppPath(url) {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') ? url : '/';
+}
+
+function windows() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+}
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || data.type !== 'push-key' || typeof data.key !== 'string') return;
+  if (event.waitUntil) event.waitUntil(caches.open(PUSH_STORE).then((cache) => cache.put(PUSH_KEY_PATH, new Response(data.key))));
+});
+
+self.addEventListener('push', (event) => {
+  let payload = null;
+  try {
+    payload = event.data ? event.data.json() : null;
+  } catch {
+    payload = null;
+  }
+  const shown = payload && typeof payload.title === 'string' && payload.title !== '' ? payload : FALLBACK;
+  const url = inAppPath(shown.url);
+  // Collapse repeats for the same thing: the push Topic when the payload names one, else the link.
+  const tag = typeof shown.topic === 'string' && shown.topic !== '' ? shown.topic : url;
+  event.waitUntil(
+    self.registration.showNotification(shown.title, {
+      body: typeof shown.body === 'string' ? shown.body : '',
+      data: { url },
+      tag,
+      renotify: false,
+      icon: '/icon-192.png',
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = inAppPath(event.notification.data && event.notification.data.url);
+  event.waitUntil(
+    windows().then((list) => {
+      const open = list.find((client) => client.focused) || list[0];
+      if (!open) return self.clients.openWindow(url);
+      open.postMessage({ type: 'navigate', url });
+      return open.focus();
+    }),
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const old = event.oldSubscription;
+  const oldKey = old && old.options && old.options.applicationServerKey;
+  const storedKey = () =>
+    caches
+      .open(PUSH_STORE)
+      .then((cache) => cache.match(PUSH_KEY_PATH))
+      .then((hit) => (hit ? hit.text() : null));
+  const resubscribe = event.newSubscription
+    ? Promise.resolve(event.newSubscription)
+    : (oldKey ? Promise.resolve(oldKey) : storedKey()).then((key) =>
+        key ? self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }) : null,
+      );
+  // Any open page sends push/subscribe with the new endpoint; a closed one does it on its next start.
+  event.waitUntil(
+    resubscribe
+      .catch(() => null)
+      .then(() => windows())
+      .then((list) => list.forEach((client) => client.postMessage({ type: 'pushsubscriptionchange' }))),
+  );
+});

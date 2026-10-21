@@ -256,6 +256,9 @@ export class HostError extends Error {
   }
 }
 
+/** The VAPID public key the fake host advertises in initialize (an uncompressed P-256 point). */
+export const FAKE_VAPID_PUBLIC_KEY = 'BLqV9YHYYANsdXdPRsHojo-QK0K6dl2lGcRree27K9no9AcPff1jvU8tGx_aQzuS6fueSsuSEJ3HyKFOXfaGoPw';
+
 export class FakeHost {
   url = '';
   readonly streams: FakeStream[] = [];
@@ -263,6 +266,12 @@ export class FakeHost {
   readonly requestLog: { streamId: string; method: string; params: Json }[] = [];
   readonly pings: { streamId: string; state: string }[] = [];
   readonly goodbyes: { streamId: string; reason: string | undefined }[] = [];
+  /** Web Push (spec 9): the subscription each clientId sent with push/subscribe. */
+  readonly pushSubscriptions = new Map<string, Json>();
+  /** push/test calls, in order, by clientId. */
+  readonly pushTests: string[] = [];
+  /** When set, push/test answers this error instead of {ok: true}. */
+  pushTestError: { code: string; message: string; data?: Json } | undefined;
   pongStatus: 'active' | 'degraded' | 'draining' = 'active';
   onRequest: RequestHook | undefined;
   /** When above 0, scripted turns emit one step per this many ms instead of all at once. */
@@ -370,6 +379,9 @@ export class FakeHost {
     this.delays.clear();
     this.noDiffs.clear();
     this.nextSession = 0;
+    this.pushSubscriptions.clear();
+    this.pushTests.length = 0;
+    this.pushTestError = undefined;
   }
 
   session(sessionId: string): FakeSession {
@@ -482,6 +494,7 @@ export class FakeHost {
         stream.initialized = true;
         const result = exampleMessage('08').result;
         result.device.clientId = stream.clientId;
+        result.push = { vapidPublicKey: FAKE_VAPID_PUBLIC_KEY, subscribed: this.pushSubscriptions.has(stream.clientId) };
         return { result };
       }
       case 'session/list': {
@@ -634,6 +647,24 @@ export class FakeHost {
       }
       case 'host/status':
         return { result: exampleMessage('44').params };
+      case 'push/subscribe': {
+        const subscription = params.subscription;
+        if (typeof subscription?.endpoint !== 'string' || typeof subscription?.keys?.p256dh !== 'string' || typeof subscription?.keys?.auth !== 'string') {
+          throw new HostError({ code: 'invalid_params', message: 'subscription needs endpoint and keys', data: { path: 'subscription' } });
+        }
+        this.pushSubscriptions.set(stream.clientId, subscription);
+        return { result: { ok: true } };
+      }
+      case 'push/unsubscribe':
+        if (this.pushSubscriptions.get(stream.clientId)?.endpoint === params.endpoint) this.pushSubscriptions.delete(stream.clientId);
+        return { result: { ok: true } };
+      case 'push/test':
+        this.pushTests.push(stream.clientId);
+        if (this.pushTestError !== undefined) throw new HostError(this.pushTestError);
+        if (!this.pushSubscriptions.has(stream.clientId)) {
+          throw new HostError({ code: 'not_found', message: 'no push subscription for this device', data: { reason: 'no_subscription' } });
+        }
+        return { result: { ok: true } };
       default:
         throw new HostError({ code: 'method_not_found', message: `unknown method ${method}` });
     }

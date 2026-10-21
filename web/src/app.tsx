@@ -4,6 +4,7 @@
 // and goes back to pairing.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
+import { PushModel, type PushEnvironment } from './pwa/push';
 import { Replica } from './replica/replica';
 import { defaultStorage, type StorageLike } from './replica/storage';
 import { Router, type Route } from './routes/router';
@@ -20,9 +21,11 @@ export interface AppProps {
   storage?: StorageLike | null;
   fetch?: FetchLike;
   userAgent?: string;
+  /** Web Push in this browser; null where the app registers no service worker (the dev server). */
+  push?: PushEnvironment | null;
 }
 
-export function App({ router, storage = defaultStorage(), fetch = window.fetch.bind(window), userAgent = navigator.userAgent }: AppProps) {
+export function App({ router, storage = defaultStorage(), fetch = window.fetch.bind(window), userAgent = navigator.userAgent, push = null }: AppProps) {
   const [route, setRoute] = useState<Route>(router.route);
   const [device, setDevice] = useState<PairedDevice | null>(() => loadDevice(storage));
   useEffect(() => router.subscribe(setRoute), [router]);
@@ -52,6 +55,7 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
       route={route}
       router={router}
       storage={storage}
+      push={push}
       onUnpaired={() => {
         forgetDevice(storage);
         setDevice(null);
@@ -65,16 +69,19 @@ interface ConnectedProps {
   route: Exclude<Route, { name: 'pair' }>;
   router: Router;
   storage: StorageLike | null;
+  push: PushEnvironment | null;
   onUnpaired: () => void;
 }
 
-function Connected({ device, route, router, storage, onUnpaired }: ConnectedProps) {
+function Connected({ device, route, router, storage, push, onUnpaired }: ConnectedProps) {
   const services = useMemo(() => {
     const client = new StreamClient({ clientId: device.clientId, optOutNotifications: ['item/reasoning/delta'] });
     const replica = new Replica({ client, storage });
     const devices = new DeviceNames(client);
-    return { client, replica, deviceName: (clientId: string) => devices.nameOf(clientId) };
-  }, [device.clientId, storage]);
+    // Created before start(), so it hears the first ready; it lives as long as the stream client.
+    const notifications = push === null ? undefined : new PushModel({ client, env: push, storage });
+    return { client, replica, notifications, deviceName: (clientId: string) => devices.nameOf(clientId) };
+  }, [device.clientId, storage, push]);
 
   useEffect(() => {
     const { client, replica } = services;
@@ -84,6 +91,7 @@ function Connected({ device, route, router, storage, onUnpaired }: ConnectedProp
     client.start();
     return () => {
       off();
+      services.notifications?.dispose();
       replica.dispose();
       client.stop();
     };
@@ -94,7 +102,7 @@ function Connected({ device, route, router, storage, onUnpaired }: ConnectedProp
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
   switch (route.name) {
     case 'home':
-      return <HomeScreen client={services.client} replica={services.replica} onOpenSession={open} />;
+      return <HomeScreen client={services.client} replica={services.replica} notifications={services.notifications} onOpenSession={open} />;
     case 'session':
       return (
         <SessionScreen

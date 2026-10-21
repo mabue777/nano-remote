@@ -19,6 +19,8 @@
 // `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session.
 // `POST /test/new-build {version}` serves /sw.js under that build version, as after a redeploy (a reset
 // goes back to the built one).
+// `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
+// /test/push-test-error {code, message, data}` makes push/test refuse with that error ({} clears it).
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
@@ -126,6 +128,11 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/new-build':
               swVersion = String(body.version);
+              return json(200, { ok: true });
+            case '/test/push':
+              return json(200, { subscriptions: Object.fromEntries(host.pushSubscriptions), tests: host.pushTests });
+            case '/test/push-test-error':
+              host.pushTestError = body.code === undefined ? undefined : { code: body.code, message: body.message ?? body.code, data: body.data };
               return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);
