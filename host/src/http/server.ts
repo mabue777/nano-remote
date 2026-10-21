@@ -67,7 +67,7 @@ export interface HostServerOptions {
   publicDir?: string;
   /** Pairing codes; default a fresh PairingCodes using this server's origin. */
   pairing?: PairingCodes;
-  /** Sends `push/test` (and later the event pushes); without it `push/test` answers `not_supported`. */
+  /** Sends `push/test` (the event pushes go through the PushNotifier); without it `push/test` answers `not_supported`. */
   pushSender?: PushSender;
   /** Passed to the StreamServer. */
   stream?: Pick<StreamServerOptions, 'presence' | 'status' | 'pingTimeoutMs'>;

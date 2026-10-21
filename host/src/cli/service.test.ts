@@ -235,6 +235,62 @@ describe('push/test over the stream', () => {
   });
 });
 
+/** Polls until `check` is true (or fails after `ms`). */
+async function until(check: () => boolean, what: string, ms = 5_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe('event pushes (spec 9 rules)', () => {
+  it('a paired, subscribed phone that closed its stream gets exactly one push when the turn completes', async () => {
+    const pushService = await FakePushService.start();
+    try {
+      const agent = new FakeAgent({ script: [[{ hold: true }, { reply: 'Done.' }]] });
+      const started = await startService({ agent });
+      const phone = await pairDevice(started, 'Phone');
+      const client = await connect(started, phone);
+      await client.handshake();
+      const receiver = newReceiver();
+      const subscription = { endpoint: pushService.endpoint('phone'), keys: receiver.keys };
+      expect(await client.call('push/subscribe', { subscription })).toMatchObject({ result: { ok: true } });
+
+      const { session } = (await client.call('session/start', { agentId: 'fake', cwd: home })).result as { session: { sessionId: string } };
+      const { turn } = (
+        await client.call('turn/start', { sessionId: session.sessionId, input: text('Run the secret migration'), clientMessageId: randomUUID() })
+      ).result as { turn: { turnId: string } };
+
+      // The phone locks: its stream closes while the turn is still running.
+      const presence = started.service.server.streams.presence;
+      client.close();
+      await until(() => !presence.isConnected(phone.clientId), 'the phone stream to close');
+      expect(pushService.received).toEqual([]);
+
+      agent.last.release();
+      await until(() => pushService.received.length > 0, 'a push');
+      await until(() => started.service.journal.summary(session.sessionId)?.status === 'idle', 'the session to settle');
+      await new Promise((resolve) => setTimeout(resolve, 100)); // anything else would have been sent by now
+      await started.service.notifier.idle();
+
+      expect(pushService.received).toHaveLength(1);
+      const [push] = pushService.received;
+      expect(push!.path).toBe('/push/phone');
+      expect(push!.headers).toMatchObject({ ttl: '3600', topic: turn.turnId, 'content-encoding': 'aes128gcm' });
+      expect(JSON.parse(decrypt(push!.body, receiver.privateKey, receiver.keys.auth).plaintext.toString())).toEqual({
+        title: 'Run the secret migration',
+        body: 'Turn finished',
+        url: `/session/${session.sessionId}`,
+      });
+      const sends = started.lines.filter((line) => line.event === 'push.sent');
+      expect(sends.map((line) => [line.clientId, line.outcome])).toEqual([[phone.clientId, 'delivered']]);
+    } finally {
+      await pushService.close();
+    }
+  });
+});
+
 describe('host service', () => {
   it('logs the start line, pairs a device through the control channel, and answers initialize', async () => {
     const started = await startService();

@@ -40,6 +40,8 @@ export interface HostCoreOptions {
   /** Seconds since the host started. Default: process uptime. */
   uptime?: () => number;
   log?: (message: string, error?: unknown) => void;
+  /** Sees every appended Journal event, right after the append (the push notifier). Must not block. */
+  onJournalEvent?: (event: JournalEvent) => void;
 }
 
 type Result<M extends keyof MethodMap> = MethodMap[M]['result'];
@@ -54,12 +56,14 @@ export class HostCore {
   /** streamId -> sessionId -> the subscription feeding that stream. */
   private readonly subscriptions = new Map<string, Map<string, Subscription>>();
   private readonly unwatch: (() => void)[] = [];
+  private readonly observer: ((event: JournalEvent) => void) | undefined;
 
   constructor(options: HostCoreOptions) {
     this.journal = options.journal;
     this.host = options.host;
     this.uptime = options.uptime ?? (() => Math.floor(process.uptime()));
     this.log = options.log ?? (() => {});
+    this.observer = options.onJournalEvent;
     this.sessions = new SessionManager({
       journal: options.journal,
       agents: options.agents,
@@ -108,8 +112,13 @@ export class HostCore {
     }
   }
 
-  /** Unsequenced `session/updated {summary}` for the session list (spec 5.2). */
+  /** Unsequenced `session/updated {summary}` for the session list (spec 5.2), after the observer. */
   private onJournalEvent(event: JournalEvent): void {
+    try {
+      this.observer?.(event);
+    } catch (error) {
+      this.log(`journal observer failed on ${event.method}`, error);
+    }
     if (NOT_SUMMARY_CHANGES.has(event.method)) return;
     const summary = this.journal.summary(event.params.sessionId);
     if (summary && !this.sessions.store.get(summary.sessionId).deleted) this.broadcast('session/updated', { summary });

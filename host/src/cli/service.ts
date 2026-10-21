@@ -20,10 +20,12 @@ import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
 import { HostServer } from '../http/server.js';
 import { DEFAULT_SNAPSHOT_TURNS, Journal } from '../journal/journal.js';
+import { PushNotifier } from '../push/notifier.js';
 import { PushSender } from '../push/sender.js';
 import { ensureVapidKeys } from '../push/vapid.js';
 import { VapidSigner } from '../push/vapid-jwt.js';
 import { MAX_MESSAGE_BYTES } from '../stream/constants.js';
+import { PresenceRegistry } from '../stream/presence.js';
 import { MethodRegistry } from '../stream/router.js';
 import type { HostConfig } from './config.js';
 import { ControlRequestError, ControlServer, ensureControlSecret, type ControlStatus } from './control.js';
@@ -92,6 +94,7 @@ export class HostService {
     readonly store: SessionStore,
     readonly devices: DeviceStore,
     readonly control: ControlServer,
+    readonly notifier: PushNotifier,
     private readonly options: ServiceOptions,
     private readonly startedAt: number,
   ) {}
@@ -130,7 +133,24 @@ export class HostService {
     // idempotency live beside the Journal in the same file, so they survive a restart too.
     const store = new SessionStore(config.journalPath);
     const agents = options.agents ?? buildAgents(config, logger);
-    const core = new HostCore({ journal, agents, host, store, log: logger.forModule('core') });
+    // Who has an open stream: the stream server fills it, the push rules (spec 9) read it.
+    const presence = new PresenceRegistry();
+    const notifier = new PushNotifier({
+      subscriptions: devices.push,
+      presence,
+      sender: pushSender,
+      title: (sessionId) => journal.summary(sessionId)?.title,
+      isPaired: (clientId) => devices.get(clientId) !== undefined,
+      log: (event, fields) => logger.info(event, { ...fields }),
+    });
+    const core = new HostCore({
+      journal,
+      agents,
+      host,
+      store,
+      log: logger.forModule('core'),
+      onJournalEvent: (event) => notifier.handle(event),
+    });
     const registry = core.register(
       new MethodRegistry().register('initialize', (_params, context) => ({
         protocolVersion: 1,
@@ -157,6 +177,7 @@ export class HostService {
         insecureDev,
         ...(options.publicDir ? { publicDir: options.publicDir } : {}),
         stream: {
+          presence,
           status: () => (agents.every((a) => a.state().status === 'ready') ? 'active' : 'degraded'),
           ...(options.pingTimeoutMs ? { pingTimeoutMs: options.pingTimeoutMs } : {}),
         },
@@ -183,7 +204,7 @@ export class HostService {
         },
         log: (event, fields) => logger.info(event, fields),
       });
-      service = new HostService(server, core, journal, store, devices, control, options, startedAt);
+      service = new HostService(server, core, journal, store, devices, control, notifier, options, startedAt);
       logger.info('host.listening', {
         origin: server.origin,
         addresses: server.addresses.map((a) => a.address),
@@ -195,6 +216,7 @@ export class HostService {
       await control?.close();
       await server?.close();
       await core.close();
+      await notifier.close();
       journal.close();
       store.close();
       devices.close();
@@ -237,6 +259,8 @@ export class HostService {
     await this.server.close(); // every stream closes with 4010, then the listeners
     logger.info('host.streams_closed', { streams });
     await this.core.close();
+    // Queued pushes read the subscriptions: let them finish before the device store closes.
+    await this.notifier.close();
     await this.control.close();
     this.journal.close();
     this.store.close();
