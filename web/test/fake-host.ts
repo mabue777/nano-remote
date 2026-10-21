@@ -758,6 +758,23 @@ export class FakeHost {
     return itemId;
   }
 
+  /**
+   * A finished turn holding the given items in order (ids and turnId filled in), for layout checks that
+   * need every item kind on screen at once.
+   */
+  runItemsTurn(sessionId: string, items: Json[]): void {
+    const session = this.session(sessionId);
+    const turn = this.newTurn(session, undefined);
+    const turnId = turn.turnId;
+    this.emit(sessionId, 'turn/started', { turn: { ...turn, items: [] } });
+    for (const raw of items) {
+      const item = { itemId: `itm_fake_${++this.nextId}`, status: 'completed', ...raw, turnId };
+      this.emit(sessionId, 'item/started', { turnId, item: { ...item, status: 'inProgress' } });
+      this.emit(sessionId, 'item/completed', { turnId, item });
+    }
+    this.finishTurn(sessionId, 'completed');
+  }
+
   /** Ends the review turn: the command completes, files are changed, the turn completes. */
   finishReviewTurn(sessionId: string, changes: Json[]): void {
     const session = this.session(sessionId);

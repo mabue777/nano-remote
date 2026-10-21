@@ -642,6 +642,27 @@ textarea {
   padding: 8px 10px;
 }
 
+/*
+ * Long unbroken text (paths, JSON arrays, tokens) breaks anywhere rather than running past a card's
+ * right edge (field check 2026-10-21, defect 2). Inherited by everything inside a transcript item or
+ * request card; buttons and fieldsets are named because their UA styles size them to their content.
+ */
+.item,
+.msg,
+.request-card,
+.request-notice,
+.item button,
+.request-card button,
+.request-card fieldset,
+.request-card legend {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.request-card legend {
+  max-width: 100%;
+}
+
 .item-line {
   display: flex;
   align-items: baseline;

@@ -118,6 +118,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/review-finish':
               host.finishReviewTurn(body.sessionId, body.changes ?? []);
               return json(200, { ok: true });
+            case '/test/items':
+              host.runItemsTurn(body.sessionId, body.items ?? []);
+              return json(200, { ok: true });
             case '/test/no-diffs':
               host.noDiffs.add(body.sessionId);
               return json(200, { ok: true });
