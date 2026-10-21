@@ -24,9 +24,11 @@ export interface SessionScreenProps {
   clientId?: string;
   /** Display name of another device (device/list), for "answered on <device>". */
   deviceName?: (clientId: string) => Promise<string | undefined>;
+  /** Told when the session is shown, so its "Finished while away" marker goes (home-model AwayTracker). */
+  onOpened?: (sessionId: string) => void;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName }: SessionScreenProps) {
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened }: SessionScreenProps) {
   const model = useModel(useMemo(() => new SessionModel({ sessionId, replica }), [sessionId, replica]));
   const requests = useModel(
     useMemo(
@@ -39,8 +41,10 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
     return () => model.dispose();
   }, [model]);
   useEffect(() => () => requests.dispose(), [requests]);
+  useEffect(() => onOpened?.(sessionId), [sessionId, onOpened]);
 
   const scroller = useRef<HTMLElement>(null);
+  const landed = useRef(false);
   const keep = useRef<{ height: number; top: number } | undefined>(undefined);
   const lastScrollRequest = useRef(-1);
 
@@ -58,6 +62,16 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       lastScrollRequest.current = model.scrollRequest;
       element.scrollTop = element.scrollHeight;
     }
+    // Landing here (a notification's link, or a tap on a waiting row): the first pending card comes into
+    // view once, with its top edge showing when it is taller than the conversation. Blocking questions are
+    // pinned above the composer already.
+    if (!landed.current && model.loaded) {
+      landed.current = true;
+      const card = element.querySelector<HTMLElement>('.request-card');
+      if (card !== null && typeof card.scrollIntoView === 'function') {
+        card.scrollIntoView({ block: card.offsetHeight > element.clientHeight ? 'start' : 'end' });
+      }
+    }
   });
 
   const loadOlder = () => {
@@ -68,6 +82,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   const pull = usePullDown(scroller, loadOlder);
 
   const status = model.status;
+  const task = model.taskState;
   const pending = model.pending;
   const turns = model.turns;
   const steers = model.steerRows;
@@ -92,6 +107,10 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       </header>
       <div class="session-head">
         <h1 class="session-heading">{model.title}</h1>
+        <p class={`task-state small ${task.tone}`} aria-label="Task state" data-tone={task.tone}>
+          <span class="dot" aria-hidden="true" />
+          {task.label}
+        </p>
         <p class="muted small">
           {model.agentId ?? ''}
           {model.folder !== undefined && (

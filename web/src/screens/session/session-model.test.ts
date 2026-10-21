@@ -11,6 +11,7 @@ import {
   oneLine,
   sendErrorText,
   SessionModel,
+  taskStateOf,
   turnRow,
   unwrapShell,
   usageLine,
@@ -477,5 +478,32 @@ describe('SessionModel: older turns (session/history)', () => {
     expect(model.hasOlder).toBe(false);
     await model.loadOlder();
     expect(client.count('session/history')).toBe(2);
+  });
+});
+
+describe('task state line', () => {
+  it('taskStateOf: one of seven states from status and the last turn, toned like the list', () => {
+    expect(taskStateOf({ status: 'running' })).toEqual({ label: 'Running', tone: 'busy' });
+    expect(taskStateOf({ status: 'waiting_approval' })).toEqual({ label: 'Waiting for your approval', tone: 'attention' });
+    expect(taskStateOf({ status: 'waiting_input' })).toEqual({ label: 'Waiting for your answer', tone: 'attention' });
+    expect(taskStateOf({ status: 'error' })).toEqual({ label: 'Failed', tone: 'error' });
+    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'completed' })).toEqual({ label: 'Finished', tone: 'ok' });
+    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'failed' })).toEqual({ label: 'Failed', tone: 'error' });
+    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'interrupted' })).toEqual({ label: 'Interrupted', tone: 'muted' });
+    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'inProgress' })).toEqual({ label: 'Running', tone: 'busy' });
+    expect(taskStateOf({ status: 'idle' })).toEqual({ label: 'Idle', tone: 'muted' });
+    expect(taskStateOf({ status: 'closed', lastTurnStatus: 'completed' })).toEqual({ label: 'Finished', tone: 'muted' });
+    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'paused' as never })).toEqual({ label: 'Idle', tone: 'muted' });
+  });
+
+  it('SessionModel.taskState follows the list row before open and the view after', async () => {
+    const { model, live, client } = await setup({ open: false });
+    expect(model.taskState.label).toBe('Idle');
+    model.start();
+    client.last('session/open').resolve(snapshot(10, [turn('t1', { status: 'completed', completedAt: 20 })]));
+    await settle();
+    expect(model.taskState).toEqual({ label: 'Finished', tone: 'ok' });
+    live(11, [['status/changed', { status: 'waiting_approval' }]]);
+    expect(model.taskState.label).toBe('Waiting for your approval');
   });
 });

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
-import { HomeModel, type Connection, type HostView, type SessionRow } from './home-model';
+import { HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
 import { NewSessionSheet } from './NewSessionSheet';
 import { useModel } from './use-model';
 
@@ -15,11 +15,13 @@ export interface HomeScreenProps {
   replica: Replica;
   /** The Notifications card; absent where the app has no service worker (the dev server). */
   notifications?: PushModel;
+  /** "Finished while away" markers; absent means none are shown. */
+  away?: AwayTracker;
   onOpenSession: (sessionId: string) => void;
 }
 
-export function HomeScreen({ client, replica, notifications, onOpenSession }: HomeScreenProps) {
-  const model = useModel(useMemo(() => new HomeModel({ client, replica }), [client, replica]));
+export function HomeScreen({ client, replica, notifications, away, onOpenSession }: HomeScreenProps) {
+  const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
   const [creating, setCreating] = useState(false);
   const pull = usePullToRefresh(() => void model.refresh());
@@ -197,7 +199,8 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
   return (
     <li>
       <a
-        class="session"
+        class={`session${row.finishedWhileAway ? ' away' : ''}`}
+        data-tone={row.tone}
         href={`/s/${encodeURIComponent(row.sessionId)}`}
         onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -215,6 +218,7 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
         </div>
         <div class="session-meta small">
           <span class={`status ${row.tone}`}>{row.statusLabel}</span>
+          {row.finishedWhileAway && <span class="away-mark">Finished while away</span>}
           <span class="muted">
             {row.agentName} · {row.folder} · {row.updated}
           </span>

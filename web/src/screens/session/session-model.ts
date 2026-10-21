@@ -251,6 +251,33 @@ export function usageLine(usage: Usage): string {
   return parts.join(' · ');
 }
 
+export type TaskState = 'Running' | 'Waiting for your approval' | 'Waiting for your answer' | 'Finished' | 'Failed' | 'Interrupted' | 'Idle';
+
+/**
+ * The header's task state line, from the session status and how its newest turn ended. The tone is the
+ * session list's (statusOf), so the line and the home row agree in color.
+ */
+export function taskStateOf(summary: Pick<SessionSummary, 'status' | 'lastTurnStatus'>): { label: TaskState; tone: Tone } {
+  const { tone } = statusOf(summary);
+  switch (summary.status) {
+    case 'running':
+      return { label: 'Running', tone };
+    case 'waiting_approval':
+      return { label: 'Waiting for your approval', tone };
+    case 'waiting_input':
+      return { label: 'Waiting for your answer', tone };
+    case 'error':
+      return { label: 'Failed', tone };
+  }
+  const label: Record<NonNullable<SessionSummary['lastTurnStatus']>, TaskState> = {
+    inProgress: 'Running',
+    completed: 'Finished',
+    failed: 'Failed',
+    interrupted: 'Interrupted',
+  };
+  return { label: summary.lastTurnStatus !== undefined ? (label[summary.lastTurnStatus] ?? 'Idle') : 'Idle', tone };
+}
+
 const OLDER_PAGE = 5;
 
 export interface SessionModelOptions {
@@ -345,11 +372,21 @@ export class SessionModel extends Model {
 
   /** The status pill: the loaded view's status (status/changed), else the list row's. */
   get status(): { label: string; tone: Tone; status: SessionSummary['status'] } {
+    const inputs = this.statusInputs;
+    return { ...statusOf(inputs), status: inputs.status };
+  }
+
+  private get statusInputs(): Pick<SessionSummary, 'status' | 'lastTurnStatus'> {
     const view = this.view;
     const status = view?.loaded ? view.status : (this.summary?.status ?? 'idle');
     const lastTurn = view === undefined ? undefined : [...view.turns].reverse().find((t) => t.optimistic === undefined);
     const lastTurnStatus = (lastTurn?.status ?? this.summary?.lastTurnStatus) as SessionSummary['lastTurnStatus'];
-    return { ...statusOf({ status, lastTurnStatus }), status };
+    return lastTurnStatus === undefined ? { status } : { status, lastTurnStatus };
+  }
+
+  /** The compact task state line under the title. */
+  get taskState(): { label: TaskState; tone: Tone } {
+    return taskStateOf(this.statusInputs);
   }
 
   get usage(): string | undefined {

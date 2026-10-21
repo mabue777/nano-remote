@@ -1322,3 +1322,51 @@ button.danger {
   box-shadow: 0 2px 12px rgb(0 0 0 / 0.15);
   z-index: 20;
 }
+
+/* ---- task states ---- */
+/* The session header's one-line task state (Running, Waiting for your approval, Finished…), toned like
+   the session list's status. The pending card below stays the call to action; this only names the state. */
+.task-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.task-state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.task-state.ok {
+  color: var(--ok);
+}
+
+.task-state.busy {
+  color: var(--busy);
+}
+
+.task-state.attention {
+  color: var(--warn);
+}
+
+.task-state.error {
+  color: var(--error);
+}
+
+/* A home row whose turn ended while the app was hidden or offline, until it is opened. */
+.away-mark {
+  font-weight: 600;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.session.away {
+  box-shadow: inset 3px 0 0 var(--accent);
+}

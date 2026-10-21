@@ -10,6 +10,7 @@
 // expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them);
 // `POST /test/run {sessionId, text}` starts a scripted turn the way the desktop would;
 // `POST /test/resolve {sessionId, decision}` answers its approval from another device;
+// `POST /test/touch {sessionId, agoSeconds}` sets a session's updatedAt to that many seconds ago;
 // `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
 // `POST /test/request {sessionId, request}` puts any approval or question up (answers {requestId});
 // `POST /test/resolve-request {sessionId, requestId, by?, decision?, answers?}` answers it from another
@@ -133,6 +134,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { subscriptions: Object.fromEntries(host.pushSubscriptions), tests: host.pushTests });
             case '/test/push-test-error':
               host.pushTestError = body.code === undefined ? undefined : { code: body.code, message: body.message ?? body.code, data: body.data };
+              return json(200, { ok: true });
+            case '/test/touch':
+              host.session(body.sessionId).summary.updatedAt = Math.floor(Date.now() / 1000) - Number(body.agoSeconds ?? 0);
               return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);

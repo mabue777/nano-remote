@@ -72,6 +72,8 @@ export interface SessionRow {
   preview: string;
   updatedAt: number;
   updated: string;
+  /** Its turn ended while the app was hidden or offline, and it has not been opened since. */
+  finishedWhileAway: boolean;
 }
 
 export function connectionOf(state: ClientState, reconnectAt: number | undefined, now: number): Connection {
@@ -169,12 +171,238 @@ export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<stri
     preview: summary.preview ?? '',
     updatedAt: summary.updatedAt,
     updated: formatAgo(summary.updatedAt, nowMs),
+    finishedWhileAway: false,
   };
+}
+
+type Ranked = Pick<SessionSummary, 'status' | 'lastTurnStatus' | 'pending' | 'updatedAt'>;
+
+/** 0: waiting for this user (a pending request), 1: running, 2: everything else. */
+export function rankOf(summary: Ranked): 0 | 1 | 2 {
+  const pending = (summary.pending?.approvals ?? 0) + (summary.pending?.inputs ?? 0);
+  if (pending > 0 || summary.status === 'waiting_approval' || summary.status === 'waiting_input') return 0;
+  if (summary.status === 'running' || (summary.status === 'idle' && summary.lastTurnStatus === 'inProgress')) return 1;
+  return 2;
+}
+
+/** The home list's order: waiting first, then running, then the rest; newest activity first within each. */
+export function orderSessions<T extends Ranked>(sessions: readonly T[]): T[] {
+  return [...sessions].sort((a, b) => rankOf(a) - rankOf(b) || b.updatedAt - a.updatedAt);
+}
+
+// ---- finished while away ------------------------------------------------------------------------
+
+type Tracked = Pick<SessionSummary, 'sessionId' | 'status' | 'lastTurnStatus' | 'lastSeq'>;
+
+/** Idle after a turn that ended (completed, failed or interrupted). */
+export function isFinished(summary: Pick<SessionSummary, 'status' | 'lastTurnStatus'>): boolean {
+  return summary.status === 'idle' && (summary.lastTurnStatus === 'completed' || summary.lastTurnStatus === 'failed' || summary.lastTurnStatus === 'interrupted');
+}
+
+/**
+ * The rule, for one session the app looks at while present (visible and connected):
+ * - `mark`: it is finished now, its Journal moved past what the app last saw (`seenSeq`), and the app did
+ *   not watch that happen live (no notification for it reached `summary.lastSeq` while present, `liveSeq`).
+ *   So the turn ended while the page was hidden or the stream was down, and the list caught up later.
+ * - `unmark`: it is no longer finished (a new turn started); a mark would be stale.
+ * - `none`: otherwise, including a session the app sees for the first time (nothing to compare with).
+ */
+export function awayTransition(seenSeq: number | undefined, summary: Tracked, liveSeq: number | undefined): 'mark' | 'unmark' | 'none' {
+  if (!isFinished(summary)) return 'unmark';
+  if (seenSeq === undefined || summary.lastSeq <= seenSeq) return 'none';
+  if (liveSeq !== undefined && liveSeq >= summary.lastSeq) return 'none';
+  return 'mark';
+}
+
+/** sessionStorage, or anything with the same two calls. */
+export interface SessionStorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** What the tracker needs from the stream client; StreamClient fits. */
+export interface AwayClient {
+  readonly state: ClientState;
+  on(event: 'state', listener: (state: ClientState, detail: string) => void): () => void;
+  onNotification(method: string, handler: (params: Record<string, unknown>, method: string) => void): () => void;
+}
+
+/** What the tracker needs from the Replica; Replica fits. */
+export interface AwayReplica {
+  readonly sessions: readonly Tracked[];
+  readonly openSessionId: string | undefined;
+  subscribe(listener: () => void): () => void;
+}
+
+export interface AwayDocument {
+  readonly visibilityState: string;
+  addEventListener(type: 'visibilitychange', listener: () => void): void;
+  removeEventListener(type: 'visibilitychange', listener: () => void): void;
+}
+
+export const AWAY_STORAGE_KEY = 'nano.finishedWhileAway';
+
+interface AwayState {
+  /** sessionId → the lastSeq the app last saw while present. */
+  seen: Record<string, number>;
+  /** sessionId → the lastSeq at which its turn was found finished while away. */
+  marks: Record<string, number>;
+}
+
+function readAwayState(storage: SessionStorageLike | null | undefined): AwayState {
+  try {
+    const raw = storage?.getItem(AWAY_STORAGE_KEY);
+    if (raw === null || raw === undefined) return { seen: {}, marks: {} };
+    const parsed = JSON.parse(raw) as Partial<AwayState>;
+    const numbers = (value: unknown): Record<string, number> => {
+      const out: Record<string, number> = {};
+      if (value !== null && typeof value === 'object') {
+        for (const [key, seq] of Object.entries(value)) if (typeof seq === 'number') out[key] = seq;
+      }
+      return out;
+    };
+    return { seen: numbers(parsed.seen), marks: numbers(parsed.marks) };
+  } catch {
+    return { seen: {}, marks: {} };
+  }
+}
+
+export interface AwayTrackerOptions {
+  client: AwayClient;
+  replica: AwayReplica;
+  /** sessionStorage: the marks live as long as the tab (a reload keeps them). */
+  storage?: SessionStorageLike | null;
+  doc?: AwayDocument;
+}
+
+/**
+ * Tracks which sessions finished while the app was away. Present means the page is visible and the
+ * stream is ready; only then does it look at the list. A live notification for a session (a Journal event
+ * of the open session, or `session/updated`) counts as watched; a list row that moved on without one (the
+ * session/list after a reconnect, or catching up after the page was hidden) is what happened while away.
+ */
+export class AwayTracker {
+  private readonly state: AwayState;
+  private readonly live = new Map<string, number>();
+  private readonly stops: (() => void)[] = [];
+  private readonly listeners = new Set<() => void>();
+  private readonly options: AwayTrackerOptions;
+  private scheduled = false;
+  private wasPresent = false;
+
+  constructor(options: AwayTrackerOptions) {
+    this.options = options;
+    this.state = readAwayState(options.storage);
+    const { client, replica, doc } = options;
+    const onVisibility = () => this.presenceChanged();
+    this.stops.push(
+      client.onNotification('*', (params, method) => this.heard(method, params)),
+      client.on('state', () => this.presenceChanged()),
+      replica.subscribe(() => this.schedule()),
+    );
+    if (doc !== undefined) {
+      doc.addEventListener('visibilitychange', onVisibility);
+      this.stops.push(() => doc.removeEventListener('visibilitychange', onVisibility));
+    }
+    this.presenceChanged();
+  }
+
+  dispose(): void {
+    for (const stop of this.stops.splice(0)) stop();
+    this.listeners.clear();
+  }
+
+  get present(): boolean {
+    const visible = this.options.doc === undefined || this.options.doc.visibilityState === 'visible';
+    return visible && this.options.client.state === 'ready';
+  }
+
+  /** True while the session carries the "Finished while away" marker. */
+  isMarked(sessionId: string): boolean {
+    return this.state.marks[sessionId] !== undefined;
+  }
+
+  /** The session was opened: its marker goes away. */
+  opened(sessionId: string): void {
+    const seq = this.options.replica.sessions.find((s) => s.sessionId === sessionId)?.lastSeq;
+    if (seq !== undefined) this.state.seen[sessionId] = Math.max(this.state.seen[sessionId] ?? 0, seq);
+    if (this.state.marks[sessionId] === undefined) {
+      this.persist();
+      return;
+    }
+    delete this.state.marks[sessionId];
+    this.persist();
+    this.notify();
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** Looks at the list now (normally deferred to after the notification that changed it). */
+  evaluate(): void {
+    this.scheduled = false;
+    if (!this.present) return;
+    const openId = this.options.replica.openSessionId;
+    let changed = false;
+    for (const summary of this.options.replica.sessions) {
+      const { sessionId } = summary;
+      const transition = sessionId === openId ? 'unmark' : awayTransition(this.state.seen[sessionId], summary, this.live.get(sessionId));
+      if (transition === 'mark' && this.state.marks[sessionId] !== summary.lastSeq) {
+        this.state.marks[sessionId] = summary.lastSeq;
+        changed = true;
+      } else if (transition === 'unmark' && this.state.marks[sessionId] !== undefined) {
+        delete this.state.marks[sessionId];
+        changed = true;
+      }
+      this.state.seen[sessionId] = summary.lastSeq;
+    }
+    this.live.clear();
+    this.persist();
+    if (changed) this.notify();
+  }
+
+  private heard(method: string, params: Record<string, unknown>): void {
+    if (!this.present) return;
+    const summary = method === 'session/updated' ? (params.summary as Partial<Tracked> | undefined) : undefined;
+    const sessionId = summary?.sessionId ?? params.sessionId;
+    const seq = summary?.lastSeq ?? params.seq;
+    if (typeof sessionId !== 'string' || typeof seq !== 'number') return;
+    this.live.set(sessionId, Math.max(this.live.get(sessionId) ?? 0, seq));
+  }
+
+  private presenceChanged(): void {
+    const present = this.present;
+    if (present && !this.wasPresent) this.schedule();
+    this.wasPresent = present;
+  }
+
+  private schedule(): void {
+    if (this.scheduled) return;
+    this.scheduled = true;
+    // After the notification that changed the Replica has reached every handler (heard() runs after it).
+    queueMicrotask(() => this.evaluate());
+  }
+
+  private persist(): void {
+    try {
+      this.options.storage?.setItem(AWAY_STORAGE_KEY, JSON.stringify(this.state));
+    } catch {
+      // storage full or blocked: the markers then last only as long as this page
+    }
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
+  }
 }
 
 export interface HomeModelOptions {
   client: HomeClient;
   replica: HomeReplica;
+  /** Marks rows that finished while the app was away; absent means no markers. */
+  away?: Pick<AwayTracker, 'isMarked' | 'subscribe'>;
   now?: () => number;
 }
 
@@ -186,6 +414,7 @@ export class HomeModel extends Model {
   private status: { value: HostStatus; receivedAt: number } | undefined;
   private readonly client: HomeClient;
   private readonly replica: HomeReplica;
+  private readonly away: HomeModelOptions['away'];
   private readonly now: () => number;
   private readonly unsubscribe: (() => void)[] = [];
   private ticker: ReturnType<typeof setInterval> | undefined;
@@ -194,6 +423,7 @@ export class HomeModel extends Model {
     super();
     this.client = options.client;
     this.replica = options.replica;
+    this.away = options.away;
     this.now = options.now ?? Date.now;
     this.unsubscribe.push(
       this.client.on('state', () => {
@@ -207,6 +437,7 @@ export class HomeModel extends Model {
       }),
       this.replica.subscribe(() => this.changed()),
     );
+    if (this.away !== undefined) this.unsubscribe.push(this.away.subscribe(() => this.changed()));
     if (this.client.state === 'ready') this.fetchStatus();
     this.updateTicker();
   }
@@ -238,9 +469,11 @@ export class HomeModel extends Model {
     const names = new Map<string, string>();
     for (const agent of this.status?.value.agents ?? this.client.host?.agents ?? []) names.set(agent.id, agent.name);
     const now = this.now();
-    return [...this.replica.sessions]
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((summary) => sessionRow(summary, names, now));
+    return orderSessions(this.replica.sessions).map((summary) => {
+      const row = sessionRow(summary, names, now);
+      if (this.away?.isMarked(summary.sessionId) === true && isFinished(summary)) row.finishedWhileAway = true;
+      return row;
+    });
   }
 
   get hasMore(): boolean {

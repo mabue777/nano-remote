@@ -4,11 +4,13 @@
 // and goes back to pairing.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
+import { watchBadge } from './pwa/badge';
 import { PushModel, type PushEnvironment } from './pwa/push';
 import { Replica } from './replica/replica';
 import { defaultStorage, type StorageLike } from './replica/storage';
 import { Router, type Route } from './routes/router';
 import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
+import { AwayTracker, type SessionStorageLike } from './screens/home-model';
 import { HomeScreen } from './screens/HomeScreen';
 import type { FetchLike } from './screens/pair-model';
 import { PairScreen } from './screens/PairScreen';
@@ -80,17 +82,21 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
     const devices = new DeviceNames(client);
     // Created before start(), so it hears the first ready; it lives as long as the stream client.
     const notifications = push === null ? undefined : new PushModel({ client, env: push, storage });
-    return { client, replica, notifications, deviceName: (clientId: string) => devices.nameOf(clientId) };
+    const away = new AwayTracker({ client, replica, storage: tabStorage(), doc: document });
+    return { client, replica, notifications, away, opened: (sessionId: string) => away.opened(sessionId), deviceName: (clientId: string) => devices.nameOf(clientId) };
   }, [device.clientId, storage, push]);
 
   useEffect(() => {
     const { client, replica } = services;
+    const stopBadge = watchBadge({ replica, client, nav: navigator, doc: document });
     const off = client.on('state', (state) => {
       if (state === 'unpaired') onUnpaired();
     });
     client.start();
     return () => {
       off();
+      stopBadge();
+      services.away.dispose();
       services.notifications?.dispose();
       replica.dispose();
       client.stop();
@@ -102,7 +108,7 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
   switch (route.name) {
     case 'home':
-      return <HomeScreen client={services.client} replica={services.replica} notifications={services.notifications} onOpenSession={open} />;
+      return <HomeScreen client={services.client} replica={services.replica} notifications={services.notifications} away={services.away} onOpenSession={open} />;
     case 'session':
       return (
         <SessionScreen
@@ -110,6 +116,7 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
           replica={services.replica}
           clientId={device.clientId}
           deviceName={services.deviceName}
+          onOpened={services.opened}
           onBack={() => router.navigate('/')}
         />
       );
@@ -131,5 +138,14 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
           </a>
         </main>
       );
+  }
+}
+
+/** sessionStorage, or null where reading it throws (blocked storage). */
+function tabStorage(): SessionStorageLike | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
   }
 }
