@@ -30,3 +30,4 @@
 {"id":"int-5632636f5f236fbad612e36aa5ad230f","kind":"field_change","created_at":"2026-10-21T12:31:50.526763Z","actor":"mabue77","issue_id":"brocode-ani","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-1bfbce5e8a5b5fa61432fb2546c181fd","kind":"field_change","created_at":"2026-10-21T12:40:32.170602Z","actor":"mabue77","issue_id":"brocode-ih6","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-9c77bb63107d307ff6377a15771126ae","kind":"field_change","created_at":"2026-10-21T12:53:22.410539Z","actor":"mabue77","issue_id":"brocode-dwy","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-452a386f23b8d515c15b2658c446216f","kind":"field_change","created_at":"2026-10-21T13:06:07.621676Z","actor":"mabue77","issue_id":"brocode-8qa","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
