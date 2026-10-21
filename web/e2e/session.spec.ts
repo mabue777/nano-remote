@@ -58,7 +58,7 @@ test('a scripted turn streams in, waits for a decision, and completes', async ({
   await expect(banner).toHaveCount(0);
   await expect(command).toContainText('Done');
   await expect(command).toContainText('echo hello > hello.txt · exit 0 · 42 ms');
-  await expect(page.getByLabel('Usage')).toHaveText('1,200 in · 340 out · 4% of context');
+  await expect(page.getByLabel('Usage')).toHaveText('Session total 1,200 in · 340 out · context 4% full');
   await expect(conversation.locator('li[data-turn-status]')).toHaveAttribute('data-turn-status', 'completed');
   await expect(page.getByLabel('Session status')).toHaveText('Finished');
 });

@@ -161,7 +161,12 @@ export function toSessionStatus(raw: unknown): SessionStatus | undefined {
   }
 }
 
-/** Codex ThreadTokenUsage -> protocol Usage: thread totals plus how full the context window is. */
+/**
+ * Codex ThreadTokenUsage -> protocol Usage. Codex sends one per model request, mid-turn included.
+ * `inputTokens`/`outputTokens` are the thread totals (`total`: every request summed, so input grows by the
+ * whole context per request). `contextPercent` is how full the window is, from the latest request alone
+ * (`last.totalTokens` / `modelContextWindow`), never from the cumulative `total`.
+ */
 export function toUsage(raw: unknown): Usage {
   const usage = obj(raw);
   const total = obj(usage.total);

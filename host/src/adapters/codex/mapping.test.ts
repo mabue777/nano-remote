@@ -14,6 +14,7 @@ import {
   toUsage,
   versionFrom,
 } from './mapping.js';
+import { FIELD_CHECK_MAPPED, FIELD_CHECK_USAGE } from './testing/token-usage-field-check.js';
 
 describe('codex mapping', () => {
   it('maps every ThreadItem type onto the protocol items', () => {
@@ -115,6 +116,15 @@ describe('codex mapping', () => {
     });
     expect(toUsage({ last: { totalTokens: 5000 }, modelContextWindow: 1000 })).toEqual({ inputTokens: 0, outputTokens: 0, contextPercent: 100 });
     expect(toUsage({ total: { inputTokens: Number.NaN }, modelContextWindow: 0 })).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  it('maps the real field check notifications: totals from `total`, the context share from `last`', () => {
+    expect(FIELD_CHECK_USAGE.map((n) => toUsage(n.params.tokenUsage))).toEqual(FIELD_CHECK_MAPPED);
+    // Input doubled across the turns while the context stayed at 1.7%: `total` sums every request,
+    // `last` is the one request that fills the window. From `total` it would read 6.7%.
+    const final = FIELD_CHECK_USAGE[3].params.tokenUsage;
+    expect(Math.round((final.total.totalTokens / final.modelContextWindow) * 1000) / 10).toBe(6.7);
+    expect(toUsage(final).contextPercent).toBe(1.7);
   });
 
   it('maps turn ends and errors', () => {

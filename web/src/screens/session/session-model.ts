@@ -238,11 +238,16 @@ export function turnRow(turn: TurnView, items: Readonly<Record<string, Item>>, e
   return row;
 }
 
-/** "1,200 in · 340 out · 4% of context". */
+/**
+ * "Session total 1,200 in · 340 out · context 4% full". The counts sum every model request of the session
+ * (each request re-sends the conversation, so "in" grows fast); the share is how full the context window
+ * was at the latest request. The engine reports after each request, so it changes mid-turn, but not while
+ * an approval is pending (Codex holds that request's numbers until its command finishes).
+ */
 export function usageLine(usage: Usage): string {
   const n = (value: number) => value.toLocaleString('en-US');
-  const parts = [`${n(usage.inputTokens)} in`, `${n(usage.outputTokens)} out`];
-  if (typeof usage.contextPercent === 'number') parts.push(`${usage.contextPercent}% of context`);
+  const parts = [`Session total ${n(usage.inputTokens)} in`, `${n(usage.outputTokens)} out`];
+  if (typeof usage.contextPercent === 'number') parts.push(`context ${usage.contextPercent}% full`);
   return parts.join(' · ');
 }
 

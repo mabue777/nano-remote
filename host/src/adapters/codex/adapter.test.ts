@@ -9,6 +9,7 @@ import type { AdapterEvent } from '../../core/adapter.js';
 import { CodexAdapter, RESUME_TURNS } from './adapter.js';
 import { fakeCodex, until, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
+import { FIELD_CHECK_MAPPED, FIELD_CHECK_USAGE } from './testing/token-usage-field-check.js';
 
 const adapters: CodexAdapter[] = [];
 afterEach(async () => {
@@ -150,6 +151,28 @@ describe('CodexAdapter', () => {
     await r.adapter.resolveApproval(params.request.requestId, 'accept');
     await r.adapter.answerInput('req_unknown', {});
     expect(r.fake.replies()).toHaveLength(1);
+  });
+
+  it('usage mid-turn: each engine notification is forwarded at once, around an approval (field check)', async () => {
+    // Turn 2 of the field check: the previous request's numbers stand while the approval waits; the
+    // engine reports the approved request's usage after its command, then the reply's, then the turn ends.
+    const [, previous, approved, reply] = FIELD_CHECK_USAGE.map(({ method, params }) => {
+      const { threadId: _drop, ...rest } = params;
+      return { notify: { method, params: rest } };
+    });
+    const r = rig({ turns: [[previous!, { command: { output: '' } }, approved!, { reply: 'Created' }, reply!]] });
+    await r.adapter.start(cwd(), {});
+    await r.adapter.turnStart(text('go'), 'cm');
+    const { params } = await r.next('approval/request');
+    const usages = () => r.events.flatMap((e) => (e.method === 'usage/updated' ? [e.params.usage] : []));
+    expect(usages()).toEqual([FIELD_CHECK_MAPPED[1]]);
+    await r.adapter.resolveApproval(params.request.requestId, 'accept');
+    await r.next('turn/completed');
+    // The fake engine adds its own usage at turn end; the field check ones came before, in order.
+    expect(usages().slice(0, 3)).toEqual([FIELD_CHECK_MAPPED[1], FIELD_CHECK_MAPPED[2], FIELD_CHECK_MAPPED[3]]);
+    const order = methods(r.events);
+    expect(order.indexOf('usage/updated')).toBeLessThan(order.indexOf('approval/request'));
+    expect(order.lastIndexOf('usage/updated')).toBeLessThan(order.indexOf('turn/completed'));
   });
 
   it('command approval without the engine list offers all four; decline lets the turn continue', async () => {

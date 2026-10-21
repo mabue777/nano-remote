@@ -70,8 +70,8 @@ describe('helpers', () => {
   });
 
   it('usageLine with and without the context share', () => {
-    expect(usageLine({ inputTokens: 1200, outputTokens: 340, contextPercent: 4 })).toBe('1,200 in · 340 out · 4% of context');
-    expect(usageLine({ inputTokens: 5, outputTokens: 6 })).toBe('5 in · 6 out');
+    expect(usageLine({ inputTokens: 1200, outputTokens: 340, contextPercent: 4 })).toBe('Session total 1,200 in · 340 out · context 4% full');
+    expect(usageLine({ inputTokens: 5, outputTokens: 6 })).toBe('Session total 5 in · 6 out');
   });
 
   it('sendErrorText maps codes to copy and falls back to the message, then a generic line', () => {
@@ -203,7 +203,7 @@ describe('SessionModel: what the screen shows', () => {
     model.closeItem();
     model.closeItem();
     expect(model.detailItemId).toBeUndefined();
-    expect(model.usage).toBe('1,200 in · 340 out · 4% of context');
+    expect(model.usage).toBe('Session total 1,200 in · 340 out · context 4% full');
     expect(model.status).toMatchObject({ label: 'Finished', tone: 'ok' });
     expect(model.mode).toBe('send');
     expect(changes).toHaveBeenCalled();
@@ -222,6 +222,24 @@ describe('SessionModel: what the screen shows', () => {
     expect(model.status.label).toBe('Needs approval');
     live(4, [['request/resolved', { requestId: 'req_1', kind: 'command', resolvedBy: 'dev_other', decision: 'accept' }]]);
     expect(model.pending.total).toBe(1);
+  });
+
+  it('usage updates mid-turn, with an approval pending (field check turn 2 numbers)', async () => {
+    const { model, live } = await setup();
+    live(1, [
+      ['usage/updated', { usage: { inputTokens: 32495, outputTokens: 144, contextPercent: 1.7 } }],
+      ['turn/started', { turn: turn('t2') }],
+      ['status/changed', { status: 'running' }],
+      ['usage/updated', { usage: { inputTokens: 49451, outputTokens: 344, contextPercent: 1.7 } }],
+      ['approval/request', { request: approval('req_1') }],
+      ['status/changed', { status: 'waiting_approval' }],
+    ]);
+    expect(model.runningTurnId).toBe('t2');
+    expect(model.status.label).toBe('Needs approval');
+    expect(model.usage).toBe('Session total 49,451 in · 344 out · context 1.7% full');
+    live(7, [['usage/updated', { usage: { inputTokens: 66646, outputTokens: 366, contextPercent: 1.7 } }]]);
+    expect(model.runningTurnId).toBe('t2');
+    expect(model.usage).toBe('Session total 66,646 in · 366 out · context 1.7% full');
   });
 
   it('a closed session cannot send', async () => {

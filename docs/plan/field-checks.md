@@ -19,5 +19,11 @@ Codex was routed through Ollama (`kimi-k3:cloud`) during the check, not the Chat
 1. The steer box placeholder "Add to the running turn" wraps and is clipped while a turn runs.
 2. Long unbroken text (brackets, paths) in a thinking block runs past the block's right edge.
 3. The token counter did not update while the second turn ran (showed the first turn's numbers).
+   Finding: Codex reports usage after every model request, and the host and phone already showed each
+   report at once (the Journal holds four for the two turns, two mid-turn). Codex sent the report for the
+   request that asked for approval only after the approved command finished, 22 s later, so the
+   first turn's numbers stood during the approval. The 1.7% was right: it is the latest request's context
+   (about 17,000 of 996,147 tokens), while "in" sums every request. The footer now reads
+   "Session total N in · N out · context N% full".
 
 Checked and not a defect: the "Jump to latest" button does not cover text when already at the bottom.
