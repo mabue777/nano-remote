@@ -763,8 +763,16 @@ textarea {
 
 .composer-form textarea {
   flex: 1;
+  min-width: 0;
   resize: none;
   max-height: 40dvh;
+}
+
+/* The box is one row while empty; a placeholder that wrapped would be cut off (field check 2026-10-21). */
+.composer-form textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer-actions {

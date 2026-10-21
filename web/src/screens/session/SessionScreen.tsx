@@ -371,7 +371,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         <textarea
           aria-label="Message"
           rows={Math.min(6, Math.max(1, model.draft.split('\n').length))}
-          placeholder={steering ? 'Add to the running turn…' : 'Message the agent…'}
+          placeholder={steering ? 'Steer the turn…' : 'Message the agent…'}
           value={model.draft}
           disabled={model.closed}
           onInput={(event) => model.setDraft((event.currentTarget as HTMLTextAreaElement).value)}

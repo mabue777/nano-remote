@@ -113,3 +113,31 @@ test('interrupt stops a running turn', async ({ page, request }) => {
   await expect(page.getByRole('alert', { name: 'Needs your decision' })).toHaveCount(0);
   await expect(conversation.locator('[data-item="agent"]')).not.toHaveText(AGENT_TEXT); // stopped mid-stream
 });
+
+test('the steer composer fits a 390 px phone: placeholder on one line, Stop and Steer visible', async ({ page, request }) => {
+  await openSession(page, request, 'ses_fake_3');
+  await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+  const message = page.getByRole('textbox', { name: 'Message' });
+  await expect(message).toHaveAttribute('placeholder', 'Message the agent…');
+  await message.fill('Sketch the README.');
+  await page.getByRole('button', { name: 'Send' }).click();
+  const conversation = page.getByRole('region', { name: 'Conversation' });
+  await expect(conversation.locator('[data-item="agent"]')).toHaveAttribute('data-streaming', 'true');
+
+  // A running turn: the empty box shows the steer placeholder next to Stop and Steer.
+  await expect(message).toHaveValue('');
+  await expect(message).toHaveAttribute('placeholder', 'Steer the turn…');
+  await expect(page.getByRole('button', { name: 'Interrupt' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Steer' })).toBeInViewport();
+  const clipped = () => message.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(await clipped()).toBeLessThanOrEqual(0);
+  await page.locator('footer.composer').screenshot({ path: test.info().outputPath('steer-composer-390.png') });
+
+  // The iPhone's system font is wider than headless Chromium's; widen the glyphs until even the short
+  // placeholder overflows the box. It must truncate on its one line, not wrap into a clipped second line.
+  await message.evaluate((el) => (el.style.letterSpacing = '8px'));
+  expect(await clipped()).toBeLessThanOrEqual(0);
+  await expect(page.getByRole('button', { name: 'Interrupt' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Steer' })).toBeInViewport();
+  await page.locator('footer.composer').screenshot({ path: test.info().outputPath('steer-composer-390-wide-font.png') });
+});
