@@ -4,11 +4,15 @@
 // The table sits next to the Journal: same SQLite file by default (`defaultJournalPath()`), its own
 // connection in WAL mode, so the two never block each other for long. Revoking a device clears its hash
 // and marks the row; a revoked row never authenticates again and is not listed.
+//
+// Web Push subscriptions (spec 9) live on the same connection (`push`): foreign keys are on, so deleting
+// a device row cascades to its subscriptions, and revoking one deletes them in the same transaction.
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
 import { ensurePrivateFile, tightenSqliteSideFiles } from '../config/private-files.js';
 import { defaultJournalPath } from '../journal/journal.js';
+import { PushSubscriptionStore } from '../push/subscriptions.js';
 
 /** Random bytes per device token: 256 bits (spec 8). Security-pass seam. */
 export const DEVICE_TOKEN_BYTES = 32;
@@ -98,6 +102,8 @@ const COLUMNS = 'client_id, display_name, platform, user_agent, created_at, last
 
 export class DeviceStore {
   readonly path: string;
+  /** The push subscriptions of the paired devices (same file, same connection). */
+  readonly push: PushSubscriptionStore;
   private readonly db: DatabaseSync;
   private readonly now: () => number;
   private readonly statements: {
@@ -122,6 +128,7 @@ export class DeviceStore {
     }
     this.db.exec('PRAGMA synchronous = FULL');
     this.db.exec(SCHEMA);
+    this.push = new PushSubscriptionStore(this.db, this.now);
     this.statements = {
       insert: this.db.prepare(
         `INSERT INTO devices (client_id, display_name, platform, user_agent, token_hash, created_at, last_seen_at)
@@ -193,9 +200,17 @@ export class DeviceStore {
     return Number(this.statements.rename.run(displayName, clientId).changes) > 0;
   }
 
-  /** Clears the token hash so the token never authenticates again. False when unknown or already revoked. */
+  /**
+   * Clears the token hash so the token never authenticates again, and drops the device's push
+   * subscriptions in the same transaction (a revoked phone must not keep getting titles). False when
+   * unknown or already revoked.
+   */
   revoke(clientId: string): boolean {
-    return Number(this.statements.revoke.run(this.now(), clientId).changes) > 0;
+    return this.push.transaction(() => {
+      const revoked = Number(this.statements.revoke.run(this.now(), clientId).changes) > 0;
+      if (revoked) this.push.unsubscribe(clientId);
+      return revoked;
+    });
   }
 
   close(): void {

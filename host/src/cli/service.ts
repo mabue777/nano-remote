@@ -133,8 +133,8 @@ export class HostService {
         host,
         device: { clientId: context.clientId, displayName: devices.get(context.clientId)?.displayName ?? '' },
         agents: agents.map(describeAgent),
-        // Web Push sending is Phase 3; the key exists from the first start, nobody is subscribed yet (spec 9).
-        push: { vapidPublicKey: vapid.publicKey, subscribed: false },
+        // The key exists from the first start; `subscribed` says whether this device has a stored subscription (spec 9).
+        push: { vapidPublicKey: vapid.publicKey, subscribed: devices.push.isSubscribed(context.clientId) },
         limits: { maxMessageBytes: MAX_MESSAGE_BYTES, snapshotTurns: DEFAULT_SNAPSHOT_TURNS },
       })),
     );

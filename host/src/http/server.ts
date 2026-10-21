@@ -18,6 +18,7 @@ import { registerDeviceMethods } from '../devices/methods.js';
 import type { DeviceStore } from '../devices/store.js';
 import { defaultJournalPath } from '../journal/journal.js';
 import { PairingCodes, type IssuedCode } from '../pairing/codes.js';
+import { registerPushMethods } from '../push/methods.js';
 import { PAIR_ENDPOINT, handlePair } from '../pairing/endpoint.js';
 import { STREAM_PATH } from '../stream/constants.js';
 import type { MethodRegistry } from '../stream/router.js';
@@ -98,6 +99,10 @@ export class HostServer {
     registerDeviceMethods(options.registry, {
       devices: options.devices,
       closeStreams: (clientId) => this.streams.revokeClient(clientId),
+    });
+    registerPushMethods(options.registry, {
+      subscriptions: options.devices.push,
+      log: (event, clientId) => this.log(`${event} clientId=${clientId}`),
     });
     this.streams = new StreamServer({
       ...options.stream,

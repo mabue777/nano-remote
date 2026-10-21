@@ -123,6 +123,65 @@ describe('listen plan', () => {
   });
 });
 
+describe('push subscriptions over the stream', () => {
+  const subscription = {
+    endpoint: 'https://web.push.apple.com/QSECRET-ENDPOINT-91c2',
+    keys: { p256dh: 'BPUBLIC-P256DH-KEY', auth: 'AUTH-SECRET-5e1d' },
+  };
+  const pushOf = async (client: TestClient) =>
+    ((await client.handshake()).result as { push: { subscribed: boolean } }).push.subscribed;
+
+  it('subscribe shows in initialize, unsubscribe flips it back, malformed input is refused, nothing secret is logged', async () => {
+    const started = await startService();
+    const phone = await pairDevice(started, 'Phone');
+    const laptop = await pairDevice(started, 'Laptop');
+    const devices = started.service.devices;
+
+    const first = await connect(started, phone);
+    expect(await pushOf(first)).toBe(false);
+    // A clientId in params is ignored: the stream's own client is subscribed.
+    expect(await first.call('push/subscribe', { subscription, clientId: laptop.clientId })).toMatchObject({ result: { ok: true } });
+    expect(devices.push.list()).toEqual([{ clientId: phone.clientId, subscription, createdAt: expect.any(Number) }]);
+
+    const second = await connect(started, phone);
+    expect(await pushOf(second)).toBe(true);
+    const other = await connect(started, laptop);
+    expect(await pushOf(other)).toBe(false);
+
+    expect(await second.call('push/unsubscribe', {})).toMatchObject({ error: { code: 'invalid_params', data: { path: 'params.endpoint' } } });
+    expect(await second.call('push/unsubscribe', { endpoint: subscription.endpoint })).toMatchObject({ result: { ok: true } });
+    const third = await connect(started, phone);
+    expect(await pushOf(third)).toBe(false);
+
+    const malformed: [unknown, string][] = [
+      [undefined, 'params.subscription'],
+      ['https://x', 'params.subscription'],
+      [{ keys: subscription.keys }, 'params.subscription.endpoint'],
+      [{ ...subscription, endpoint: '' }, 'params.subscription.endpoint'],
+      [{ endpoint: subscription.endpoint }, 'params.subscription.keys'],
+      [{ endpoint: subscription.endpoint, keys: { auth: 'a' } }, 'params.subscription.keys.p256dh'],
+      [{ endpoint: subscription.endpoint, keys: { p256dh: 'p', auth: 7 } }, 'params.subscription.keys.auth'],
+    ];
+    for (const [value, path] of malformed) {
+      expect(await third.call('push/subscribe', { subscription: value })).toMatchObject({ error: { code: 'invalid_params', data: { path } } });
+    }
+    expect(devices.push.list()).toEqual([]);
+
+    expect(await third.call('push/test', {})).toMatchObject({ error: { code: 'not_supported' } });
+
+    // Revoking drops the subscription with the device.
+    await third.call('push/subscribe', { subscription });
+    expect(devices.push.isSubscribed(phone.clientId)).toBe(true);
+    await controlRequest(started.target, 'POST', '/v1/devices/revoke', { clientId: phone.clientId });
+    expect(devices.push.list()).toEqual([]);
+
+    const log = readFileSync(testConfig().logFile, 'utf8') + JSON.stringify(started.lines);
+    expect(log).toContain(`push.subscribed clientId=${phone.clientId}`);
+    expect(log).toContain(`push.unsubscribed clientId=${phone.clientId}`);
+    for (const secret of ['QSECRET-ENDPOINT', 'BPUBLIC-P256DH', 'AUTH-SECRET']) expect(log).not.toContain(secret);
+  });
+});
+
 describe('host service', () => {
   it('logs the start line, pairs a device through the control channel, and answers initialize', async () => {
     const started = await startService();
