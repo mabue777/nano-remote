@@ -23,3 +23,4 @@
 {"id":"int-c66898924c2e0f49faf20fccefec2925","kind":"field_change","created_at":"2026-10-21T08:29:37.614173Z","actor":"mabue77","issue_id":"brocode-qx3","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-d2a6f02465715a95a78a1b2a9d597597","kind":"field_change","created_at":"2026-10-21T09:07:55.885505Z","actor":"mabue77","issue_id":"brocode-kx0.1","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-1e61323fb9ab759f1d360be4117b2d3f","kind":"field_change","created_at":"2026-10-21T09:13:51.235883Z","actor":"mabue77","issue_id":"brocode-kx0.2","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-b4af3ca3457a76092b140ebb09d6fad7","kind":"field_change","created_at":"2026-10-21T09:21:13.354715Z","actor":"mabue77","issue_id":"brocode-kx0.3","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
