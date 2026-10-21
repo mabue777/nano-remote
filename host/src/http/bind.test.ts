@@ -1,3 +1,7 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,7 +12,11 @@ import {
   isTailnet,
   parseTailscaleStatus,
   resolveTailnet,
+  tailscaleEnv,
 } from './index.js';
+
+/** What the Mac app binary prints, with exit 0, when launched without a terminal and without TAILSCALE_BE_CLI. */
+const GUI_FAILURE = "The Tailscale GUI failed to start: The operation couldn't be completed. (Tailscale.CLIError error 3.)";
 
 const STATUS = JSON.stringify({
   BackendState: 'Running',
@@ -56,7 +64,7 @@ describe('tailnet resolution', () => {
   });
 
   it('refuses a stopped, addressless or nameless tailnet', () => {
-    expect(() => parseTailscaleStatus('not json')).toThrow(/not JSON/);
+    expect(() => parseTailscaleStatus('not json')).toThrow(/not JSON: "not json"/);
     expect(() => parseTailscaleStatus('{"BackendState":"Stopped"}')).toThrow(/not running.*Stopped/);
     expect(() => parseTailscaleStatus('{}')).toThrow(/not running \(state null\)/);
     expect(() => parseTailscaleStatus('{"BackendState":"Running"}')).toThrow(/no tailnet address/);
@@ -75,6 +83,35 @@ describe('tailnet resolution', () => {
     expect(calls).toEqual([['/bin/tailscale', 'status', '--json']]);
     expect(self.addresses).toEqual(['100.88.1.2', 'fd7a:115c:a1e0::1']);
     expect(DEFAULT_TAILSCALE_CLI).toMatch(/Tailscale\.app/);
+  });
+
+  it('puts an excerpt of non-JSON output into the error, so host.log shows why', () => {
+    expect(() => parseTailscaleStatus(`${GUI_FAILURE}\n`)).toThrow(`tailscale status: output is not JSON: ${JSON.stringify(GUI_FAILURE)}`);
+    const long = 'x'.repeat(500);
+    expect(() => parseTailscaleStatus(long)).toThrow(`output is not JSON: "${'x'.repeat(200)}"`);
+  });
+
+  it('forces CLI mode with TAILSCALE_BE_CLI=1, keeping the rest of the environment', () => {
+    expect(tailscaleEnv({ PATH: '/bin', TAILSCALE_BE_CLI: '0' })).toEqual({ PATH: '/bin', TAILSCALE_BE_CLI: '1' });
+    expect(tailscaleEnv().TAILSCALE_BE_CLI).toBe('1');
+    expect(tailscaleEnv().PATH).toBe(process.env.PATH);
+  });
+
+  it('the default runner sets TAILSCALE_BE_CLI=1 on the Tailscale process', async () => {
+    // A stand-in binary that behaves like the Mac app: GUI failure unless TAILSCALE_BE_CLI=1.
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-tailscale-'));
+    try {
+      const fake = path.join(dir, 'Tailscale');
+      writeFileSync(
+        fake,
+        `#!/bin/sh\nif [ "$TAILSCALE_BE_CLI" = 1 ] && [ "$1 $2" = "status --json" ]; then printf '%s' '${STATUS}'; else echo "${GUI_FAILURE}"; fi\n`,
+      );
+      chmodSync(fake, 0o755);
+      const self = await resolveTailnet(fake);
+      expect(self).toEqual({ dnsName: 'mabue-mbp.tail1234.ts.net', addresses: ['100.88.1.2', 'fd7a:115c:a1e0::1'] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('reports a CLI failure', async () => {

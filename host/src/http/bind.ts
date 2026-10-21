@@ -22,6 +22,15 @@ export const LOOPBACK_RANGES: readonly { network: string; prefix: number; type: 
 /** The Tailscale CLI inside the Mac app (the App Store and standalone builds both ship it here). */
 export const DEFAULT_TAILSCALE_CLI = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
 
+/**
+ * The environment for every Tailscale CLI call. The Mac app binary picks CLI or GUI mode from how it is
+ * launched: without a terminal (under launchd) it tries to start the GUI and prints an error with exit 0.
+ * TAILSCALE_BE_CLI=1 forces CLI mode.
+ */
+export function tailscaleEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...base, TAILSCALE_BE_CLI: '1' };
+}
+
 function blockList(ranges: typeof TAILNET_RANGES): BlockList {
   const list = new BlockList();
   for (const range of ranges) list.addSubnet(range.network, range.prefix, range.type);
@@ -94,7 +103,8 @@ export function parseTailscaleStatus(text: string): TailnetSelf {
   try {
     status = JSON.parse(text) as typeof status;
   } catch {
-    throw new Error('tailscale status: output is not JSON');
+    const excerpt = text.trim().slice(0, 200);
+    throw new Error(`tailscale status: output is not JSON: ${JSON.stringify(excerpt)}`);
   }
   if (status.BackendState !== 'Running') {
     throw new Error(`tailscale is not running (state ${JSON.stringify(status.BackendState ?? null)})`);
@@ -112,7 +122,7 @@ export type RunCommand = (binary: string, args: string[]) => Promise<string>;
 
 const runCommand: RunCommand = (binary, args) =>
   new Promise((resolve, reject) => {
-    execFile(binary, args, { timeout: 10_000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) =>
+    execFile(binary, args, { env: tailscaleEnv(), timeout: 10_000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) =>
       error ? reject(error) : resolve(stdout),
     );
   });

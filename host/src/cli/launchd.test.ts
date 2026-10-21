@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { install, LAUNCHCTL, renderPlist, uninstall, type Run } from './launchd.js';
+import { install, LAUNCHCTL, renderPlist, run, uninstall, type Run } from './launchd.js';
 import { LAUNCHD_LABEL, launchAgentPath, logsDir } from './paths.js';
 
 let home: string;
@@ -157,5 +157,14 @@ describe('install and uninstall', () => {
     ]);
     expect(() => statSync(plistPath)).toThrow();
     expect(await uninstall({ plistPath, uid: 501, run: launchctl.run })).toBe(false);
+  });
+});
+
+describe('run', () => {
+  it('passes the given environment to the child, else inherits this one', async () => {
+    const script = ['-c', 'printf %s "$NANO_RUN_PROBE"'];
+    expect(await run('/bin/sh', script, { env: { NANO_RUN_PROBE: 'given' } })).toEqual({ code: 0, stdout: 'given', stderr: '' });
+    expect((await run('/bin/sh', script)).stdout).toBe(process.env.NANO_RUN_PROBE ?? '');
+    expect((await run('/bin/sh', ['-c', 'exit 4'])).code).toBe(4);
   });
 });

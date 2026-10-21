@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { DeviceRecord } from '../devices/store.js';
-import { DEFAULT_TAILSCALE_CLI, resolveTailnet, type TailnetSelf } from '../http/bind.js';
+import { DEFAULT_TAILSCALE_CLI, resolveTailnet, tailscaleEnv, type TailnetSelf } from '../http/bind.js';
 import type { IssuedCode } from '../pairing/codes.js';
 import { parseArgs, USAGE, UsageError, type Command } from './args.js';
 import { ensurePrivateDir, loadConfig } from './config.js';
@@ -154,7 +154,7 @@ async function cert(command: Extract<Command, { name: 'cert' }>, env: CliEnv): P
   ensurePrivateDir(path.dirname(config.tls.keyPath));
   const args = ['cert', '--cert-file', config.tls.certPath, '--key-file', config.tls.keyPath, self.dnsName];
   env.out(`running: tailscale ${args.join(' ')}`);
-  const result = await env.run(DEFAULT_TAILSCALE_CLI, args);
+  const result = await env.run(DEFAULT_TAILSCALE_CLI, args, { env: tailscaleEnv() });
   if (result.code !== 0) {
     env.err(`tailscale cert failed (${result.code}): ${(result.stderr || result.stdout).trim()}`);
     env.err('HTTPS certificates must be enabled for the tailnet: https://login.tailscale.com/admin/dns');

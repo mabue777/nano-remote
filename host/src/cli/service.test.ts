@@ -434,13 +434,17 @@ describe('nano-host commands', () => {
 
   it('cert runs tailscale cert for the MagicDNS name into the config folder', async () => {
     const calls: string[][] = [];
+    const envs: (NodeJS.ProcessEnv | undefined)[] = [];
     const env = cliEnv({
-      run: async (binary, args) => {
+      run: async (binary, args, options) => {
         calls.push([binary, ...args]);
+        envs.push(options?.env);
         return { code: 0, stdout: '', stderr: '' };
       },
     });
     expect(await runCli(['cert'], env)).toBe(EXIT_OK);
+    // CLI mode forced, so cert also works without a terminal (launchd, scripts).
+    expect(envs.map((e) => e?.TAILSCALE_BE_CLI)).toEqual(['1']);
     const dir = path.join(home, 'Library', 'Application Support', 'NanoHost');
     expect(calls).toEqual([
       [

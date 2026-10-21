@@ -101,6 +101,11 @@ and stderr also go to `stdout.log` and `stderr.log` in the same folder. Tokens, 
 secrets are never logged (fields with such names are redacted). Follow the log with
 `tail -f ~/Library/Logs/NanoHost/host.log`.
 
+Troubleshooting: if the job restarts every 10 s and `host.log` shows `host.start_failed` with
+`tailscale status: output is not JSON: "The Tailscale GUI failed to start …"`, the Tailscale app binary
+started in GUI mode because launchd gives it no terminal. The host sets `TAILSCALE_BE_CLI=1` on every
+Tailscale call to force CLI mode; rebuild and restart the job if you see this on an older build.
+
 Shutdown: on SIGTERM (`launchctl bootout`, `kickstart -k`, logout) pongs report `draining` and new streams
 are refused with 4010 for a moment, then every stream closes with 4010, the engines stop, the Journal is
 closed (its write-ahead log is checkpointed), and the process exits 0.

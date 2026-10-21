@@ -9,6 +9,7 @@ export {
   isTailnet,
   parseTailscaleStatus,
   resolveTailnet,
+  tailscaleEnv,
 } from './bind.js';
 export type { BindPolicy, RunCommand, TailnetSelf } from './bind.js';
 export {

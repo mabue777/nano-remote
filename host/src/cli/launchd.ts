@@ -78,11 +78,15 @@ export function renderPlist(options: PlistOptions): string {
   return lines.join('\n');
 }
 
-export type Run = (binary: string, args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+export type Run = (
+  binary: string,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv },
+) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-export const run: Run = (binary, args) =>
+export const run: Run = (binary, args, options = {}) =>
   new Promise((resolve) => {
-    execFile(binary, args, { timeout: 60_000 }, (error, stdout, stderr) => {
+    execFile(binary, args, { env: options.env ?? process.env, timeout: 60_000 }, (error, stdout, stderr) => {
       const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
       resolve({ code, stdout: String(stdout), stderr: String(stderr) });
     });
