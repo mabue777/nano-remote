@@ -176,25 +176,28 @@ textarea {
   margin-bottom: 6px;
 }
 
-.field.switch {
+/* The bypass row on the new-session sheet: label on the left, the 52 x 32 switch at the right edge. */
+.field.bypass-row {
   flex-direction: row;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
-.field.switch > span {
+.field.bypass-row > .bypass-title {
+  flex: 1;
+  min-width: 0;
   margin-bottom: 0;
 }
 
-.field.switch input {
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  accent-color: var(--error);
+.field.bypass-row.on > .bypass-title {
+  color: var(--error);
 }
 
-.field.switch.on > span {
-  color: var(--error);
+.field.bypass-row.on .switch[aria-checked='true'] {
+  background: var(--error);
+  border-color: var(--error);
 }
 
 .bypass-tag {
