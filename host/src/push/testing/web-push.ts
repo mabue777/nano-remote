@@ -53,9 +53,10 @@ export interface ReceivedPush {
   body: Buffer;
 }
 
-/** A local push service: `status` is what it answers next; `hang` never answers (a timeout). */
+/** A local push service: `status` and `body` are what it answers next; `hang` never answers (a timeout). */
 export class FakePushService {
   status = 201;
+  body = '';
   hang = false;
   readonly received: ReceivedPush[] = [];
   private readonly server = http.createServer((request, response) => {
@@ -65,7 +66,7 @@ export class FakePushService {
       this.received.push({ path: request.url ?? '/', headers: request.headers, body: Buffer.concat(chunks) });
       if (this.hang) return;
       response.writeHead(this.status, { location: '/message/1' });
-      response.end();
+      response.end(this.body);
     });
   });
 

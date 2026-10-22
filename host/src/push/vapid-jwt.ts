@@ -9,8 +9,30 @@ import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
 
 import type { VapidKeys } from './vapid.js';
 
-/** RFC 8292 `sub`: a contact for the push service operator. */
-export const DEFAULT_VAPID_CONTACT = 'mailto:nano-remote@localhost';
+/**
+ * RFC 8292 `sub`: a contact for the push service operator. It must name a real domain: Apple's push
+ * service answers 403 {"reason":"BadJwtToken"} to `mailto:…@localhost` (field check 2026-10-22).
+ * Overridden by `vapidContact` in config.json.
+ */
+export const DEFAULT_VAPID_CONTACT = 'https://github.com/mabue77/nano-remote';
+
+/** A contact Apple, Google and Mozilla accept: `https://<host with a dot>` or `mailto:<user>@<domain with a dot>`, never localhost. */
+export function isValidVapidContact(contact: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(contact);
+  } catch {
+    return false;
+  }
+  let host: string;
+  if (url.protocol === 'https:') host = url.hostname;
+  else if (url.protocol === 'mailto:') {
+    const match = /^[^@\s]+@([^@\s]+)$/.exec(decodeURIComponent(url.pathname));
+    if (!match || url.search !== '') return false;
+    host = match[1]!.toLowerCase();
+  } else return false;
+  return host.includes('.') && host !== 'localhost' && !host.endsWith('.localhost') && !host.endsWith('.local');
+}
 /** Lifetime of a JWT (RFC 8292 allows at most 24 h). */
 export const VAPID_JWT_TTL_SECONDS = 12 * 60 * 60;
 /** A cached JWT is replaced this long before it expires. */

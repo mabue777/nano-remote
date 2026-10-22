@@ -14,6 +14,7 @@ import { Journal } from '../journal/journal.js';
 import { CloseCode } from '../stream/constants.js';
 import { TestClient } from '../stream/testing/client.js';
 import { decrypt, FakePushService, newReceiver } from '../push/testing/web-push.js';
+import { DEFAULT_VAPID_CONTACT } from '../push/vapid-jwt.js';
 import { EXIT_FAILURE, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli, stableNodePath, type CliEnv } from './commands.js';
 import { defaultConfig, type HostConfig } from './config.js';
 import { controlRequest } from './control.js';
@@ -56,8 +57,8 @@ interface Started {
   target: { socketPath: string; secretPath: string };
 }
 
-async function startService(options: { drainMs?: number; agent?: FakeAgent } = {}): Promise<Started> {
-  const config = testConfig();
+async function startService(options: { drainMs?: number; agent?: FakeAgent; config?: Partial<HostConfig> } = {}): Promise<Started> {
+  const config = testConfig(options.config);
   const configPath = path.join(home, 'config.json');
   const lines: Record<string, unknown>[] = [];
   const logger = createLogger({ file: config.logFile, stdout: { write: (t: string) => lines.push(JSON.parse(t)) } });
@@ -180,6 +181,36 @@ describe('push subscriptions over the stream', () => {
     expect(log).toContain(`push.subscribed clientId=${phone.clientId}`);
     expect(log).toContain(`push.unsubscribed clientId=${phone.clientId}`);
     for (const secret of ['QSECRET-ENDPOINT', 'BPUBLIC-P256DH', 'AUTH-SECRET']) expect(log).not.toContain(secret);
+  });
+});
+
+describe('VAPID contact', () => {
+  const subOf = (authorization: string | undefined) =>
+    JSON.parse(Buffer.from(/^vapid t=([^,]+),/.exec(authorization ?? '')![1]!.split('.')[1]!, 'base64url').toString()).sub as string;
+
+  it.each([
+    ['vapidContact from config.json', 'mailto:ops@example.org'],
+    ['the default without vapidContact', undefined],
+  ])('%s is the JWT sub claim, and a 403 logs the reason', async (_label, vapidContact) => {
+    const pushService = await FakePushService.start();
+    try {
+      const started = await startService(vapidContact ? { config: { vapidContact } } : {});
+      const phone = await pairDevice(started, 'Phone');
+      const client = await connect(started, phone);
+      await client.handshake();
+      const receiver = newReceiver();
+      await client.call('push/subscribe', { subscription: { endpoint: pushService.endpoint(), keys: receiver.keys } });
+      expect(await client.call('push/test', {})).toMatchObject({ result: { ok: true } });
+      expect(subOf(pushService.received[0]!.headers.authorization)).toBe(vapidContact ?? DEFAULT_VAPID_CONTACT);
+
+      pushService.status = 403;
+      pushService.body = '{"reason":"BadJwtToken"}';
+      await client.call('push/test', {});
+      const failed = started.lines.filter((line) => line.event === 'push.sent' && line.outcome === 'failed');
+      expect(failed).toEqual([expect.objectContaining({ statusCode: 403, reason: 'BadJwtToken' })]);
+    } finally {
+      await pushService.close();
+    }
   });
 });
 

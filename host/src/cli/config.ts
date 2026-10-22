@@ -10,7 +10,8 @@
 //     "enabledAgents": ["codex"],
 //     "codexBinary": "/Applications/ChatGPT.app/…/codex",
 //     "journalPath": "…/journal.sqlite",
-//     "logFile": "~/Library/Logs/NanoHost/host.log"
+//     "logFile": "~/Library/Logs/NanoHost/host.log",
+//     "vapidContact": "mailto:me@example.org"  // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
 //   }
 import { randomBytes } from 'node:crypto';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,6 +21,7 @@ import path from 'node:path';
 import { DEFAULT_CODEX_BINARY } from '../config/codex.js';
 import { ensurePrivateDir } from '../config/private-files.js';
 import { DEFAULT_PORT, TLS_CERT_FILE, TLS_KEY_FILE } from '../http/server.js';
+import { isValidVapidContact } from '../push/vapid-jwt.js';
 import { configDir, logsDir } from './paths.js';
 
 export const DEFAULT_HOST_PORT = DEFAULT_PORT;
@@ -38,6 +40,8 @@ export interface HostConfig {
   codexBinary: string;
   journalPath: string;
   logFile: string;
+  /** VAPID `sub` claim (`https:` or `mailto:` with a real domain); absent means DEFAULT_VAPID_CONTACT. */
+  vapidContact?: string;
 }
 
 export class ConfigError extends Error {
@@ -78,6 +82,7 @@ const KEYS: readonly (keyof HostConfig)[] = [
   'codexBinary',
   'journalPath',
   'logFile',
+  'vapidContact',
 ];
 
 /**
@@ -129,6 +134,11 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     }
   }
 
+  const vapidContact = raw.vapidContact ?? defaults.vapidContact;
+  if (vapidContact !== undefined && (typeof vapidContact !== 'string' || !isValidVapidContact(vapidContact))) {
+    fail('vapidContact must be an https: URL or a mailto: address with a real domain (not localhost)');
+  }
+
   return {
     hostId: hostId as string,
     listenAddresses: [...(listenAddresses as string[])],
@@ -138,6 +148,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     codexBinary: absolute(raw.codexBinary ?? defaults.codexBinary, 'codexBinary'),
     journalPath: absolute(raw.journalPath ?? defaults.journalPath, 'journalPath'),
     logFile: absolute(raw.logFile ?? defaults.logFile, 'logFile'),
+    ...(vapidContact !== undefined ? { vapidContact: vapidContact as string } : {}),
   };
 }
 

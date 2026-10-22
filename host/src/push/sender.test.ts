@@ -2,7 +2,7 @@ import net, { type AddressInfo } from 'node:net';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { MAX_PAYLOAD_BYTES, PushSender, topicHeader, type SendLogFields } from './sender.js';
+import { MAX_PAYLOAD_BYTES, MAX_REASON_CHARS, PushSender, refusalReason, topicHeader, type SendLogFields } from './sender.js';
 import { decrypt, FakePushService, newReceiver, type Receiver } from './testing/web-push.js';
 import { generateVapidKeys } from './vapid.js';
 import { VapidSigner } from './vapid-jwt.js';
@@ -75,6 +75,32 @@ describe('push sender', () => {
       ['gone', 404],
       ['failed', 500],
     ]);
+  });
+
+  it("logs the push service's refusal reason: the JSON reason field, else the text, at most 200 chars", async () => {
+    const subscription = { endpoint: service.endpoint('SECRET-ENDPOINT'), keys: receiver.keys };
+    service.status = 403;
+    service.body = '{"reason":"BadJwtToken"}';
+    expect(await sender().send('dev_phone', subscription, payload)).toEqual({ outcome: 'failed', status: 403, detail: 'BadJwtToken' });
+    service.status = 410;
+    service.body = 'subscription expired\n';
+    expect(await sender().send('dev_phone', subscription, payload)).toEqual({ outcome: 'gone', status: 410, detail: 'subscription expired' });
+    service.status = 400;
+    service.body = 'x'.repeat(1000);
+    await sender().send('dev_phone', subscription, payload);
+    expect(logs.map((l) => [l.outcome, l.statusCode, l.reason])).toEqual([
+      ['failed', 403, 'BadJwtToken'],
+      ['gone', 410, 'subscription expired'],
+      ['failed', 400, 'x'.repeat(MAX_REASON_CHARS)],
+    ]);
+    expect(JSON.stringify(logs)).not.toContain('SECRET-ENDPOINT');
+  });
+
+  it('refusalReason takes only the reason field of a JSON body and ignores empty bodies', () => {
+    expect(refusalReason('{"reason":"BadJwtToken","other":"secret"}')).toBe('BadJwtToken');
+    expect(refusalReason('')).toBeUndefined();
+    expect(refusalReason(' \n ')).toBeUndefined();
+    expect(refusalReason('bad\r\nthing')).toBe('bad thing');
   });
 
   it('a push service that never answers is a timeout error, not a throw', async () => {

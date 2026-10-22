@@ -102,8 +102,19 @@ describe('config file', () => {
     [{ codexBinary: '' }, /codexBinary must be a non-empty string/],
     [{ journalPath: 'journal.sqlite' }, /journalPath must be an absolute path/],
     [{ logFile: 3 }, /logFile/],
+    [{ vapidContact: 'mailto:nano-remote@localhost' }, /vapidContact must be an https: URL or a mailto: address/],
+    [{ vapidContact: 'http://example.com' }, /vapidContact/],
+    [{ vapidContact: 7 }, /vapidContact/],
   ])('refuses %j', (value, message) => {
     expect(() => validateConfig(value, 'config.json', defaultConfig(home, 'host_x'))).toThrow(message);
+  });
+
+  it('accepts an optional vapidContact and omits it by default', () => {
+    expect(defaultConfig(home, 'host_x')).not.toHaveProperty('vapidContact');
+    expect(validateConfig({}, 'c', defaultConfig(home, 'host_x'))).not.toHaveProperty('vapidContact');
+    for (const contact of ['mailto:me@example.org', 'https://example.com/contact']) {
+      expect(validateConfig({ vapidContact: contact }, 'c', defaultConfig(home, 'host_x')).vapidContact).toBe(contact);
+    }
   });
 
   it('drops duplicate agents', () => {

@@ -3,7 +3,7 @@ import { createPublicKey, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { generateVapidKeys } from './vapid.js';
-import { DEFAULT_VAPID_CONTACT, VAPID_JWT_RENEW_SECONDS, VAPID_JWT_TTL_SECONDS, VapidSigner } from './vapid-jwt.js';
+import { DEFAULT_VAPID_CONTACT, isValidVapidContact, VAPID_JWT_RENEW_SECONDS, VAPID_JWT_TTL_SECONDS, VapidSigner } from './vapid-jwt.js';
 
 const decode = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString()) as Record<string, unknown>;
 
@@ -41,6 +41,28 @@ describe('VAPID JWT (RFC 8292)', () => {
     const jwt = new VapidSigner({ keys, contact: 'mailto:me@example.org' }).jwt('https://fcm.googleapis.com');
     expect(decode(jwt.split('.')[1]!).sub).toBe('mailto:me@example.org');
     expect(verifyJwt(jwt, keys.publicKey)).toBe(true);
+  });
+
+  it('the default contact names a real domain (Apple rejects mailto:…@localhost with 403 BadJwtToken)', () => {
+    expect(DEFAULT_VAPID_CONTACT).not.toMatch(/localhost|\.local\b|\.invalid\b/i);
+    expect(DEFAULT_VAPID_CONTACT).toMatch(/^(https:\/\/|mailto:)/);
+    expect(isValidVapidContact(DEFAULT_VAPID_CONTACT)).toBe(true);
+  });
+
+  it.each([
+    ['https://github.com/mabue77/nano-remote', true],
+    ['https://example.com', true],
+    ['mailto:nano-remote@example.com', true],
+    ['mailto:nano-remote@localhost', false],
+    ['mailto:me@host.localhost', false],
+    ['mailto:me@mac.local', false],
+    ['mailto:nodomain', false],
+    ['https://localhost', false],
+    ['http://example.com', false],
+    ['me@example.com', false],
+    ['', false],
+  ])('isValidVapidContact(%j) is %s', (contact, valid) => {
+    expect(isValidVapidContact(contact)).toBe(valid);
   });
 
   it('caches one JWT per audience until an hour before it expires', () => {

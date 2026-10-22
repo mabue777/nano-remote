@@ -122,8 +122,10 @@ export class HostService {
     // The NanoHost folder holds the control secret, the VAPID key and usually the TLS key: 0700 (item 5).
     ensurePrivateDir(path.dirname(options.configPath));
     const vapid = ensureVapidKeys(vapidKeysPath(options.configPath));
-    // One log line per push: clientId, outcome, status code, duration. Never the endpoint, keys or payload.
-    const pushSender = new PushSender({ signer: new VapidSigner({ keys: vapid }), log: (fields) => logger.info('push.sent', { ...fields }) });
+    // One log line per push: clientId, outcome, status code, the push service's reason on a refusal,
+    // duration. Never the endpoint, keys or payload.
+    const signer = new VapidSigner({ keys: vapid, ...(config.vapidContact !== undefined ? { contact: config.vapidContact } : {}) });
+    const pushSender = new PushSender({ signer, log: (fields) => logger.info('push.sent', { ...fields }) });
     const journal = new Journal({
       path: config.journalPath,
       onListenerError: (error, event) => logger.error('journal.listener_failed', { method: event.method, seq: event.params.seq, error }),

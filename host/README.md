@@ -96,6 +96,12 @@ loopback IPs may be listed instead, never a wildcard. Every command takes `--con
 file (the control socket and secret then live next to it). `start --insecure-dev` serves plain HTTP on
 loopback only, for development.
 
+Optional `"vapidContact"` sets the contact the host names to push services (the VAPID `sub` claim), for
+example `"mailto:me@example.org"` or `"https://example.org"`. It must be `https:` or `mailto:` with a
+real domain; `localhost` is refused, because Apple's push service rejects every push signed with it
+(403 `BadJwtToken`). Without it the host uses `https://github.com/mabue77/nano-remote`. When a push
+service refuses a push, `host.log` shows its reason on the `push.sent` line (`reason=BadJwtToken`).
+
 Logs: one JSON line per event, to stdout and to `~/Library/Logs/NanoHost/host.log`. Under launchd, stdout
 and stderr also go to `stdout.log` and `stderr.log` in the same folder. Tokens, pairing codes, cookies and
 secrets are never logged (fields with such names are redacted). Follow the log with

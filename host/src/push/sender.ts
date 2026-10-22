@@ -5,7 +5,8 @@
 //   if (result.outcome === 'gone') subscriptions.deleteByEndpoint(subscription.endpoint);
 //
 // send never throws: every failure is a result. One structured log line per send carries the clientId,
-// outcome, status code and duration, never the endpoint, the keys or the payload text (they are
+// outcome, status code, the push service's reason on a refusal (such as Apple's "BadJwtToken", at most
+// 200 characters) and duration, never the endpoint, the keys or the payload text (they are
 // capabilities or session content).
 import { createHash } from 'node:crypto';
 
@@ -34,9 +35,9 @@ export interface SendOptions {
 
 export type SendResult =
   | { outcome: 'delivered'; status: number }
-  /** 404 or 410: the subscription is dead and the caller deletes it. */
-  | { outcome: 'gone'; status: number }
-  | { outcome: 'failed'; status: number }
+  /** 404 or 410: the subscription is dead and the caller deletes it. `detail`: the push service's reason, if it gave one. */
+  | { outcome: 'gone'; status: number; detail?: string }
+  | { outcome: 'failed'; status: number; detail?: string }
   | { outcome: 'error'; reason: 'network' | 'timeout' | 'payload_too_large' | 'invalid_subscription' };
 
 /** TTLs by what the push announces: an approval is useless after a minute, a finished turn is not. */
@@ -44,6 +45,27 @@ export const PUSH_TTL = { approval: 60, completion: 3600 } as const;
 /** The JSON payload cap. */
 export const MAX_PAYLOAD_BYTES = 3 * 1024;
 export const SEND_TIMEOUT_MS = 10_000;
+/** The most of a push service's refusal reason that is logged. */
+export const MAX_REASON_CHARS = 200;
+
+/**
+ * The reason in a refusal body: the `reason` field of a JSON body (Apple: {"reason":"BadJwtToken"}),
+ * else the plain text body. Control characters are dropped and it is cut to MAX_REASON_CHARS.
+ */
+export function refusalReason(text: string): string | undefined {
+  let reason = text;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { reason?: unknown }).reason === 'string') {
+      reason = (parsed as { reason: string }).reason;
+    }
+  } catch {
+    // Not JSON: the text itself.
+  }
+  // eslint-disable-next-line no-control-regex
+  const clean = reason.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, MAX_REASON_CHARS);
+  return clean === '' ? undefined : clean;
+}
 
 export interface SendLogFields {
   clientId: string;
@@ -99,8 +121,10 @@ export class PushSender {
     const started = Date.now();
     const result = await this.attempt(subscription, payload, options);
     const fields: SendLogFields = { clientId, outcome: result.outcome, durationMs: Date.now() - started };
-    if ('status' in result) fields.statusCode = result.status;
-    else fields.reason = result.reason;
+    if ('status' in result) {
+      fields.statusCode = result.status;
+      if ('detail' in result && result.detail !== undefined) fields.reason = result.detail;
+    } else fields.reason = result.reason;
     this.log(fields);
     return result;
   }
@@ -128,17 +152,19 @@ export class PushSender {
     };
     if (options.topic !== undefined) headers.topic = topicHeader(options.topic);
     let response: Response;
+    let text = '';
     try {
       response = await this.fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(this.timeoutMs) });
-      // The body is not needed; drain it so the connection can be reused.
-      await response.arrayBuffer().catch(() => undefined);
+      // Read the body even on success so the connection can be reused; a refusal's body says why.
+      text = await response.text().catch(() => '');
     } catch (error) {
       const name = (error as Error | undefined)?.name;
       return { outcome: 'error', reason: name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network' };
     }
     const status = response.status;
     if (status >= 200 && status < 300) return { outcome: 'delivered', status };
-    if (status === 404 || status === 410) return { outcome: 'gone', status };
-    return { outcome: 'failed', status };
+    const detail = refusalReason(text);
+    const outcome = status === 404 || status === 410 ? 'gone' : 'failed';
+    return detail === undefined ? { outcome, status } : { outcome, status, detail };
   }
 }
