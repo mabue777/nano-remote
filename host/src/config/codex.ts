@@ -18,7 +18,8 @@ export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access
 export const CODEX_SANDBOXES: readonly CodexSandbox[] = ['read-only', 'workspace-write', 'danger-full-access'];
 
 /** Codex `AskForApproval` (the string forms). */
-export type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never';
+export type CodexApprovalPolicy = 'untrusted' | 'on-failure' | 'on-request' | 'never';
+export const CODEX_APPROVAL_POLICIES: readonly CodexApprovalPolicy[] = ['untrusted', 'on-failure', 'on-request', 'never'];
 
 export interface CodexConfig {
   /** The program to run. */
@@ -31,7 +32,7 @@ export interface CodexConfig {
   env: Record<string, string>;
   /** Sandbox of a session whose settings name none. */
   sandbox: CodexSandbox;
-  /** Approval policy of every session: the host wants to see approvals. */
+  /** Approval policy of a session whose settings name none (`approvalMode`): the host wants to see approvals. */
   approvalPolicy: CodexApprovalPolicy;
   /** How long one JSON-RPC call may take before the engine counts as unavailable. */
   requestTimeoutMs: number;
@@ -69,4 +70,8 @@ export function codexConfig(overrides: Partial<CodexConfig> = {}, env: NodeJS.Pr
 
 export function isSandbox(value: unknown): value is CodexSandbox {
   return typeof value === 'string' && (CODEX_SANDBOXES as readonly string[]).includes(value);
+}
+
+export function isApprovalPolicy(value: unknown): value is CodexApprovalPolicy {
+  return typeof value === 'string' && (CODEX_APPROVAL_POLICIES as readonly string[]).includes(value);
 }

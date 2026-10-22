@@ -574,6 +574,16 @@ export class SessionManager {
   }
 
   /** Journals `session/changed` with the session as it is now plus `patch`. */
+  /** Merges the adapter's effective settings into Session.settings; journals session/changed only on a change. */
+  private reportSettings(sessionId: string, effective: Settings | undefined): void {
+    const session = this.journal.session(sessionId);
+    if (effective === undefined || session === undefined) return;
+    const current = session.settings ?? {};
+    const settings = { ...current, ...effective };
+    if (Object.entries(effective).every(([key, value]) => current[key] === value)) return;
+    this.changeSession(sessionId, { settings });
+  }
+
   private changeSession(sessionId: string, patch: Partial<Session>): void {
     const session: Session = {
       ...this.journal.session(sessionId)!,
@@ -661,6 +671,7 @@ export class SessionManager {
         const id = await adapter.start(session.cwd, session.settings);
         if (id !== '') this.store.setEngineSessionId(live.sessionId, id);
       }
+      this.reportSettings(live.sessionId, adapter.effectiveSettings?.());
       return adapter;
     };
     live.ready = boot().catch((error: unknown) => {

@@ -106,7 +106,14 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         </span>
       </header>
       <div class="session-head">
-        <h1 class="session-heading">{model.title}</h1>
+        <h1 class="session-heading">
+          {model.title}
+          {model.bypass && (
+            <span class="bypass-tag" title="Approvals bypassed: the agent runs everything without asking" aria-label="Approvals bypassed">
+              Bypass
+            </span>
+          )}
+        </h1>
         <p class={`task-state small ${task.tone}`} aria-label="Task state" data-tone={task.tone}>
           <span class="dot" aria-hidden="true" />
           {task.label}

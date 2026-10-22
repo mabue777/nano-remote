@@ -176,6 +176,39 @@ textarea {
   margin-bottom: 6px;
 }
 
+.field.switch {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.field.switch > span {
+  margin-bottom: 0;
+}
+
+.field.switch input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--error);
+}
+
+.field.switch.on > span {
+  color: var(--error);
+}
+
+.bypass-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--error);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
 /* ---- pairing ---- */
 .pair-header {
   margin: 24px 0 16px;

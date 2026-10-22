@@ -370,6 +370,11 @@ export class SessionModel extends Model {
     return this.summary?.agentId;
   }
 
+  /** True while the session runs with approvals bypassed (Session.settings.approvalMode "never"). */
+  get bypass(): boolean {
+    return this.view?.session?.settings?.approvalMode === 'never';
+  }
+
   /** The status pill: the loaded view's status (status/changed), else the list row's. */
   get status(): { label: string; tone: Tone; status: SessionSummary['status'] } {
     const inputs = this.statusInputs;

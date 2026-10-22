@@ -18,7 +18,7 @@
         "updatedAt": 1760930500,
         "lastSeq": 814,
         "pending": {"approvals": 0, "inputs": 0},
-        "settings": {"model": "gpt-5-codex", "approvalMode": "onRequest", "sandbox": "workspace-write"}
+        "settings": {"model": "gpt-5-codex", "approvalMode": "on-request", "sandbox": "workspace-write"}
       },
       "events": [
         {

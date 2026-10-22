@@ -57,6 +57,36 @@ const requestOf = (event: JournalEvent) => (event.params as { request: Record<st
 const turnOf = (event: JournalEvent) => (event.params as { turn: { turnId: string; status: string; error: unknown } }).turn;
 
 describe('session core end to end with the Codex adapter', () => {
+  it('bypass approvals: approvalMode never reaches thread/start with full access; an outside command runs unasked', async () => {
+    const outside = '/bin/zsh -lc "touch /tmp/nano-outside-folder"';
+    const { h, fake } = await setup({ turns: [[{ command: { command: outside, cwd: '/tmp', output: '' } }, { reply: 'Done.' }]] });
+    const phone = await h.connect();
+    const { session } = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/start', {
+      agentId: 'codex',
+      cwd: h.cwd,
+      settings: { approvalMode: 'never' },
+    });
+    expect(fake.sent('thread/start')[0]).toMatchObject({ cwd: h.cwd, approvalPolicy: 'never', sandbox: 'danger-full-access' });
+    // Session.settings reports what is in effect, so the phone can mark the session.
+    expect(session.settings).toMatchObject({ approvalMode: 'never', sandbox: 'danger-full-access' });
+
+    const sessionId = session.sessionId;
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: text('Touch a file outside the folder'), clientMessageId: randomUUID() });
+    const completed = await waitEvent(phone, 'turn/completed');
+    expect(turnOf(completed).status).toBe('completed');
+    const events = eventsOf(phone, sessionId);
+    expect(events.map((e) => e.method)).not.toContain('approval/request');
+    expect(events.find((e) => e.method === 'item/completed' && (e.params as { item: { type: string } }).item.type === 'command')).toMatchObject({
+      params: { item: { command: outside, status: 'completed' } },
+    });
+
+    // Without the switch nothing changes: on-request, workspace-write, reported as such.
+    const plain = await rpc<{ session: { settings: Record<string, unknown> } }>(phone, 'session/start', { agentId: 'codex', cwd: h.cwd });
+    expect(fake.sent('thread/start')[1]).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+    expect(plain.session.settings).toMatchObject({ approvalMode: 'on-request', sandbox: 'workspace-write' });
+  });
+
   it('open, turn/start, approval/request, approval/resolve accept, turn/completed', async () => {
     const { h, fake } = await setup({ turns: [[{ command: { reason: 'May I create hello.txt?', output: 'ok\n' } }, { reply: 'Done.' }]] });
     const phone = await h.connect();

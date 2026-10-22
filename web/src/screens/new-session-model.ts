@@ -1,7 +1,8 @@
 // The new-session sheet: pick an agent (agent/list), a model (model/list), a working folder (recent
 // projects from project/list, then browsing with fs/readDirectory), an optional title and an optional
 // first message, then session/start (spec 4, 6). With a first message the host starts the first turn
-// in the same round trip.
+// in the same round trip. A "Bypass approvals" switch (off by default, remembered per agent) starts the
+// session with settings.approvalMode "never": the agent runs everything without asking (spec 5.1).
 import type {
   Agent,
   DirEntry,
@@ -14,7 +15,11 @@ import type {
   SessionStartParams,
   SessionStartResult,
 } from '../generated/methods';
+import { defaultStorage, type StorageLike } from '../replica/storage';
 import { errorText, Model } from './model';
+
+/** localStorage key of the agent's last "Bypass approvals" choice. */
+export const bypassKey = (agentId: string): string => `nano-remote/bypass/${agentId}`;
 
 export interface NewSessionClient {
   request<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>;
@@ -48,11 +53,13 @@ export function startParams(form: {
   model: string | undefined;
   defaultModel: string | undefined;
   message: string;
+  bypass?: boolean;
 }): SessionStartParams {
   const params: SessionStartParams = { agentId: form.agentId, cwd: form.cwd };
   const title = form.title.trim();
   if (title !== '') params.title = title;
   if (form.model !== undefined && form.model !== form.defaultModel) params.settings = { model: form.model };
+  if (form.bypass === true) params.settings = { ...params.settings, approvalMode: 'never' };
   const message = form.message.trim();
   if (message !== '') params.input = [{ type: 'text', text: message }];
   return params;
@@ -77,6 +84,8 @@ export class NewSessionModel extends Model {
   browser: Browser | undefined;
   title = '';
   message = '';
+  /** "Bypass approvals (full access)": off unless this agent's last session had it on. */
+  bypass = false;
   loading = false;
   submitting = false;
   error: string | undefined;
@@ -86,6 +95,7 @@ export class NewSessionModel extends Model {
   constructor(
     private readonly client: NewSessionClient,
     private readonly starter: NewSessionStarter,
+    private readonly storage: Pick<StorageLike, 'getItem' | 'setItem'> | null = defaultStorage(),
   ) {
     super();
   }
@@ -126,6 +136,7 @@ export class NewSessionModel extends Model {
     const agent = this.agents.find((a) => a.id === agentId);
     if (agent === undefined || agent.status !== 'ready') return;
     this.agentId = agentId;
+    this.bypass = this.readBypass(agentId);
     this.models = [];
     this.modelId = undefined;
     this.modelsLoading = true;
@@ -183,6 +194,26 @@ export class NewSessionModel extends Model {
     this.changed();
   }
 
+  setBypass(on: boolean): void {
+    this.bypass = on;
+    if (this.agentId !== undefined) {
+      try {
+        this.storage?.setItem(bypassKey(this.agentId), on ? '1' : '0');
+      } catch {
+        // storage full or disabled: the choice still holds for this sheet
+      }
+    }
+    this.changed();
+  }
+
+  private readBypass(agentId: string): boolean {
+    try {
+      return this.storage?.getItem(bypassKey(agentId)) === '1';
+    } catch {
+      return false;
+    }
+  }
+
   setTitle(title: string): void {
     this.title = title;
     this.changed();
@@ -202,7 +233,7 @@ export class NewSessionModel extends Model {
     const defaultModel = (this.models.find((m) => m.default) ?? this.models[0])?.id;
     try {
       const result = await this.starter.startSession(
-        startParams({ agentId: this.agentId!, cwd: this.cwd!, title: this.title, model: this.modelId, defaultModel, message: this.message }),
+        startParams({ agentId: this.agentId!, cwd: this.cwd!, title: this.title, model: this.modelId, defaultModel, message: this.message, bypass: this.bypass }),
       );
       return result.session.sessionId;
     } catch (error) {

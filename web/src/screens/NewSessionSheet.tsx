@@ -137,6 +137,23 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
             )}
           </div>
 
+          <label class={`field switch ${model.bypass ? 'on' : ''}`}>
+            <input
+              type="checkbox"
+              role="switch"
+              name="bypass"
+              checked={model.bypass}
+              aria-checked={model.bypass}
+              onChange={(event) => model.setBypass(event.currentTarget.checked)}
+            />
+            <span>Bypass approvals (full access)</span>
+          </label>
+          {model.bypass && (
+            <p class="error small" role="note">
+              The agent runs every command and edit without asking, anywhere your user account can reach.
+            </p>
+          )}
+
           <label class="field">
             <span>Title (optional)</span>
             <input name="title" value={model.title} maxLength={200} onInput={(event) => model.setTitle(event.currentTarget.value)} />

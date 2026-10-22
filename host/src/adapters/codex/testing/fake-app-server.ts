@@ -24,6 +24,8 @@ interface ThreadRecord {
   id: string;
   cwd: string;
   model: string;
+  /** The thread's `approvalPolicy` (thread/start, updated by thread/resume); `never` runs commands unasked. */
+  approvalPolicy?: string;
   turns: TurnRecord[];
 }
 interface State {
@@ -184,6 +186,13 @@ function playStep(step: FakeStep): 'stop' | void {
     const cwd = step.command.cwd ?? running!.thread.cwd;
     const item = { type: 'commandExecution', id, command, cwd, commandActions: [] };
     itemStarted({ ...item, status: 'inProgress' });
+    if (running!.thread.approvalPolicy === 'never') {
+      // Like Codex with approval_policy=never: the command runs without asking.
+      const output = step.command.output ?? '';
+      if (output) notify('item/commandExecution/outputDelta', { ...base(), itemId: id, delta: output });
+      itemCompleted({ ...item, status: 'completed', aggregatedOutput: output, exitCode: 0, durationMs: 12 });
+      return;
+    }
     status('active', ['waitingOnApproval']);
     serverRequest(
       'item/commandExecution/requestApproval',
@@ -331,7 +340,13 @@ function handle(method: string, params: Json): Json {
       return start + size < models.length ? { data, nextCursor: String(start + size) } : { data, nextCursor: null };
     }
     case 'thread/start': {
-      const record: ThreadRecord = { id: randomUUID(), cwd: String(params.cwd ?? ''), model: String(params.model ?? ''), turns: [] };
+      const record: ThreadRecord = {
+        id: randomUUID(),
+        cwd: String(params.cwd ?? ''),
+        model: String(params.model ?? ''),
+        approvalPolicy: String(params.approvalPolicy ?? ''),
+        turns: [],
+      };
       state.threads[record.id] = record;
       saveState();
       queueMicrotask(() => notify('thread/started', { thread: { id: record.id } }));
@@ -339,6 +354,7 @@ function handle(method: string, params: Json): Json {
     }
     case 'thread/resume': {
       const record = thread(params);
+      if (typeof params.approvalPolicy === 'string') record.approvalPolicy = params.approvalPolicy;
       const page = params.initialTurnsPage as { limit?: number } | undefined;
       const turns = record.turns.slice(-(page?.limit ?? record.turns.length));
       return { thread: { id: record.id, turns }, model: String(params.model ?? record.model), cwd: record.cwd };

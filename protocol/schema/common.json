@@ -148,6 +148,10 @@
       "properties": {
         "model": {
           "type": "string"
+        },
+        "approvalMode": {
+          "type": "string",
+          "description": "When the agent asks for approval. Codex: untrusted | on-failure | on-request | never; never means approvals are bypassed (with full access unless sandbox says otherwise). Unknown values fall back to the host default. Additive within v1."
         }
       }
     },

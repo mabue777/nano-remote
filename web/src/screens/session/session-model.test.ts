@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { FakeTransport, rpcError, settle } from '../../../test/replica-doubles';
-import { SID, agentItem, approval, ev, inputRequest, snapshot, summary, turn, userItem } from '../../../test/replica-fixtures';
+import { SID, agentItem, approval, ev, inputRequest, session, snapshot, summary, turn, userItem } from '../../../test/replica-fixtures';
 import { Replica } from '../../replica/replica';
 import type { Item, TurnView } from '../../replica/types';
 import {
@@ -148,6 +148,15 @@ describe('SessionModel: what the screen shows', () => {
     model.start();
     expect(client.count('session/open')).toBe(1);
     expect(model.loaded).toBe(false);
+  });
+
+  it('bypass: the header marker follows Session.settings.approvalMode never', async () => {
+    const plain = await setup();
+    expect(plain.model.bypass).toBe(false);
+    const bypassed = await setup({ over: { session: session({ lastSeq: 0, settings: { approvalMode: 'never', sandbox: 'danger-full-access' } }) } });
+    expect(bypassed.model.bypass).toBe(true);
+    const asking = await setup({ over: { session: session({ lastSeq: 0, settings: { approvalMode: 'on-request' } }) } });
+    expect(asking.model.bypass).toBe(false);
   });
 
   it('an unknown session shows placeholders; a failed open shows why', async () => {

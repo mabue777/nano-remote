@@ -199,7 +199,11 @@ Optional `lastTurnStatus` (a Turn `status`, below) is the status of the newest t
 session has none; the list shows "finished", "interrupted" or "failed" from it without opening the session
 (additive within v1).
 
-**Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model`).
+**Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model` and `approvalMode`).
+`approvalMode` (additive within v1) may be set in `session/start` settings and is reported back as in effect.
+Codex values: `untrusted` | `on-failure` | `on-request` | `never`; unknown values fall back to the host's default
+(`on-request`). `never` bypasses all approvals and, unless `settings.sandbox` names a sandbox, runs with
+`danger-full-access`; clients mark such a session ("Bypass").
 
 **Turn**
 ```json

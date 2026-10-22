@@ -1,6 +1,6 @@
 // The Codex adapter: drives one Codex thread through `codex app-server` (protocol-v1.md section 11).
 //
-//   session/start  -> thread/start {cwd, approvalPolicy, sandbox, model}
+//   session/start  -> thread/start {cwd, approvalPolicy, sandbox, model}   (settings.approvalMode, settings.sandbox)
 //   resume         -> thread/resume {threadId, ..., initialTurnsPage {limit 5, itemsView "full"}}
 //   turn/start     -> turn/start {threadId, input, clientUserMessageId}
 //   turn/steer     -> turn/steer {threadId, expectedTurnId, input, clientUserMessageId}
@@ -21,7 +21,14 @@ import type {
   AdapterListener,
 } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
-import { codexConfig, isSandbox, type CodexConfig } from '../../config/codex.js';
+import {
+  codexConfig,
+  isApprovalPolicy,
+  isSandbox,
+  type CodexApprovalPolicy,
+  type CodexConfig,
+  type CodexSandbox,
+} from '../../config/codex.js';
 import { RpcError } from '../../stream/router.js';
 import { Engine, unavailable, type RpcId } from './engine.js';
 import {
@@ -64,6 +71,21 @@ interface PendingRequest {
 }
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
+ * The approval policy and sandbox a session runs with. `settings.approvalMode` names a Codex approval
+ * policy; anything else falls back to the config. `never` without an explicit `settings.sandbox` means
+ * full access (Codex `--yolo`): under workspace-write an out-of-folder command would fail instead of asking.
+ */
+export function sessionPolicy(settings: Settings, config: CodexConfig): { approvalPolicy: CodexApprovalPolicy; sandbox: CodexSandbox } {
+  const approvalPolicy = isApprovalPolicy(settings.approvalMode) ? settings.approvalMode : config.approvalPolicy;
+  const sandbox = isSandbox(settings.sandbox)
+    ? settings.sandbox
+    : settings.approvalMode === 'never'
+      ? 'danger-full-access'
+      : config.sandbox;
+  return { approvalPolicy, sandbox };
+}
 
 export class CodexAdapter implements Adapter {
   readonly capabilities: AdapterCapabilities = { steer: true, diff: false };
@@ -248,9 +270,15 @@ export class CodexAdapter implements Adapter {
     }
   }
 
+  /** The settings the engine session runs with: `approvalMode` and `sandbox` (spec 5.1 Session.settings). */
+  effectiveSettings(): Settings {
+    const { approvalPolicy, sandbox } = sessionPolicy(this.settings, this.config);
+    return { approvalMode: approvalPolicy, sandbox };
+  }
+
   /** Approval policy, sandbox and model for thread/start and thread/resume. */
   private async policy(engine: Engine): Promise<Json> {
-    const sandbox = isSandbox(this.settings.sandbox) ? this.settings.sandbox : this.config.sandbox;
+    const { approvalPolicy, sandbox } = sessionPolicy(this.settings, this.config);
     this.model ??= typeof this.settings.model === 'string' && this.settings.model !== '' ? this.settings.model : undefined;
     this.model ??= this.options.defaultModel?.();
     if (this.model === undefined) {
@@ -258,7 +286,7 @@ export class CodexAdapter implements Adapter {
       const result = (await engine.call('model/list', {})) as Json;
       this.model = defaultModel(toModels(result.data));
     }
-    const out: Json = { approvalPolicy: this.config.approvalPolicy, sandbox };
+    const out: Json = { approvalPolicy, sandbox };
     if (this.model !== undefined) out.model = this.model;
     return out;
   }

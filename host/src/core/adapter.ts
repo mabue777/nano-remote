@@ -93,6 +93,11 @@ export interface Adapter {
   kill(): Promise<void>;
   /** Subscribes to the adapter's events; returns the unsubscribe function. */
   onEvent(listener: AdapterListener): () => void;
+  /**
+   * The settings the engine session runs with (approval mode, sandbox, ...), asked after `start` and
+   * `resume`. The core merges them into Session.settings so clients see what is in effect.
+   */
+  effectiveSettings?(): Settings;
 }
 
 /** Status of an agent as `agent/list` reports it (spec 4). */

@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { exampleMessage } from '../../test/fixtures';
 import { FakeTransport, rpcError, settle } from '../../test/replica-doubles';
 import type { SessionStartParams } from '../generated/methods';
-import { foldersOf, NewSessionModel, parentOf, startParams } from './new-session-model';
+import { bypassKey, foldersOf, NewSessionModel, parentOf, startParams } from './new-session-model';
+
+function memoryStorage(initial: Record<string, string> = {}) {
+  const data = new Map(Object.entries(initial));
+  return { data, getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+}
 
 const AGENTS = exampleMessage('08').result.agents;
 const PROJECTS = [
@@ -15,7 +20,7 @@ const MODELS = [
   { id: 'gpt-5.5-mini', displayName: 'GPT-5.5 mini', default: false },
 ];
 
-function setup() {
+function setup(storage = memoryStorage()) {
   const client = new FakeTransport();
   const started: SessionStartParams[] = [];
   const starter = {
@@ -25,8 +30,8 @@ function setup() {
       return { session };
     }),
   };
-  const model = new NewSessionModel(client, starter);
-  return { client, model, starter, started };
+  const model = new NewSessionModel(client, starter, storage);
+  return { client, model, starter, started, storage };
 }
 
 function standardRules(client: FakeTransport) {
@@ -68,6 +73,13 @@ describe('new session helpers', () => {
       input: [{ type: 'text', text: 'go' }],
     });
     expect(startParams({ ...base, model: undefined })).toEqual({ agentId: 'codex', cwd: '/w' });
+  });
+
+  it('startParams with bypass carries approvalMode never, next to a chosen model', () => {
+    const base = { agentId: 'codex', cwd: '/w', title: '', model: 'm1', defaultModel: 'm1', message: '' };
+    expect(startParams({ ...base, bypass: true })).toEqual({ agentId: 'codex', cwd: '/w', settings: { approvalMode: 'never' } });
+    expect(startParams({ ...base, model: 'm2', bypass: true }).settings).toEqual({ model: 'm2', approvalMode: 'never' });
+    expect(startParams({ ...base, bypass: false })).toEqual({ agentId: 'codex', cwd: '/w' });
   });
 });
 
@@ -221,6 +233,31 @@ describe('NewSessionModel', () => {
       input: [{ type: 'text', text: 'Create hello.txt' }],
     });
     expect(model.submitting).toBe(false);
+  });
+
+  it('the bypass switch is off by default, sets approvalMode never, and is remembered per agent', async () => {
+    const { client, model, started, storage } = setup();
+    standardRules(client);
+    await model.load();
+    expect(model.bypass).toBe(false);
+    model.setBypass(true);
+    expect(storage.data.get(bypassKey('codex'))).toBe('1');
+    await model.submit();
+    expect(started[0]).toEqual({ agentId: 'codex', cwd: '/Users/me/Desktop/phone-test', settings: { approvalMode: 'never' } });
+
+    // A new sheet remembers the choice for this agent only.
+    const again = setup(memoryStorage(Object.fromEntries(storage.data)));
+    standardRules(again.client);
+    await again.model.load();
+    expect(again.model.bypass).toBe(true);
+    const fresh = setup(memoryStorage({ [bypassKey('claude')]: '1' }));
+    standardRules(fresh.client);
+    await fresh.model.load();
+    expect(fresh.model.bypass).toBe(false);
+
+    again.model.setBypass(false);
+    await again.model.submit();
+    expect(again.started[0]).toEqual({ agentId: 'codex', cwd: '/Users/me/Desktop/phone-test' });
   });
 
   it('a failed session/start shows the error and allows another try', async () => {

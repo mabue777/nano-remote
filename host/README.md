@@ -116,6 +116,17 @@ Shutdown: on SIGTERM (`launchctl bootout`, `kickstart -k`, logout) pongs report 
 are refused with 4010 for a moment, then every stream closes with 4010, the engines stop, the Journal is
 closed (its write-ahead log is checkpointed), and the process exits 0.
 
+## Security
+
+Bypass approvals: the new-session sheet has a switch "Bypass approvals (full access)". It is off by
+default and applies to the one session it starts (the phone remembers the last choice per agent). With it
+on, the session starts with `settings.approvalMode: "never"`, and the Codex adapter sends
+`approvalPolicy: "never"` with `sandbox: "danger-full-access"` (the `--yolo` equivalent; an explicit
+`settings.sandbox` wins). The agent then runs any command and edits any file the Mac user can reach,
+without an approval card or a push, so anyone holding a paired phone can do the same through it. The
+session header shows a red "Bypass" marker for as long as the session runs this way. Sessions started with
+the switch off keep the host default (`on-request`, `workspace-write`).
+
 ## Development commands
 
 From the repo root:

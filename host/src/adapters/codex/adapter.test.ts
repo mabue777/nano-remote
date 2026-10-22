@@ -6,7 +6,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdapterEvent } from '../../core/adapter.js';
-import { CodexAdapter, RESUME_TURNS } from './adapter.js';
+import { codexConfig } from '../../config/codex.js';
+import { CodexAdapter, RESUME_TURNS, sessionPolicy } from './adapter.js';
 import { fakeCodex, until, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
 import { FIELD_CHECK_MAPPED, FIELD_CHECK_USAGE } from './testing/token-usage-field-check.js';
@@ -78,6 +79,54 @@ describe('CodexAdapter', () => {
     await p.adapter.start(cwd(), { sandbox: 'nonsense' });
     expect(p.fake.sent('thread/start')[0]).toMatchObject({ model: 'gpt-from-provider', sandbox: 'workspace-write' });
     expect(p.fake.sent('model/list')).toEqual([]);
+  });
+
+  describe('approval mode (settings.approvalMode)', () => {
+    const config = codexConfig({}, {});
+    it.each([
+      ['default', {}, { approvalPolicy: 'on-request', sandbox: 'workspace-write' }],
+      ['unknown value falls back to config', { approvalMode: 'onRequest' }, { approvalPolicy: 'on-request', sandbox: 'workspace-write' }],
+      ['untrusted', { approvalMode: 'untrusted' }, { approvalPolicy: 'untrusted', sandbox: 'workspace-write' }],
+      ['on-failure', { approvalMode: 'on-failure' }, { approvalPolicy: 'on-failure', sandbox: 'workspace-write' }],
+      ['never means full access', { approvalMode: 'never' }, { approvalPolicy: 'never', sandbox: 'danger-full-access' }],
+      ['never with an explicit sandbox keeps it', { approvalMode: 'never', sandbox: 'workspace-write' }, { approvalPolicy: 'never', sandbox: 'workspace-write' }],
+      ['never with an unknown sandbox is full access', { approvalMode: 'never', sandbox: 'nonsense' }, { approvalPolicy: 'never', sandbox: 'danger-full-access' }],
+    ])('%s', (_name, settings, expected) => {
+      expect(sessionPolicy(settings, config)).toEqual(expected);
+    });
+
+    it('thread/start carries never and full access; effective settings report them', async () => {
+      const r = rig();
+      const dir = cwd();
+      await r.adapter.start(dir, { approvalMode: 'never' });
+      expect(r.fake.sent('thread/start')[0]).toEqual({ cwd: dir, approvalPolicy: 'never', sandbox: 'danger-full-access', model: 'gpt-fake-luna' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'never', sandbox: 'danger-full-access' });
+      const d = rig();
+      await d.adapter.start(cwd(), {});
+      expect(d.adapter.effectiveSettings()).toEqual({ approvalMode: 'on-request', sandbox: 'workspace-write' });
+    });
+
+    it('a command under never runs without an approval request', async () => {
+      const r = rig({ turns: [[{ command: { command: 'touch /tmp/outside', output: 'ok\n' } }, { reply: 'Done.' }]] });
+      await r.adapter.start(cwd(), { approvalMode: 'never' });
+      await r.adapter.turnStart(text('go'), 'cm');
+      await r.next('turn/completed');
+      expect(methods(r.events)).not.toContain('approval/request');
+      expect(r.events.find((e) => e.method === 'item/completed' && e.params.item.type === 'command')).toMatchObject({
+        params: { item: { command: 'touch /tmp/outside', status: 'completed' } },
+      });
+    });
+
+    it('thread/resume carries the same policy', async () => {
+      const fake = fakeCodex();
+      const first = rig({}, { fake });
+      const dir = cwd();
+      const threadId = await first.adapter.start(dir, { approvalMode: 'never' });
+      await first.adapter.kill();
+      const second = rig({}, { fake });
+      await second.adapter.resume(threadId, dir, { approvalMode: 'never' });
+      expect(fake.sent('thread/resume')[0]).toMatchObject({ threadId, approvalPolicy: 'never', sandbox: 'danger-full-access' });
+    });
   });
 
   it('a turn: turn/start with clientUserMessageId, items and deltas, usage, completed; user items skipped', async () => {
