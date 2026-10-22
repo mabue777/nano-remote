@@ -1,0 +1,36 @@
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.752087778Z","message":{"role":"assistant","content":"","thinking":"The"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.75980996Z","message":{"role":"assistant","content":"","thinking":" user asks"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.766348561Z","message":{"role":"assistant","content":"","thinking":" to"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.773602972Z","message":{"role":"assistant","content":"","thinking":" say"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.781219034Z","message":{"role":"assistant","content":"","thinking":" hi"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.788965006Z","message":{"role":"assistant","content":"","thinking":" in three words. So"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.796005917Z","message":{"role":"assistant","content":"","thinking":" we"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.803248159Z","message":{"role":"assistant","content":"","thinking":" need to respond with a"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.81038483Z","message":{"role":"assistant","content":"","thinking":" three-word greeting"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.820363235Z","message":{"role":"assistant","content":"","thinking":","},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.825006302Z","message":{"role":"assistant","content":"","thinking":" like \"Hello there"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.831412123Z","message":{"role":"assistant","content":"","thinking":","},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.839039255Z","message":{"role":"assistant","content":"","thinking":" friend!\" that's"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.846390916Z","message":{"role":"assistant","content":"","thinking":" three words?"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.852807126Z","message":{"role":"assistant","content":"","thinking":" Actually that's"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.861126349Z","message":{"role":"assistant","content":"","thinking":" three words: \"Hello there"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.86795221Z","message":{"role":"assistant","content":"","thinking":" friend\"."},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.874894501Z","message":{"role":"assistant","content":"","thinking":" Or"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.882316872Z","message":{"role":"assistant","content":"","thinking":" \"Hi there, friend"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.889947374Z","message":{"role":"assistant","content":"","thinking":"\"."},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.898181917Z","message":{"role":"assistant","content":"","thinking":" That's three words:"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.906787821Z","message":{"role":"assistant","content":"","thinking":" \"Hi there friend"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.912138839Z","message":{"role":"assistant","content":"","thinking":"\". Provide"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.920222642Z","message":{"role":"assistant","content":"","thinking":" that. Should not"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.927329783Z","message":{"role":"assistant","content":"","thinking":" be"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.936453387Z","message":{"role":"assistant","content":"","thinking":" any"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.940834694Z","message":{"role":"assistant","content":"","thinking":" extra text"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.948373346Z","message":{"role":"assistant","content":"","thinking":"?"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.962146457Z","message":{"role":"assistant","content":"","thinking":" Probably"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.966641215Z","message":{"role":"assistant","content":"","thinking":" just the three"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.97640236Z","message":{"role":"assistant","content":"","thinking":"-word"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.977349431Z","message":{"role":"assistant","content":"","thinking":" greeting"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:18.985057724Z","message":{"role":"assistant","content":"","thinking":"."},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:19.00173975Z","message":{"role":"assistant","content":"Hi there friend"},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:19.007500348Z","message":{"role":"assistant","content":""},"done":false}
+{"model":"gpt-oss:120b","created_at":"2026-10-22T16:13:19.095812317Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":492737402,"prompt_eval_count":73,"prompt_eval_cached_count":48,"eval_count":88}

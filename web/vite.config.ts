@@ -37,7 +37,7 @@ export default defineConfig({
         'src/screens/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         // The service worker registration and the build step that writes the manifest, icons and sw.js.
         'src/pwa/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
-        // Local chat: the provider store, presets, URL rules and model probing.
+        // Local chat: the provider store, presets, URL rules and model probing; the chat engine and history.
         'src/chat/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         'build/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
       },
