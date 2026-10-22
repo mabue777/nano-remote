@@ -1,7 +1,7 @@
 # Nano Remote
 
 A phone client that chats with LLMs directly and connects to your own Mac to
-drive coding agents there (Claude Code, Codex, Kimi), the way the Claude,
+drive coding agents there (Claude Code and Codex in v1; Kimi later, post-v1, over ACP), the way the Claude,
 ChatGPT and Kimi mobile apps do it. The Mac runs Nano Host, our own daemon
 with one adapter per agent (ADR 0003); the first phone client is a web app
 that Nano Host serves over your Tailscale tailnet (ADR 0004), and
@@ -15,7 +15,7 @@ Your computer — the always-on machine where agent sessions actually execute.
 _Avoid_: server, machine, desktop
 
 **Agent session**:
-A live conversation with a coding agent (Kimi, Claude Code, Codex) that runs
+A live conversation with a coding agent (Claude Code, Codex; Kimi later) that runs
 on the host, driven from the phone.
 _Avoid_: job, task ("task" belongs to the issue tracker), run
 
@@ -44,7 +44,7 @@ _Avoid_: gateway, server, backend
 
 **Adapter**:
 The part of Nano Host that drives one agent (Codex app-server, Claude Agent
-SDK, Kimi CLI) and normalizes it into the protocol's session, turn, item and
+SDK; Kimi CLI over ACP, later) and normalizes it into the protocol's session, turn, item and
 request vocabulary. It is the only code that knows the agent's own method names.
 _Avoid_: driver, plugin, connector
 

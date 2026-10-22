@@ -39,6 +39,7 @@ has moved since it was written.
 - 5: done; protocol v1 is frozen (`protocol/protocol-v1.md`, schemas in `protocol/schema/`).
 - 5a: done and closed (`docs/plan/provider-connection.md`).
 - 6: done; the host-drive spike passed for Codex and Claude Code (`spikes/host-drive/NOTES.md`). Kimi stays a separate spike.
+- 6 (Kimi): done 2026-10-22; Kimi is cut from v1 (`spikes/kimi-drive/NOTES.md`). stream-json cannot surface approvals; a post-v1 adapter would use `kimi acp`.
 - 7: done; repo scaffold and the full verify gate (`scripts/verify.sh`) are in place and registered with BROCODE.
 - 8: done; the tickets exist in bd under the Phase 1 (host) and Phase 2 (web client) epics, with blocking links. "Phase 2 (iOS)" is now Phase 2 (web client); see ADR 0004.
 - 9: superseded by ADR 0004 and 0005. No Apple Developer Program, no APNs, no TestFlight for v1.

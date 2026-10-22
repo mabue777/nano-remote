@@ -1,7 +1,7 @@
 # Nano Remote — what we are building
 
 **A phone app that lets you chat with LLMs and drive coding agents — Claude
-Code, Codex, Kimi, Ollama and any other providers — running on your own computer, from anywhere, with the
+Code, Codex, Ollama and any other providers (Kimi later, post-v1, over ACP) — running on your own computer, from anywhere, with the
 polish the big vendors ship in their apps.**
 
 Two modes in one app:
@@ -83,7 +83,7 @@ terminal — the exact quality gap felt in earlier experiments.
 - **Nano Host, our own daemon (ADR 0003).** A bespoke TypeScript daemon on
   the Mac, installed as a launchd service, with one adapter per agent: Codex
   through its `app-server` engine, Claude Code through the Claude Agent SDK,
-  Kimi through its streaming CLI. Each adapter turns its agent into the one
+  and later (post-v1) Kimi through `kimi acp`, the Agent Client Protocol. Each adapter turns its agent into the one
   protocol vocabulary (`protocol/protocol-v1.md`), so engine changes touch
   one file. The host owns the Journal, pairing, devices and the tailnet
   endpoint itself; no third-party gateway sits in between.

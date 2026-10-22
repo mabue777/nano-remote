@@ -431,21 +431,22 @@ unauthorized or revoked, 4008 ping timeout, 4009 message too large, 4010 host dr
 
 The host has one adapter per agent; each produces the section 5 vocabulary. The Codex column is verified
 by the capture and the host-drive spike, the Claude Code column by the spike, except cells marked
-"unverified", "not probed" or "did not occur". The Kimi column is still unverified.
+"unverified", "not probed" or "did not occur". The Kimi column records the `kimi acp` spike
+(`spikes/kimi-drive/NOTES.md`), run against a scripted fake model only; Kimi is not a v1 agent.
 
-| Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by spike) | Kimi (CLI stream-json, unverified) |
+| Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by spike) | Kimi (ACP, post-v1, fake-model spike only) |
 |---|---|---|---|
-| `session/start` | `thread/start` | `query()` with a new session | spawn CLI with cwd |
-| `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | host Journal only |
-| `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | write prompt to stdin or new invocation |
-| `turn/steer` | `turn/steer {expectedTurnId}` | queued input (unverified) | `not_supported` likely |
-| `turn/interrupt` | `turn/interrupt` | `query.interrupt()` | SIGINT |
-| `item/*` | `item/started`, `item/*/delta`, `item/completed` | stream message blocks and tool_use/tool_result | stream-json events |
-| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | unknown; may need `--yolo` off and prompt parsing |
-| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed) and Edit (same callback, not probed separately) | unknown |
-| `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | unknown |
-| `status/changed` | `thread/status/changed` | derived from stream state | derived |
-| `usage/updated` | `thread/tokenUsage/updated` | result message usage | unknown |
+| `session/start` | `thread/start` | `query()` with a new session | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` |
+| `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal |
+| `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn |
+| `turn/steer` | `turn/steer {expectedTurnId}` | queued input (unverified) | not probed; `not_supported` likely |
+| `turn/interrupt` | `turn/interrupt` | `query.interrupt()` | not probed |
+| `item/*` | `item/started`, `item/*/delta`, `item/completed` | stream message blocks and tool_use/tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` |
+| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | reverse request `session/request_permission` (not probed for shell commands) |
+| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome |
+| `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) |
+| `status/changed` | `thread/status/changed` | derived from stream state | derived (active while `session/prompt` is pending) |
+| `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` |
 
 The Claude Code approvals and questions reach `canUseTool` only when the adapter passes
 `permissionMode: "default"` and `settingSources: []`. With the user's own settings loaded, auto mode
@@ -454,6 +455,9 @@ must not inherit them. The evidence for this column and for the Codex resume pat
 `spikes/host-drive/NOTES.md` with its logs in `spikes/host-drive/logs/`. For the captured command
 approval, Codex offered only `accept` and `cancel` (plus an object-valued amendment decision the adapter
 drops), so adapters forward the engine's `availableDecisions` list instead of assuming all four decisions.
+
+Kimi's `--prompt --output-format stream-json` mode cannot surface approvals: it always runs under the `auto`
+permission policy, so a Kimi adapter must use ACP.
 
 Engine churn note: the Codex engine is an alpha; the adapter is the only file that knows its method names.
 The schema in `docs/research/rea/codex-app-server-schema/` is regenerated when the bundled engine updates.

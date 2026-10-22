@@ -8,7 +8,7 @@ the ChatGPT/Codex apps, including a full phone session and push behavior).
 ## 1. What we are building, in one paragraph
 
 Two deliverables. **Nano Host**: a small always-on service on the Mac that drives coding agents
-(Codex first, then Claude Code, then Kimi), keeps a sequence-numbered Journal per session, and serves
+(Codex first, then Claude Code; Kimi is cut from v1 and may return later over ACP), keeps a sequence-numbered Journal per session, and serves
 phones over the tailnet with an envelope protocol (sequence numbers, acks, resume cursor, chunking) that
 is a clean-room copy of the pattern ChatGPT uses. **Nano Remote (iOS)**: a native phone app with the
 polish of the vendor apps: pair by QR, see hosts and their online state, open a session and have it render
@@ -25,7 +25,10 @@ Recommendation: **bespoke Nano Host in TypeScript on Node; no OpenClaw dependenc
   (threads, turns, approvals, user-input questions, resume with pagination, interrupt, status). Driving it
   directly is a few hundred lines; we have the generated schema in `docs/research/rea/codex-app-server-schema/`.
 - Claude Code has an official Agent SDK for TypeScript with streaming, permission callbacks (our approvals)
-  and session resume. Kimi ships a CLI with `--output-format stream-json`. All three fit one Node process.
+  and session resume. Both fit one Node process. Kimi was cut from v1 by its spike (2026-10-22,
+  `spikes/kimi-drive/NOTES.md`): its `--prompt --output-format stream-json` mode always runs under the
+  `auto` permission policy and cannot ask for approval, while `kimi acp` (Agent Client Protocol, JSON-RPC
+  over stdio) sends `session/request_permission` and waits. A post-v1 Kimi adapter would use ACP.
 - ADR 0002 needs a stateful Journal with our own sequence semantics; OpenClaw's event stream is not that,
   and its approvals surface abstracts away the CLIs' native prompts. Its upstream moves fast (protocol
   breaks noted in the recon memo) and Kimi through it is unproven.
@@ -61,7 +64,7 @@ content-free wake service; that is a future decision.
  local chat (Ollama…)  ---- direct HTTPS to provider      Journal (SQLite, seq per session)
                                                            Adapters: Codex app-server (stdio JSON-RPC)
                                                                      Claude Agent SDK
-                                                                     Kimi CLI (stream-json)
+                                                                     (later: Kimi over ACP, post-v1)
  browser push service  <-- Web Push (VAPID) <-- host (title + link only)
  (optional later: native SwiftUI client on the same protocol)
 ```
@@ -89,7 +92,7 @@ from the planning session. Durations are calendar estimates for one operator rev
 | 1 Host v0 | `host/` package: Codex adapter, Journal, envelope server, pairing, device list, launchd installer, `nano-host` CLI | Scripted client: pair, open session, turn, approval, kill and resume with catch-up from cursor; 95% test coverage on Journal and envelope layers; verify gate green | 2 to 3 weeks |
 | 2 Web client v0 | `web/` app served by the host: pairing by QR, host status, session list, session view with Replica, composer, approvals, questions, output and diff views, interrupt; installable to the home screen | On the phone over the tailnet, away from home: send appears instantly, approval round trip under 1 s, lock and reopen shows catch-up | 3 to 4 weeks |
 | 3 Wake | Web Push subscription and VAPID signing on the host, notification rules from the captures, badge and in-app task states | Locked phone gets completion push only when disconnected, approval push always; tapping opens the session | 1 week |
-| 4 More agents | Claude Code adapter (SDK), Kimi adapter (spike first), per-session agent picker, per-agent approval mapping | Same acceptance as Phase 1 for each adapter; Kimi either passes or is cut from v1 marketing | 2 to 3 weeks |
+| 4 More agents | Claude Code adapter (SDK), Kimi adapter (spike first), per-session agent picker, per-agent approval mapping | Same acceptance as Phase 1 for each adapter; Kimi cut from v1 (spike 2026-10-22, spikes/kimi-drive/NOTES.md) | 2 to 3 weeks |
 | 5 Local chat | Provider settings, model picker, streaming chat, nano-ai feature parity list | Works with Ollama on LAN and a cloud OpenAI-compatible endpoint; no host required | 2 weeks |
 | 6 Polish and ship | Onboarding (including Tailscale and home-screen install), empty and error states, accessibility, settings, host installer (Homebrew), privacy text | Impeccable-style audit passed; a week of daily use without a reload bug; release checklist done | 2 weeks |
 | 7 Optional | Native SwiftUI client on the same protocol (Live Activities, Dynamic Island, Face ID), only if the operator enrolls in the Apple Developer Program | Same acceptance as Phase 2 plus push via APNs | later |
@@ -125,7 +128,9 @@ ten minutes, no full reinstalls. Each ticket states its evidence: a log, a test,
 - **Codex engine churn.** The bundled engine is an alpha (0.163). Pin the version, regenerate the schema
   in CI, and keep the adapter behind our own vocabulary so a protocol change touches one file.
 - **Claude approvals through the SDK.** Unverified until the Phase 0 spike; fallback is Claude Code's hooks or its streaming CLI mode, inside the same adapter.
-- **Kimi driving.** Unknown; the plan treats it as a spike with a cut line.
+- **Kimi driving.** Resolved by the spike (2026-10-22, `spikes/kimi-drive/NOTES.md`): cut from v1. The
+  stream-json route cannot surface approvals; `kimi acp` can, but it passed only against a scripted fake
+  model because the operator's account has no Kimi Code access. A post-v1 adapter would use ACP.
 - **iOS background limits.** The captures show about 30 s of socket after lock. Design assumes it; Web Push covers the rest.
 - **Web Push on iOS** needs the app installed to the home screen and iOS 16.4+; onboarding must walk the user through it.
 - **Tailscale on the phone.** Requires the Tailscale app and its VPN profile; onboarding must detect and explain it.
