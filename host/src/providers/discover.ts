@@ -7,8 +7,8 @@ import type { ProviderCandidate } from '../generated/common.js';
 import { ipv4, isTailnetIPv4 } from './url.js';
 import { WIRE } from './wire.js';
 
-/** Ollama, LM Studio, llama.cpp and common defaults, then vLLM and friends on 8000 to 8020. */
-export const DISCOVERY_PORTS: readonly number[] = [11434, 1234, 8080, ...Array.from({ length: 21 }, (_, i) => 8000 + i)];
+/** Ollama, LM Studio, llama.cpp (9931 now, 8080 before) and common defaults, then vLLM and friends on 8000 to 8020. */
+export const DISCOVERY_PORTS: readonly number[] = [11434, 1234, 9931, 8080, ...Array.from({ length: 21 }, (_, i) => 8000 + i)];
 export const PROBE_TIMEOUT_MS = 1_000;
 /** Probes in flight at once. */
 export const DISCOVERY_CONCURRENCY = 64;

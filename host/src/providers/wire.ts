@@ -1,7 +1,9 @@
 // The three wire formats the relay speaks (protocol-v1.md section 15, provider-connection.md section 1):
 // one table keyed by kind, no class per vendor. Each entry knows its endpoints and headers, how to shape a
-// chat request, how its stream is framed, and how one frame becomes unified events.
+// chat request, how its stream is framed, and how one frame becomes unified events. Vendor and model
+// quirks in a request (the thinking switch, the token-limit field, temperature) come from quirks.ts.
 import type { ProviderChatOptions, ProviderMessage, ProviderModel } from '../generated/common.js';
+import { applyShaping, shapingFor } from './quirks.js';
 import type { ProviderKind } from './url.js';
 
 export type DeltaKind = 'text' | 'reasoning';
@@ -37,10 +39,7 @@ export interface WireFormat {
   parse(frame: unknown): WireEvent[];
 }
 
-/** Anthropic requires max_tokens; this is used when the client sets none. */
-export const ANTHROPIC_DEFAULT_MAX_TOKENS = 4096;
-/** Anthropic's smallest extended-thinking budget. */
-export const ANTHROPIC_MIN_THINKING_BUDGET = 1024;
+export { ANTHROPIC_DEFAULT_MAX_TOKENS, ANTHROPIC_MIN_THINKING_BUDGET } from './quirks.js';
 export const ANTHROPIC_VERSION = '2023-06-01';
 
 type Json = Record<string, unknown>;
@@ -96,9 +95,7 @@ const openai: WireFormat = {
     }),
   chatRequest(baseURL, apiKey, { model, messages, options }) {
     const body: Json = { model, messages, stream: true, stream_options: { include_usage: true } };
-    if (options?.temperature !== undefined) body.temperature = options.temperature;
-    if (options?.maxTokens !== undefined) body.max_tokens = options.maxTokens;
-    if (options?.thinking === true) body.reasoning_effort = 'medium';
+    applyShaping(body, shapingFor({ baseURL, kind: 'openai-compatible' }, model), options);
     return {
       url: `${baseURL}/chat/completions`,
       method: 'POST',
@@ -128,11 +125,7 @@ const ollama: WireFormat = {
     }),
   chatRequest(baseURL, apiKey, { model, messages, options }) {
     const body: Json = { model, messages, stream: true };
-    const modelOptions: Json = {};
-    if (options?.temperature !== undefined) modelOptions.temperature = options.temperature;
-    if (options?.maxTokens !== undefined) modelOptions.num_predict = options.maxTokens;
-    if (Object.keys(modelOptions).length > 0) body.options = modelOptions;
-    if (options?.thinking !== undefined) body.think = options.thinking;
+    applyShaping(body, shapingFor({ baseURL, kind: 'ollama' }, model), options);
     return {
       url: `${baseURL}/api/chat`,
       method: 'POST',
@@ -175,19 +168,13 @@ const anthropic: WireFormat = {
     }),
   chatRequest(baseURL, apiKey, { model, messages, options }) {
     const system = messages.filter((m) => m.role === 'system').map((m) => m.content);
-    const maxTokens = options?.maxTokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
     const body: Json = {
       model,
-      max_tokens: maxTokens,
       messages: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })),
       stream: true,
     };
     if (system.length > 0) body.system = system.join('\n\n');
-    const budget = Math.max(ANTHROPIC_MIN_THINKING_BUDGET, Math.floor(maxTokens / 2));
-    const thinking = options?.thinking === true && budget < maxTokens;
-    if (thinking) body.thinking = { type: 'enabled', budget_tokens: budget };
-    // Extended thinking rejects a custom temperature.
-    else if (options?.temperature !== undefined) body.temperature = options.temperature;
+    applyShaping(body, shapingFor({ baseURL, kind: 'anthropic' }, model), options);
     return {
       url: anthropicURL(baseURL, 'messages'),
       method: 'POST',

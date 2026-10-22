@@ -269,10 +269,10 @@ describe('discovery', () => {
   });
 
   it('probes the documented ports on this Mac’s own IPv4 addresses', () => {
-    expect(DISCOVERY_PORTS.slice(0, 3)).toEqual([11434, 1234, 8080]);
+    expect(DISCOVERY_PORTS.slice(0, 4)).toEqual([11434, 1234, 9931, 8080]);
     expect(DISCOVERY_PORTS).toContain(8000);
     expect(DISCOVERY_PORTS).toContain(8020);
-    expect(DISCOVERY_PORTS).toHaveLength(24);
+    expect(DISCOVERY_PORTS).toHaveLength(25);
     const ipv4 = (address: string, internal = false) => ({ address, family: 'IPv4' as const, internal, netmask: '', mac: '', cidr: null });
     expect(
       ownAddresses({

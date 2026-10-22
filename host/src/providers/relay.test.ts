@@ -98,7 +98,7 @@ describe('streaming in each wire format', () => {
       stream_options: { include_usage: true },
       temperature: 0.2,
       max_tokens: 64,
-      reasoning_effort: 'medium',
+      // An unknown openai-compatible server gets no thinking field (quirks.ts); it might reject one.
     });
   });
 

@@ -105,6 +105,8 @@ function statusFailure(status: number, retryAfter: number | undefined, detail: s
   if (status === 401 || status === 403) return new ProviderFailure('unauthorized', `the provider refused the key (HTTP ${status})${suffix}`, status);
   if (status === 429) return new ProviderFailure('rate_limited', `the provider is rate limiting (HTTP 429)${suffix}`, status, retryAfter);
   if (status === 404) return new ProviderFailure('not_found', `the provider answered 404${suffix}`, status);
+  // 410 Gone: the model was retired.
+  if (status === 410) return new ProviderFailure('not_found', `the provider answered 410; the model was retired${suffix}`, status);
   return new ProviderFailure('upstream', `the provider answered HTTP ${status}${suffix}`, status, retryAfter);
 }
 
