@@ -27,3 +27,28 @@ Codex was routed through Ollama (`kimi-k3:cloud`) during the check, not the Chat
    "Session total N in · N out · context N% full".
 
 Checked and not a defect: the "Jump to latest" button does not cover text when already at the bottom.
+
+## Phase 3 wake (push notifications) — 2026-10-22
+
+Operator with an iPhone, Safari home-screen install, host running the Phase 3 build under launchd. Codex sessions.
+
+| Step | Result |
+| --- | --- |
+| 1. Turn notifications on, send test | Operator reported a test notification at 06:45, but host.log shows that push (and every push since the Phase 3 deploy, 68 of 68) rejected by Apple with 403. Re-check after defect 1 is fixed. |
+| 2. Turn finished while locked | Pending. |
+| 3. Approval while app open | FAIL. Approval raised at 06:59 with the app open: no notification (defect 1). |
+| 4. Approval raised while locked, tap opens approval card | FAIL. Phone locked at 07:00 with the approval pending: lock screen empty (defect 1). |
+| 5. Short task while open: no completion notification | Pending. |
+| 6. Badge while approval pending, clears after answering | Pass. One pending approval showed badge 1 on the home-screen icon and on the session row; the waiting session was listed first with the "Needs approval" state line; badge cleared after approving. |
+| 7. Record results | This section. |
+
+### Defects found
+
+1. Every Web Push to Apple fails with 403. Replaying one push with the host's own encrypt and VAPID signer and reading
+   the response body: `{"reason":"BadJwtToken"}`. The same push with `sub` = `mailto:nano-remote@example.com` or
+   `https://example.com` returns 201 and the notification arrives. Cause: the default VAPID contact is
+   `mailto:nano-remote@localhost`; Apple rejects a mailto without a real domain. The sender also discarded the
+   response body, so host.log only showed the status. Ticket under the Phase 3 epic (host-vapid-contact-rejected-by-apple).
+
+Not a defect but filed from this check: the operator wants a per-session mode that bypasses all approvals
+(session-bypass-approvals-mode).
