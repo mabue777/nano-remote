@@ -1,0 +1,164 @@
+[
+  {
+    "name": "OpenAI",
+    "baseURL": "https://api.openai.com/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": ["sk-proj-", "sk-svcacct-"],
+    "docsURL": "https://platform.openai.com/docs/api-reference",
+    "keyHelpURL": "https://platform.openai.com/api-keys",
+    "notes": "Paste a project key."
+  },
+  {
+    "name": "Anthropic",
+    "baseURL": "https://api.anthropic.com",
+    "kind": "anthropic",
+    "keyPrefixes": ["sk-ant-"],
+    "docsURL": "https://docs.anthropic.com/en/api/overview",
+    "keyHelpURL": "https://platform.claude.com/settings/keys",
+    "notes": "Claude models through the Messages API."
+  },
+  {
+    "name": "Google Gemini",
+    "baseURL": "https://generativelanguage.googleapis.com/v1beta",
+    "kind": "gemini",
+    "keyPrefixes": ["AIza"],
+    "docsURL": "https://ai.google.dev/gemini-api/docs",
+    "keyHelpURL": "https://aistudio.google.com/apikey",
+    "notes": "Keys come from Google AI Studio."
+  },
+  {
+    "name": "OpenRouter",
+    "baseURL": "https://openrouter.ai/api/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": ["sk-or-"],
+    "docsURL": "https://openrouter.ai/docs",
+    "keyHelpURL": "https://openrouter.ai/keys",
+    "notes": "One key for models from many vendors."
+  },
+  {
+    "name": "Groq",
+    "baseURL": "https://api.groq.com/openai/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": ["gsk_"],
+    "docsURL": "https://console.groq.com/docs/openai",
+    "keyHelpURL": "https://console.groq.com/keys",
+    "notes": "Fast inference for open models."
+  },
+  {
+    "name": "Mistral",
+    "baseURL": "https://api.mistral.ai/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.mistral.ai/api/",
+    "keyHelpURL": "https://console.mistral.ai/api-keys",
+    "notes": "Mistral keys have no recognizable prefix; pick this preset, then paste the key."
+  },
+  {
+    "name": "DeepSeek",
+    "baseURL": "https://api.deepseek.com",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://api-docs.deepseek.com/",
+    "keyHelpURL": "https://platform.deepseek.com/api_keys",
+    "notes": "DeepSeek keys start with sk- like several others; pick this preset, then paste the key."
+  },
+  {
+    "name": "Together",
+    "baseURL": "https://api.together.ai/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.together.ai/docs/openai-api-compatibility",
+    "keyHelpURL": "https://api.together.ai/settings/api-keys",
+    "notes": "Open models hosted by Together AI."
+  },
+  {
+    "name": "Fireworks",
+    "baseURL": "https://api.fireworks.ai/inference/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.fireworks.ai/tools-sdks/openai-compatibility",
+    "keyHelpURL": "https://app.fireworks.ai/settings/users/api-keys",
+    "notes": "Open models hosted by Fireworks AI."
+  },
+  {
+    "name": "xAI",
+    "baseURL": "https://api.x.ai/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": ["xai-"],
+    "docsURL": "https://docs.x.ai/docs/api-reference",
+    "keyHelpURL": "https://console.x.ai/",
+    "notes": "Grok models."
+  },
+  {
+    "name": "Moonshot (Kimi)",
+    "baseURL": "https://api.moonshot.ai/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://platform.moonshot.ai/docs/api/chat",
+    "keyHelpURL": "https://platform.kimi.ai/console/api-keys",
+    "notes": "Kimi models on the international platform."
+  },
+  {
+    "name": "Z.AI",
+    "baseURL": "https://api.z.ai/api/paas/v4",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.z.ai/guides/develop/http/introduction",
+    "keyHelpURL": "https://z.ai/manage-apikey/apikey-list",
+    "notes": "GLM models."
+  },
+  {
+    "name": "Ollama (local)",
+    "baseURL": "http://localhost:11434",
+    "kind": "ollama",
+    "keyPrefixes": [],
+    "docsURL": "https://github.com/ollama/ollama/blob/main/docs/api.md",
+    "keyHelpURL": "",
+    "notes": "Runs through your Mac. No key needed."
+  },
+  {
+    "name": "Ollama Cloud",
+    "baseURL": "https://ollama.com",
+    "kind": "ollama",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.ollama.com/cloud",
+    "keyHelpURL": "https://ollama.com/settings/keys",
+    "notes": "Ollama's hosted models with an ollama.com key."
+  },
+  {
+    "name": "LM Studio (local)",
+    "baseURL": "http://localhost:1234/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://lmstudio.ai/docs/developer/openai-compat",
+    "keyHelpURL": "",
+    "notes": "Runs through your Mac. Start the server in LM Studio first."
+  },
+  {
+    "name": "llama.cpp (local)",
+    "baseURL": "http://localhost:9931/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+    "keyHelpURL": "",
+    "notes": "Runs through your Mac. Older llama-server builds listen on port 8080."
+  },
+  {
+    "name": "vLLM (local)",
+    "baseURL": "http://localhost:8000/v1",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html",
+    "keyHelpURL": "",
+    "notes": "Runs through your Mac."
+  },
+  {
+    "name": "Custom URL",
+    "baseURL": "",
+    "kind": "openai-compatible",
+    "keyPrefixes": [],
+    "docsURL": "",
+    "keyHelpURL": "",
+    "notes": "Any OpenAI-compatible server; the format is derived from the address."
+  }
+]
