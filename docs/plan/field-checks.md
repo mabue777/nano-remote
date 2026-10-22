@@ -50,5 +50,13 @@ Operator with an iPhone, Safari home-screen install, host running the Phase 3 bu
    `mailto:nano-remote@localhost`; Apple rejects a mailto without a real domain. The sender also discarded the
    response body, so host.log only showed the status. Ticket under the Phase 3 epic (host-vapid-contact-rejected-by-apple).
 
+2. After defect 1 was fixed and the host rebuilt, the next approval push (07:23) was refused with 400
+   `BadWebPushTopic`. The host sends the Codex request id (`req_…`, 29 characters) as the Topic header
+   unchanged because it fits RFC 8030's 32 base64url characters, but Apple refuses it. Probing Apple with
+   the live subscription: every topic whose length leaves remainder 1 when divided by 4 (5, 9, 29
+   characters, such as `push-test` and every `req_`/`trn_` id) gets 400 BadWebPushTopic; lengths 6, 7, 8,
+   30 and 32 get 201. Apple decodes the Topic as base64url and such lengths are not decodable.
+   Ticket under the Phase 3 epic (host-push-topic-rejected-by-apple).
+
 Not a defect but filed from this check: the operator wants a per-session mode that bypasses all approvals
 (session-bypass-approvals-mode).
