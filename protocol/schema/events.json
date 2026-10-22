@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nano-remote.dev/schema/v1/events.json",
-  "title": "Nano Remote notifications (sections 5.2, 6, 8, 9)",
+  "title": "Nano Remote notifications (sections 5.2, 6, 8, 9, 15)",
   "description": "Each notification M has $defs[M] describing its params. Journal events (sequenced) require sessionId and seq.",
   "$defs": {
     "JournalPosition": {
@@ -501,6 +501,82 @@
     "initialized": {
       "description": "Client to host notification, sent once after a successful initialize.",
       "type": "object"
+    },
+    "provider/delta": {
+      "description": "Unsequenced, to the requesting stream only. Streamed text of a provider/chat request.",
+      "type": "object",
+      "required": [
+        "requestId",
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "common.json#/$defs/Id"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "reasoning"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "provider/usage": {
+      "description": "Unsequenced, to the requesting stream only. Token counts when the provider reports them.",
+      "type": "object",
+      "required": [
+        "requestId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "common.json#/$defs/Id"
+        },
+        "inputTokens": {
+          "$ref": "common.json#/$defs/Count"
+        },
+        "outputTokens": {
+          "$ref": "common.json#/$defs/Count"
+        }
+      }
+    },
+    "provider/done": {
+      "description": "Unsequenced, to the requesting stream only. The last notification of a provider/chat request.",
+      "type": "object",
+      "required": [
+        "requestId",
+        "status"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "common.json#/$defs/Id"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "aborted"
+          ]
+        },
+        "error": {
+          "$ref": "common.json#/$defs/ProviderError"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
     }
   }
 }

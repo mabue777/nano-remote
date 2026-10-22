@@ -73,6 +73,7 @@
             "agent_unavailable",
             "not_supported",
             "rate_limited",
+            "provider_unavailable",
             "internal"
           ]
         },

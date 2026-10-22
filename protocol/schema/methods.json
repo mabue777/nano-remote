@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nano-remote.dev/schema/v1/methods.json",
-  "title": "Nano Remote client-to-host request params and results (sections 4, 5.3, 6, 7, 8, 9)",
+  "title": "Nano Remote client-to-host request params and results (sections 4, 5.3, 6, 7, 8, 9, 15)",
   "description": "Each request method M has M.params and M.result. Pointer keys escape / as ~1, e.g. #/$defs/session~1open.params.",
   "$defs": {
     "initialize.params": {
@@ -355,6 +355,65 @@
     "push/unsubscribe.result": {"$ref": "common.json#/$defs/Ok"},
 
     "push/test.params": {"type": "object"},
-    "push/test.result": {"$ref": "common.json#/$defs/Ok"}
+    "push/test.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "provider/list.params": {"type": "object"},
+    "provider/list.result": {
+      "type": "object",
+      "required": ["providers"],
+      "properties": {
+        "providers": {"type": "array", "items": {"$ref": "common.json#/$defs/ProviderInfo"}}
+      }
+    },
+
+    "provider/models.params": {
+      "description": "Names a Provider kept on the host (providerId) or a host-routed base URL without a key (baseURL).",
+      "type": "object",
+      "if": {"not": {"required": ["providerId"]}}, "then": {"required": ["baseURL"]},
+      "properties": {
+        "providerId": {"$ref": "common.json#/$defs/Id"},
+        "baseURL": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "common.json#/$defs/ProviderKind"}
+      }
+    },
+    "provider/models.result": {
+      "type": "object",
+      "required": ["models"],
+      "properties": {
+        "models": {"type": "array", "items": {"$ref": "common.json#/$defs/ProviderModel"}}
+      }
+    },
+
+    "provider/chat.params": {
+      "type": "object",
+      "required": ["requestId", "model", "messages"],
+      "if": {"not": {"required": ["providerId"]}}, "then": {"required": ["baseURL"]},
+      "properties": {
+        "requestId": {"$ref": "common.json#/$defs/Id"},
+        "providerId": {"$ref": "common.json#/$defs/Id"},
+        "baseURL": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "common.json#/$defs/ProviderKind"},
+        "model": {"type": "string", "minLength": 1},
+        "messages": {"type": "array", "minItems": 1, "items": {"$ref": "common.json#/$defs/ProviderMessage"}},
+        "options": {"$ref": "common.json#/$defs/ProviderChatOptions"}
+      }
+    },
+    "provider/chat.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "provider/abort.params": {
+      "type": "object",
+      "required": ["requestId"],
+      "properties": {"requestId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "provider/abort.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "provider/discover.params": {"type": "object"},
+    "provider/discover.result": {
+      "type": "object",
+      "required": ["candidates"],
+      "properties": {
+        "candidates": {"type": "array", "items": {"$ref": "common.json#/$defs/ProviderCandidate"}}
+      }
+    }
   }
 }

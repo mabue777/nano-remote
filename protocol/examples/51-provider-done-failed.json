@@ -1,0 +1,23 @@
+{
+  "$expect": {
+    "schema": "events.json#/$defs/provider~1done",
+    "at": "params"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 34,
+  "message": {
+    "method": "provider/done",
+    "params": {
+      "requestId": "chat-0b5e",
+      "status": "failed",
+      "error": {
+        "reason": "rate_limited",
+        "message": "upstream answered 429",
+        "status": 429,
+        "retryAfterMs": 60000
+      }
+    }
+  }
+}

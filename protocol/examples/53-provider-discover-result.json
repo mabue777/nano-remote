@@ -1,0 +1,25 @@
+{
+  "$expect": {
+    "schema": "methods.json#/$defs/provider~1discover.result",
+    "at": "result"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 35,
+  "message": {
+    "id": "c-74",
+    "result": {
+      "candidates": [
+        {
+          "baseURL": "http://127.0.0.1:11434",
+          "kind": "ollama"
+        },
+        {
+          "baseURL": "http://100.101.102.103:1234/v1",
+          "kind": "openai-compatible"
+        }
+      ]
+    }
+  }
+}

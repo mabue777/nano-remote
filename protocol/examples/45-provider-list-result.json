@@ -1,0 +1,31 @@
+{
+  "$expect": {
+    "schema": "methods.json#/$defs/provider~1list.result",
+    "at": "result"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 30,
+  "message": {
+    "id": "c-70",
+    "result": {
+      "providers": [
+        {
+          "id": "mac-ollama",
+          "name": "Ollama on this Mac",
+          "baseURL": "http://127.0.0.1:11434",
+          "kind": "ollama",
+          "hasKey": false
+        },
+        {
+          "id": "lab-vllm",
+          "name": "Lab vLLM",
+          "baseURL": "http://10.0.0.20:8000/v1",
+          "kind": "openai-compatible",
+          "hasKey": true
+        }
+      ]
+    }
+  }
+}

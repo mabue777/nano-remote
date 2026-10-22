@@ -1,0 +1,18 @@
+{
+  "$expect": {
+    "schema": "events.json#/$defs/provider~1delta",
+    "at": "params"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 32,
+  "message": {
+    "method": "provider/delta",
+    "params": {
+      "requestId": "chat-0b5e",
+      "kind": "reasoning",
+      "text": "Rayleigh scattering"
+    }
+  }
+}

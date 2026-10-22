@@ -376,6 +376,20 @@ describe('host service', () => {
     expect(log).toMatch(/"event":"control.pair"/);
   });
 
+  it('serves the providers kept in config.json: names in status, provider/list without keys', async () => {
+    const started = await startService({
+      config: { providers: [{ id: 'mac', name: 'Ollama on this Mac', baseURL: 'http://127.0.0.1:11434', apiKey: 'sk-never-leaves' }] },
+    });
+    expect(await controlRequest(started.target, 'GET', '/v1/status')).toMatchObject({ providers: ['Ollama on this Mac'] });
+    const client = await connect(started, await pairDevice(started));
+    await client.handshake();
+    const listed = await client.call('provider/list');
+    expect(listed.result).toEqual({
+      providers: [{ id: 'mac', name: 'Ollama on this Mac', baseURL: 'http://127.0.0.1:11434', kind: 'ollama', hasKey: true }],
+    });
+    expect(JSON.stringify(client.frames)).not.toContain('sk-never-leaves');
+  });
+
   it('revoking through the control channel closes the device stream with 4003', async () => {
     const started = await startService();
     const device = await pairDevice(started);

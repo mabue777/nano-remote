@@ -34,6 +34,8 @@ export interface ControlStatus {
   streams: number;
   sessionsActive: number;
   agents: { id: string; status: string; version?: string; reason?: string }[];
+  /** Names of the Providers kept on the host (config.json `providers`); never their keys. */
+  providers?: string[];
 }
 
 export interface ControlHandlers {

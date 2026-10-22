@@ -14,4 +14,5 @@ export * as config from './config/index.js';
 export * as devices from './devices/index.js';
 export * as http from './http/index.js';
 export * as pairing from './pairing/index.js';
+export * as providers from './providers/index.js';
 export { FakeAdapter, FakeAgent, echoScript, scripted } from './core/testing/fake-adapter.js';

@@ -114,6 +114,7 @@ export function formatStatus(status: ControlStatus): string {
     `devices:   ${status.devices} paired, ${status.streams} streams open`,
     `sessions:  ${status.sessionsActive} active`,
     `agents:    ${agents.join('; ') || 'none'}`,
+    `providers: ${status.providers?.join(', ') || 'none'}`,
   ].join('\n');
 }
 

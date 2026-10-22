@@ -1,6 +1,6 @@
 // The running host: the composition root that `nano-host start` builds from the config file.
 //
-//   Journal + device store (same SQLite file) -> agents -> HostCore -> router (+ initialize)
+//   Journal + device store (same SQLite file) -> agents -> HostCore -> router (+ initialize, provider relay)
 //   -> HostServer (HTTPS on the tailnet: web app, /v1/pair, /v1/stream) -> control channel
 //
 // Shutdown (SIGTERM from launchd, or Ctrl-C): pongs report `draining` and new streams are refused with
@@ -22,6 +22,8 @@ import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
 import { HostServer } from '../http/server.js';
 import { DEFAULT_SNAPSHOT_TURNS, Journal } from '../journal/journal.js';
+import { registerProviderMethods } from '../providers/methods.js';
+import { ProviderRelay } from '../providers/relay.js';
 import { PushNotifier } from '../push/notifier.js';
 import { PushSender } from '../push/sender.js';
 import { ensureVapidKeys } from '../push/vapid.js';
@@ -106,6 +108,7 @@ export class HostService {
     readonly devices: DeviceStore,
     readonly control: ControlServer,
     readonly notifier: PushNotifier,
+    readonly relay: ProviderRelay,
     private readonly options: ServiceOptions,
     private readonly startedAt: number,
   ) {}
@@ -178,6 +181,13 @@ export class HostService {
 
     let server: HostServer | undefined;
     let control: ControlServer | undefined;
+    // The provider relay (protocol-v1.md section 15): stateless, its notifications go to the asking stream.
+    const relay = new ProviderRelay({ providers: config.providers ?? [] });
+    registerProviderMethods(registry, {
+      relay,
+      notify: (streamId, method, params) => server?.streams.notifyStream(streamId, method, params) ?? false,
+      log: (event, fields) => logger.info(event, fields),
+    });
     try {
       server = await HostServer.start({
         registry,
@@ -217,7 +227,7 @@ export class HostService {
         },
         log: (event, fields) => logger.info(event, fields),
       });
-      service = new HostService(server, core, journal, store, devices, control, notifier, options, startedAt);
+      service = new HostService(server, core, journal, store, devices, control, notifier, relay, options, startedAt);
       logger.info('host.listening', {
         origin: server.origin,
         addresses: server.addresses.map((a) => a.address),
@@ -252,6 +262,7 @@ export class HostService {
       streams: this.server.streams.streams().length,
       sessionsActive: hostStatus.sessionsActive,
       agents: hostStatus.agents,
+      providers: this.relay.names(),
     };
   }
 

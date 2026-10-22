@@ -13,7 +13,9 @@
 //     "claudeExecutable": "/…/claude",  // optional; default the Claude Code build bundled with the SDK
 //     "journalPath": "…/journal.sqlite",
 //     "logFile": "~/Library/Logs/NanoHost/host.log",
-//     "vapidContact": "mailto:me@example.org"  // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
+//     "vapidContact": "mailto:me@example.org", // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
+//     "providers": [{"id": "mac-ollama", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "apiKey": "…"}]
+//                                         // optional; Providers kept on the host for the relay (config/providers.ts)
 //   }
 import { randomBytes } from 'node:crypto';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
@@ -22,6 +24,7 @@ import path from 'node:path';
 
 import { DEFAULT_CODEX_BINARY } from '../config/codex.js';
 import { ensurePrivateDir } from '../config/private-files.js';
+import { validateProviders, type ProviderConfig } from '../config/providers.js';
 import { DEFAULT_PORT, TLS_CERT_FILE, TLS_KEY_FILE } from '../http/server.js';
 import { isValidVapidContact } from '../push/vapid-jwt.js';
 import { configDir, logsDir } from './paths.js';
@@ -48,6 +51,8 @@ export interface HostConfig {
   logFile: string;
   /** VAPID `sub` claim (`https:` or `mailto:` with a real domain); absent means DEFAULT_VAPID_CONTACT. */
   vapidContact?: string;
+  /** Providers the relay serves (protocol-v1.md section 15); absent means none. Keys never leave the host. */
+  providers?: ProviderConfig[];
 }
 
 export class ConfigError extends Error {
@@ -91,6 +96,7 @@ const KEYS: readonly (keyof HostConfig)[] = [
   'journalPath',
   'logFile',
   'vapidContact',
+  'providers',
 ];
 
 /**
@@ -149,6 +155,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
 
   const claudeConfigDir = raw.claudeConfigDir ?? defaults.claudeConfigDir;
   const claudeExecutable = raw.claudeExecutable ?? defaults.claudeExecutable;
+  const providers = raw.providers === undefined ? defaults.providers : validateProviders(raw.providers, fail);
 
   return {
     hostId: hostId as string,
@@ -162,6 +169,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     journalPath: absolute(raw.journalPath ?? defaults.journalPath, 'journalPath'),
     logFile: absolute(raw.logFile ?? defaults.logFile, 'logFile'),
     ...(vapidContact !== undefined ? { vapidContact: vapidContact as string } : {}),
+    ...(providers !== undefined ? { providers } : {}),
   };
 }
 

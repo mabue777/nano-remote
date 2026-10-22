@@ -137,8 +137,8 @@ The `message` field holds one of three shapes, identical to the Codex engine's J
 
 | Direction | Requests | Notifications |
 |---|---|---|
-| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `push/*`, `device/*`, `host/status` | `initialized` |
-| Host to client | none in v1 (see 5.3 for why) | every Journal event (section 5), `session/updated`, `host/status/changed` |
+| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `push/*`, `device/*`, `host/status`, `provider/*` (section 15) | `initialized` |
+| Host to client | none in v1 (see 5.3 for why) | every Journal event (section 5), `session/updated`, `host/status/changed`, `provider/delta`, `provider/usage`, `provider/done` (section 15) |
 
 Departure: the Codex engine sends approvals as host-to-client requests that must be answered on the same
 connection (capture P6, N3, where the host re-sent a pending request on the new stream 11 ms after resume).
@@ -426,6 +426,7 @@ The security pass before Phase 1 (todo item 10) owns code lifetime, token storag
 | `agent_unavailable` | adapter down (`data.agentId`, `data.reason`) | show agent state |
 | `not_supported` | adapter lacks the operation (steer, diff) | hide the control |
 | `rate_limited` | too many requests (`data.retryAfterMs`) | back off |
+| `provider_unavailable` | a relayed provider failed (`data.reason`, `data.status?`, `data.retryAfterMs?`; section 15) | show the reason's sentence |
 | `internal` | host bug | retry once, then report |
 
 WebSocket close codes used by the host: 4001 unsupported protocol version, 4002 sequence gap, 4003
@@ -515,3 +516,87 @@ recorded as decisions with their evidence.
    the iOS strings carry only the generic "Approval required" and "Allow" vocabulary (README item 23).
    So the kind is in the schema, the Codex adapter may emit it, and the client shows it as allow or deny
    with the reason text.
+
+## 15. Provider relay (additive within v1)
+
+ADR 0006: local chat calls an `https` provider on a public host straight from the phone, and any other
+provider (plain `http`, loopback, RFC 1918, link-local, `.local`, tailnet `100.64.0.0/10` or `*.ts.net`)
+through the paired host. These methods are that relay. The host keeps no state for them (ruling R3): no
+Journal, no push, nothing survives the stream. A **Provider** is a reachable model endpoint identified by
+its normalized base URL; the host knows two sorts:
+
+- **Providers kept on the host**: the `providers` list in the host's `config.json`
+  (`[{id, name, baseURL, apiKey?}]`). Their keys stay on the host; the protocol never carries a key
+  (ruling R2). `nano-host status` lists their names.
+- **Ad-hoc base URLs** sent by the client for a host-routed server it found or typed (for example
+  Ollama on this Mac). The host only relays a `baseURL` whose route is "via the host" under ADR 0006;
+  anything else answers `invalid_params` (`data.path` `params.baseURL`). No key is used.
+
+`kind` is the wire format: `openai-compatible` (default), `ollama` or `anthropic`. The host derives it
+from the base URL (host `anthropic.com` or a subdomain: `anthropic`; host `ollama.com` or port 11434:
+`ollama`; anything else: `openai-compatible`). A request may name `kind` to override the derivation.
+
+### `provider/list` → `{providers:[{id, name, baseURL, kind, hasKey}]}`
+The Providers kept on the host, in config order.
+
+### `provider/models {providerId | baseURL, kind?}` → `{models:[{id, displayName?}]}`
+The host probes the provider's models endpoint (table below) and returns the list. `providerId` unknown:
+`not_found`. The provider failed: `provider_unavailable` with `data: {reason, message, status?,
+retryAfterMs?}` (`reason` as in `provider/done`).
+
+### `provider/chat {requestId, providerId | baseURL, kind?, model, messages, options?}` → `{ok:true}`
+- `requestId` is chosen by the client, unique among its running chats on this stream (a duplicate answers
+  `invalid_params`). `messages` is `[{role: "system"|"user"|"assistant", content}]`; `options` is
+  `{temperature?, maxTokens?, thinking?}`.
+- The host answers `{ok:true}` first, then sends notifications **to this stream only**, unsequenced:
+  - `provider/delta {requestId, kind: "text"|"reasoning", text}`: one per upstream chunk; reasoning text
+    is flagged, never mixed into the answer.
+  - `provider/usage {requestId, inputTokens?, outputTokens?}`: when the provider reports counts.
+  - `provider/done {requestId, status: "completed"|"failed"|"aborted", error?}`: always the last one.
+    `error` (present when failed) is `{reason, message, status?, retryAfterMs?}`; `reason` is
+    `unauthorized` (401, 403), `rate_limited` (429), `unreachable` (connect failure, or the host is in its
+    cooldown for that server), `timeout` (no first token in time), `not_found` (404, usually an unknown
+    model), `upstream` (any other HTTP error or an error event in the stream), or `bad_response` (the
+    stream could not be parsed). Clients map `reason` to one sentence; `message` is for logs.
+
+### `provider/abort {requestId}` → `{ok:true}`
+Cancels the upstream request; the chat ends with `provider/done {status: "aborted"}`. Aborting an
+unknown or finished request is `ok`. Closing the stream aborts all its chats (no `done` is sent).
+
+### `provider/discover` → `{candidates:[{baseURL, kind}]}`
+The "Find local servers" action. The host probes its own addresses (loopback, its LAN IPv4 addresses and
+its tailnet addresses) on ports 11434, 1234, 8080 and 8000 to 8020, each probe with a 1 s timeout:
+`GET /api/tags` (an Ollama model list: `kind: ollama`, base URL `http://<address>:<port>`), else
+`GET /v1/models` (`openai-compatible`, base URL ending in `/v1`), else `GET /models`
+(`openai-compatible`). A server answering on several addresses is reported once, loopback first, then
+LAN, then tailnet.
+
+### Runtime behavior (provider-connection.md section 4)
+- **Timeouts**: connecting gives up after 10 s; `provider/models` must answer within 10 s (both are
+  `unreachable`); a chat is bounded by the first-token watchdog below, so a server loading a model may
+  take up to 30 s before its headers.
+- **Retries** on 429, 502, 503 and 504, and once on a connect failure, before any delta was sent:
+  up to 3 retries with exponential backoff (0.5 s, 1 s, 2 s, with jitter, at most 8 s), honoring
+  `Retry-After` (seconds or an HTTP date) up to 30 s; a longer `Retry-After` fails at once with
+  `rate_limited` and `retryAfterMs`.
+- **Dead-host cooldown**: after two connect failures in a row to one server (scheme, host, port), requests
+  to it fail at once with `unreachable` for 20 s (`retryAfterMs` says how long is left). A success resets
+  the count.
+- **First-token watchdog**: a chat whose server accepts the request but sends no delta within 30 s of
+  sending it is cancelled upstream and ends `failed` with `timeout`.
+- **Abort** (method or stream close) cancels the upstream HTTP request, including during a backoff wait.
+
+### Wire formats (one adapter table in the host, no class per vendor)
+
+| | `openai-compatible` | `ollama` | `anthropic` |
+|---|---|---|---|
+| models | `GET {base}/models`, `{data:[{id}]}` or a bare list | `GET {base}/api/tags`, `{models:[{name}]}` | `GET {base}/v1/models` (no `/v1` added when the base ends in it), `{data:[{id, display_name}]}` |
+| chat | `POST {base}/chat/completions`, `stream: true`, `stream_options.include_usage`; SSE `data:` lines until `[DONE]` | `POST {base}/api/chat`, `stream: true`; one JSON object per line until `done: true` | `POST {base}/v1/messages`, `stream: true`; SSE events until `message_stop` |
+| key | `Authorization: Bearer` | `Authorization: Bearer` (Ollama Cloud) | `x-api-key`, `anthropic-version: 2023-06-01` |
+| text | `choices[0].delta.content` | `message.content` | `content_block_delta` `text_delta` |
+| reasoning | `delta.reasoning_content` or `delta.reasoning` | `message.thinking` | `content_block_delta` `thinking_delta` |
+| usage | `usage.prompt_tokens`, `usage.completion_tokens` | `prompt_eval_count`, `eval_count` | `message_start` `usage.input_tokens`, `message_delta` `usage.output_tokens` |
+| system messages | kept in `messages` | kept in `messages` | joined into `system` |
+| `thinking: true` | `reasoning_effort: "medium"` | `think: true` (`false` sends `think: false`) | `thinking: {type: "enabled", budget_tokens}` (half of `max_tokens`, at least 1024; `temperature` dropped) |
+| `maxTokens` | `max_tokens` | `options.num_predict` | `max_tokens` (default 4096) |
+| `temperature` | `temperature` | `options.temperature` | `temperature` |

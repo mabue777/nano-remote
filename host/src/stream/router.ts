@@ -8,7 +8,7 @@ import type { Bad } from './guard.js';
 export type ErrorCode = envelope.Error['code'];
 export type ErrorBody = envelope.Error;
 
-/** Params and result types per request method, from protocol/schema/methods.json (spec 4 to 9). */
+/** Params and result types per request method, from protocol/schema/methods.json (spec 4 to 9, 15). */
 export interface MethodMap {
   initialize: { params: m.InitializeParams; result: m.InitializeResult };
   'host/status': { params: m.HostStatusParams; result: m.HostStatus };
@@ -37,6 +37,11 @@ export interface MethodMap {
   'push/subscribe': { params: m.PushSubscribeParams; result: m.Ok };
   'push/unsubscribe': { params: m.PushUnsubscribeParams; result: m.Ok };
   'push/test': { params: m.PushTestParams; result: m.Ok };
+  'provider/list': { params: m.ProviderListParams; result: m.ProviderListResult };
+  'provider/models': { params: m.ProviderModelsParams; result: m.ProviderModelsResult };
+  'provider/chat': { params: m.ProviderChatParams; result: m.Ok };
+  'provider/abort': { params: m.ProviderAbortParams; result: m.Ok };
+  'provider/discover': { params: m.ProviderDiscoverParams; result: m.ProviderDiscoverResult };
 }
 export type MethodName = keyof MethodMap;
 
@@ -78,6 +83,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'agent_unavailable',
   'not_supported',
   'rate_limited',
+  'provider_unavailable',
   'internal',
 ]);
 

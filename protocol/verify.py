@@ -216,6 +216,14 @@ NEGATIVE = [
      {"mode": "snapshot", "session": None, "turns": [], "cursor": 1}),
     ("item with unknown type is rejected", "common.json#/$defs/Item",
      {"itemId": "itm_1", "type": "hologram", "turnId": "trn_1", "status": "completed"}),
+    ("provider/chat naming no provider is rejected", "methods.json#/$defs/provider~1chat.params",
+     {"requestId": "r1", "model": "m", "messages": [{"role": "user", "content": "hi"}]}),
+    ("provider/done failed without error is rejected", "events.json#/$defs/provider~1done",
+     {"requestId": "r1", "status": "failed"}),
+    ("provider/delta with unknown kind is rejected", "events.json#/$defs/provider~1delta",
+     {"requestId": "r1", "kind": "tool", "text": "x"}),
+    ("provider/list entry carrying no hasKey is rejected", "common.json#/$defs/ProviderInfo",
+     {"id": "p1", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "kind": "ollama"}),
 ]
 
 

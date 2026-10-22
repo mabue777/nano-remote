@@ -1,0 +1,24 @@
+{
+  "$expect": {
+    "schema": "methods.json#/$defs/provider~1models.result",
+    "at": "result"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 31,
+  "message": {
+    "id": "c-71",
+    "result": {
+      "models": [
+        {
+          "id": "qwen3:4b",
+          "displayName": "qwen3:4b"
+        },
+        {
+          "id": "llama3.2:3b"
+        }
+      ]
+    }
+  }
+}
