@@ -28,10 +28,18 @@ of `docs/plan/roadmap.md` fills it in.
   dead engine as `agent/exited`, and resumes the thread on a new engine at the next call. Its tests run
   against `testing/fake-app-server.ts`, a fixture-driven fake engine. `live.test.ts` drives the real
   engine and runs only with `NANO_LIVE_CODEX=1` (never in the gate).
+- `src/adapters/claude/` is the Claude Code adapter (protocol-v1.md section 11): the Claude Agent SDK's
+  `query()` in streaming-input mode, one Claude Code process per session in its own process group.
+  `ClaudeAgent` is the agent the host registers; `ClaudeAdapter` maps the SDK's messages and `canUseTool`
+  onto the same adapter events. Its tests run against `testing/fake-query.ts`; `live.test.ts` drives the
+  real engine and runs only with `NANO_LIVE_CLAUDE=1` (never in the gate).
 - `src/config/` holds host configuration. `codexConfig()`: engine binary (default: the one bundled with
   ChatGPT.app, or `NANO_CODEX_BIN`), engine home (`NANO_CODEX_HOME`, else `CODEX_HOME`, else
   `~/.config/codex`), the default sandbox (`workspace-write`, or `NANO_CODEX_SANDBOX`) and the fixed
   approval policy `on-request`. The default model is never taken from the user's config.toml.
+  `claudeConfig()`: the Claude config folder (`NANO_CLAUDE_CONFIG_DIR`, else `CLAUDE_CONFIG_DIR`, else
+  `~/.claude`), the executable (`NANO_CLAUDE_BIN`, else the build bundled with the SDK) and the default
+  model `opus`.
 
 - `src/cli/` is the `nano-host` command line (bin `dist/cli/main.js`, built by `pnpm -C host build`): the
   config file, the launchd job, the control channel the commands use to reach the running service, the
@@ -86,6 +94,8 @@ Config file `~/Library/Application Support/NanoHost/config.json` (0600; written 
   "tls": { "certPath": "…/NanoHost/tls-cert.pem", "keyPath": "…/NanoHost/tls-key.pem" },
   "enabledAgents": ["codex"],
   "codexBinary": "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+  "claudeConfigDir": "/Users/me/.config/claude",
+  "claudeExecutable": "/path/to/claude",
   "journalPath": "…/NanoHost/journal.sqlite",
   "logFile": "~/Library/Logs/NanoHost/host.log"
 }
@@ -95,6 +105,22 @@ Config file `~/Library/Application Support/NanoHost/config.json` (0600; written 
 loopback IPs may be listed instead, never a wildcard. Every command takes `--config <path>` for another
 file (the control socket and secret then live next to it). `start --insecure-dev` serves plain HTTP on
 loopback only, for development.
+
+`enabledAgents` lists the agents the host offers: `"codex"`, `"claude"` or both (default `["codex"]`).
+`"claudeConfigDir"` and `"claudeExecutable"` are optional and only matter for Claude Code (below); both
+must be absolute paths when present.
+
+Claude Code: the host drives it through the Claude Agent SDK, which brings its own Claude Code build (a
+platform package installed with the host's dependencies), so no separate install is needed;
+`"claudeExecutable"` points the host at another `claude` executable instead. The engine signs in with the
+login in a Claude config folder, the one `claude` itself uses: `~/.claude` by default, or the folder your
+shell exports as `CLAUDE_CONFIG_DIR` (on this Mac `/Users/mabue/.config/claude`). launchd starts the host
+with a bare environment (PATH only), so it never sees your shell's `CLAUDE_CONFIG_DIR`: set
+`"claudeConfigDir"` to that folder whenever it is not `~/.claude`. To enable Claude Code, sign in once with
+`claude` in a terminal, add `"claude"` to `enabledAgents` (for example `["codex", "claude"]`), set
+`"claudeConfigDir"` if needed, and restart the job (step 6). `nano-host status` then lists `claude ready`,
+or `claude unavailable` with the reason (for example a missing config folder). Sessions run with your
+login but without your Claude settings files (`settingSources: []`), so approvals always reach the phone.
 
 Optional `"vapidContact"` sets the contact the host names to push services (the VAPID `sub` claim), for
 example `"mailto:me@example.org"` or `"https://example.org"`. It must be `https:` or `mailto:` with a
@@ -127,6 +153,12 @@ without an approval card or a push, so anyone holding a paired phone can do the 
 session header shows a red "Bypass" marker for as long as the session runs this way. Sessions started with
 the switch off keep the host default (`on-request`, `workspace-write`).
 
+For Claude Code the same switch maps `approvalMode: "never"` to Claude's permission mode
+`bypassPermissions` (with `allowDangerouslySkipPermissions`): every tool runs without asking, with the same
+full access to what the Mac user can reach. `acceptEdits` and `plan` pass through as the Claude modes of
+those names; anything else is Claude's `default` mode, where every command, file edit and question comes
+to the phone as an approval card. The session header shows the same red "Bypass" marker.
+
 ## Development commands
 
 From the repo root:
@@ -137,30 +169,38 @@ pnpm -C host typecheck   # tsc --noEmit
 pnpm -C host test        # vitest run
 pnpm -C host test:coverage  # vitest with v8 coverage; fails below 95% on src/journal or src/stream, 90% on src/core or src/adapters/codex (on demand, not in the gate)
 NANO_LIVE_CODEX=1 pnpm -C host exec vitest run src/adapters/codex/live.test.ts  # the real Codex engine (login and tokens needed)
+NANO_LIVE_CLAUDE=1 pnpm -C host exec vitest run src/adapters/claude/live.test.ts  # the real Claude engine (login and tokens needed)
 pnpm -C host build       # emit dist/ (excludes tests), including the nano-host bin
 pnpm -C host verify      # generate + typecheck + test; the gate
 pnpm -C host acceptance  # the Phase 1 acceptance against the real host and Codex (below); not in the gate
+pnpm -C host acceptance:claude  # the same eight steps against Claude Code (Phase 4); not in the gate
 ```
 
-## Phase 1 acceptance
+## Host acceptance (Phase 1 Codex, Phase 4 Claude Code)
 
 `pnpm -C host acceptance` checks the Phase 1 acceptance of `docs/plan/roadmap.md` section 4 end to end:
 the real `nano-host` CLI, the real Codex engine, and a scripted client (`scripts/acceptance.ts`).
+`NANO_ACCEPTANCE_AGENT=claude pnpm -C host acceptance` (or `pnpm -C host acceptance:claude`) runs the same
+eight steps against Claude Code for Phase 4: the host config enables only `claude` with `claudeConfigDir`
+from `CLAUDE_CONFIG_DIR` (else `~/.claude`), the session starts with default settings, and the first turn's
+approval is Claude's Write call (`fileChange`). Step 6 also lists the engine session id from every
+Claude `system/init` in the host log: one id across both host processes shows the session was resumed.
 
-- Needs: the Codex engine logged in (the same setup as the live Codex test above). It spends a few real
+- Needs: the agent's engine logged in (the same setup as its live test above). It spends a few real
   tokens and takes about 15 seconds. It touches nothing outside a temporary folder: its own config folder
-  (config, Journal, control socket, log), a free loopback port, and a temporary project folder for Codex.
+  (config, Journal, control socket, log), a free loopback port, and a temporary project folder for the agent.
 - What it does: generates the protocol types, builds `dist/`, then runs the eight steps: start the host
-  with `start --insecure-dev`; pair two clients with `nano-host pair` and `POST /v1/pair`; start a Codex
-  session (read-only sandbox) and a turn that must write `hello.txt`; accept the approval, wait for
+  with `start --insecure-dev`; pair two clients with `nano-host pair` and `POST /v1/pair`; start a session
+  (Codex: read-only sandbox; Claude Code: default settings) and a turn that must write `hello.txt`; accept the approval, wait for
   `turn/completed` and check the file; SIGKILL the host and start it again with the same config folder; while
   the first client is away, the second runs a follow-up turn that must name the file (the resumed session
   remembers); the first client reconnects with its token and `session/open` with its saved cursor returns
   events mode with exactly the missed events; `session/open` without a cursor returns a snapshot with both
   turns; `device/list` shows both clients and `device/revoke` closes the second client's stream with 4003.
-- Output: one timestamped line per step on stdout and in `acceptance/host-v0.log` (rewritten on every run).
+- Output: one timestamped line per step on stdout and in `acceptance/host-<agent>.log` (rewritten on every run).
   Exit 0 only when every step passes; the last line says `passed` or `FAILED` with the reason. On failure
   the temporary folder is kept (its path is on the first line) so its `config/host.log` and Journal can be read.
-- Evidence: the committed `acceptance/host-v0.log` is the last passing run. `acceptance/coverage.txt` is the
+- Evidence: the committed `acceptance/host-v0.log` is the Phase 1 Codex run (before the script took an
+  agent; a new Codex run writes `host-codex.log`), `acceptance/host-claude.log` the Phase 4 Claude Code run. `acceptance/coverage.txt` is the
   `src/journal` and `src/stream` summary of `pnpm -C host test:coverage` (both at least 95%); refresh it by
   running that command and copying those rows.

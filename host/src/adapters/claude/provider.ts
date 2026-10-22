@@ -17,7 +17,7 @@ import path from 'node:path';
 import type { ModelInfo } from '../../generated/common.js';
 import type { AgentProvider, AgentState } from '../../core/adapter.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
-import { ClaudeAdapter, Inbox, loadQuery, type ClaudeQuery, type QueryFn } from './adapter.js';
+import { ClaudeAdapter, executablePath, Inbox, loadQuery, type ClaudeQuery, type QueryFn } from './adapter.js';
 import { childEnv, staticModels, toModels } from './mapping.js';
 
 export const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
@@ -110,7 +110,7 @@ export class ClaudeAgent implements AgentProvider {
           settingSources: [],
           permissionMode: 'default',
           env: childEnv(this.config),
-          ...(this.config.executable !== undefined ? { pathToClaudeCodeExecutable: this.config.executable } : {}),
+          ...(executablePath(this.config) !== undefined ? { pathToClaudeCodeExecutable: executablePath(this.config) } : {}),
         },
       });
       const timeout = new Promise<never>((_, reject) => {

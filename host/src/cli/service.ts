@@ -9,7 +9,9 @@
 import os, { hostname } from 'node:os';
 import path from 'node:path';
 
+import { ClaudeAgent } from '../adapters/claude/provider.js';
 import { CodexAgent } from '../adapters/codex/provider.js';
+import { claudeConfig } from '../config/claude.js';
 import { codexConfig } from '../config/codex.js';
 import { ensurePrivateDir } from '../config/private-files.js';
 import { describeAgent, type AgentProvider } from '../core/adapter.js';
@@ -57,11 +59,20 @@ export function shortHostname(name = hostname()): string {
   return name.replace(/\.local$/i, '').split('.')[0] || 'mac';
 }
 
-function buildAgents(config: HostConfig, logger: Logger): AgentProvider[] {
+export function buildAgents(config: HostConfig, logger: Logger): AgentProvider[] {
   return config.enabledAgents.map((id) => {
     switch (id) {
       case 'codex':
         return new CodexAgent({ config: codexConfig({ binary: config.codexBinary }), log: logger.forModule('codex') });
+      case 'claude':
+        // Only the keys the config sets: an absent one keeps claudeConfig()'s default.
+        return new ClaudeAgent({
+          config: claudeConfig({
+            ...(config.claudeConfigDir !== undefined ? { configDir: config.claudeConfigDir } : {}),
+            ...(config.claudeExecutable !== undefined ? { executable: config.claudeExecutable } : {}),
+          }),
+          log: logger.forModule('claude'),
+        });
     }
   });
 }

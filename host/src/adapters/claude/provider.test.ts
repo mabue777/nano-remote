@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { claudeConfig } from '../../config/claude.js';
-import { ClaudeAdapter, type QueryFn } from './adapter.js';
+import { bundledExecutable, ClaudeAdapter, type QueryFn } from './adapter.js';
 import { ClaudeAgent, resolveSdkVersion } from './provider.js';
 import { FakeClaude, until } from './testing/fake-query.js';
 
@@ -69,7 +69,7 @@ describe('ClaudeAgent', () => {
     expect(query.userMessages).toEqual([]);
     expect(query.options).toMatchObject({ settingSources: [], permissionMode: 'default' });
     expect(query.options.env).toMatchObject({ CLAUDE_CONFIG_DIR: cfg.configDir });
-    expect(query.options.pathToClaudeCodeExecutable).toBeUndefined();
+    expect(query.options.pathToClaudeCodeExecutable).toBe(bundledExecutable());
     expect(await agent.models()).toBe(first);
     expect(fake.queries).toHaveLength(1);
   });

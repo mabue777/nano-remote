@@ -43,6 +43,9 @@
 // - SIGKILL of the child: the adapter reports agent/exited, the next turn resumes on a new query and the
 //   model remembers the earlier turn.
 import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 import type {
   CanUseTool,
@@ -90,6 +93,40 @@ let sdkQuery: Promise<QueryFn> | undefined;
 export function loadQuery(): Promise<QueryFn> {
   sdkQuery ??= import('@anthropic-ai/claude-agent-sdk').then((sdk) => sdk.query as unknown as QueryFn);
   return sdkQuery;
+}
+
+const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
+let bundled: string | null | undefined;
+
+/**
+ * The Claude Code executable bundled with the SDK (the platform package next to it), found from the SDK's
+ * real folder; undefined when it is not there (the SDK's own lookup then reports the error).
+ *
+ * The SDK finds it itself with require.resolve from its module URL, but Node 26.5's cached realpath
+ * returns a path unresolved when the last synchronous stat in the process hit a pipe or a socket (the
+ * host's stdout under a supervisor, the control socket). The SDK is then loaded from the pnpm symlink
+ * host/node_modules/@anthropic-ai/claude-agent-sdk, whose parent folders do not hold the platform
+ * package, and every query fails with "Native CLI binary ... not found" (seen after a host restart in the
+ * Phase 4 acceptance). realpathSync.native does not use that cache.
+ */
+export function bundledExecutable(): string | undefined {
+  if (bundled === undefined) {
+    bundled = null;
+    try {
+      const entry = createRequire(import.meta.url).resolve(SDK_PACKAGE);
+      const sdkDir = realpathSync.native(path.dirname(entry));
+      const file = createRequire(path.join(sdkDir, 'package.json')).resolve(`${SDK_PACKAGE}-${process.platform}-${process.arch}/claude`);
+      if (existsSync(file)) bundled = file;
+    } catch {
+      // Not installed for this platform: leave it to the SDK.
+    }
+  }
+  return bundled ?? undefined;
+}
+
+/** `pathToClaudeCodeExecutable`: the configured executable, else the bundled one when it is found. */
+export function executablePath(config: ClaudeConfig): string | undefined {
+  return config.executable ?? bundledExecutable();
 }
 
 export function unavailable(reason: string): RpcError {
@@ -349,7 +386,8 @@ export class ClaudeAdapter implements Adapter {
       spawnClaudeCodeProcess: (spawnOptions) => this.spawn(run, spawnOptions) as SpawnedProcess,
     };
     if (permissionMode === 'bypassPermissions') options.allowDangerouslySkipPermissions = true;
-    if (this.config.executable !== undefined) options.pathToClaudeCodeExecutable = this.config.executable;
+    const executable = executablePath(this.config);
+    if (executable !== undefined) options.pathToClaudeCodeExecutable = executable;
     if (this.sessionId !== '') options.resume = this.sessionId;
     try {
       run.query = queryFn({ prompt: run.inbox, options });

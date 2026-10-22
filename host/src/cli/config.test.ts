@@ -100,6 +100,11 @@ describe('config file', () => {
     [{ enabledAgents: ['codex', 'gemini'] }, /unknown agent "gemini"/],
     [{ enabledAgents: 'codex' }, /enabledAgents must be an array/],
     [{ codexBinary: '' }, /codexBinary must be a non-empty string/],
+    [{ enabledAgents: ['claude', 'kimi'] }, /unknown agent "kimi" \(known: codex, claude\)/],
+    [{ claudeConfigDir: '.config/claude' }, /claudeConfigDir must be an absolute path/],
+    [{ claudeConfigDir: '' }, /claudeConfigDir must be a non-empty string/],
+    [{ claudeExecutable: 'bin/claude' }, /claudeExecutable must be an absolute path/],
+    [{ claudeExecutable: 7 }, /claudeExecutable/],
     [{ journalPath: 'journal.sqlite' }, /journalPath must be an absolute path/],
     [{ logFile: 3 }, /logFile/],
     [{ vapidContact: 'mailto:nano-remote@localhost' }, /vapidContact must be an https: URL or a mailto: address/],
@@ -115,6 +120,24 @@ describe('config file', () => {
     for (const contact of ['mailto:me@example.org', 'https://example.com/contact']) {
       expect(validateConfig({ vapidContact: contact }, 'c', defaultConfig(home, 'host_x')).vapidContact).toBe(contact);
     }
+  });
+
+  it('accepts claude with optional claudeConfigDir and claudeExecutable, omitted by default', () => {
+    const defaults = defaultConfig(home, 'host_x');
+    expect(defaults.enabledAgents).toEqual(['codex']);
+    expect(defaults).not.toHaveProperty('claudeConfigDir');
+    expect(defaults).not.toHaveProperty('claudeExecutable');
+    expect(validateConfig({}, 'c', defaults)).not.toHaveProperty('claudeConfigDir');
+    const config = validateConfig(
+      { enabledAgents: ['codex', 'claude'], claudeConfigDir: '/Users/me/.config/claude', claudeExecutable: '/opt/claude/bin/claude' },
+      'c',
+      defaults,
+    );
+    expect(config).toMatchObject({
+      enabledAgents: ['codex', 'claude'],
+      claudeConfigDir: '/Users/me/.config/claude',
+      claudeExecutable: '/opt/claude/bin/claude',
+    });
   });
 
   it('drops duplicate agents', () => {

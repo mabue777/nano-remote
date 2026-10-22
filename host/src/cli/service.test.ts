@@ -8,6 +8,8 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { ClaudeAgent } from '../adapters/claude/provider.js';
+import { claudeConfig } from '../config/claude.js';
 import { FakeAgent } from '../core/testing/fake-adapter.js';
 import { text, waitEvent } from '../core/testing/harness.js';
 import { Journal } from '../journal/journal.js';
@@ -21,7 +23,7 @@ import { defaultConfig, type HostConfig } from './config.js';
 import { controlRequest } from './control.js';
 import { createLogger } from './log.js';
 import { controlSecretPath, controlSocketPath } from './paths.js';
-import { HostService, listenPlan, shortHostname } from './service.js';
+import { buildAgents, HostService, listenPlan, shortHostname } from './service.js';
 import { HOST_VERSION } from './version.js';
 
 let home: string;
@@ -95,6 +97,30 @@ async function connect(started: Started, device: { clientId: string; deviceToken
   clients.push(client);
   return client;
 }
+
+describe('agents from enabledAgents', () => {
+  const quiet = createLogger({ stdout: { write: () => true } });
+
+  it('builds the Claude agent with claudeConfigDir and claudeExecutable from the config', () => {
+    const config: HostConfig = {
+      ...defaultConfig(home, 'host_x'),
+      enabledAgents: ['codex', 'claude'],
+      claudeConfigDir: '/Users/me/.config/claude',
+      claudeExecutable: '/opt/claude/bin/claude',
+    };
+    const agents = buildAgents(config, quiet);
+    expect(agents.map((a) => a.id)).toEqual(['codex', 'claude']);
+    const claude = agents[1] as ClaudeAgent;
+    expect(claude).toBeInstanceOf(ClaudeAgent);
+    expect(claude.config).toMatchObject({ configDir: '/Users/me/.config/claude', executable: '/opt/claude/bin/claude' });
+  });
+
+  it('keeps the Claude defaults for keys the config leaves out', () => {
+    const claude = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['claude'] }, quiet)[0] as ClaudeAgent;
+    expect(claude.config.configDir).toBe(claudeConfig().configDir);
+    expect(claude.config.executable).toBe(claudeConfig().executable);
+  });
+});
 
 describe('listen plan', () => {
   const tailnet = async () => ({ dnsName: 'mac.tail1.ts.net', addresses: ['100.64.0.7'] });
@@ -538,7 +564,7 @@ describe('nano-host commands', () => {
     // First start writes the config; this one would listen on the tailnet, so give it loopback instead.
     writeFileSync(
       path.join(home, 'seed.json'),
-      JSON.stringify({ listenAddresses: ['127.0.0.1'], port, journalPath: path.join(home, 'j.sqlite'), logFile: path.join(home, 'h.log'), codexBinary: '/nonexistent/codex' }),
+      JSON.stringify({ listenAddresses: ['127.0.0.1'], port, journalPath: path.join(home, 'j.sqlite'), logFile: path.join(home, 'h.log'), codexBinary: '/nonexistent/codex', enabledAgents: ['codex', 'claude'], claudeConfigDir: '/nonexistent/claude' }),
     );
     mkdirSync(path.dirname(configPath), { recursive: true });
     copyFileSync(path.join(home, 'seed.json'), configPath);
@@ -551,6 +577,8 @@ describe('nano-host commands', () => {
     expect(status.output.join('\n')).toMatch(/state: +running/);
     expect(status.output.join('\n')).toContain(`listening: 127.0.0.1 port ${port}`);
     expect(status.output.join('\n')).toMatch(/codex unavailable \(Codex is not installed at \/nonexistent\/codex\)/);
+    // The Claude agent is built from enabledAgents with the configured claudeConfigDir and listed with codex.
+    expect(status.output.join('\n')).toMatch(/codex unavailable [^\n]*; claude unavailable \(Claude Code has no config folder at \/nonexistent\/claude/);
     expect(status.output.join('\n')).toContain('launchd:   not installed');
 
     const pair = cliEnv();

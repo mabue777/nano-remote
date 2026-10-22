@@ -9,6 +9,8 @@
 //     "tls": { "certPath": "…/tls-cert.pem", "keyPath": "…/tls-key.pem" },
 //     "enabledAgents": ["codex"],
 //     "codexBinary": "/Applications/ChatGPT.app/…/codex",
+//     "claudeConfigDir": "/Users/me/.config/claude", // optional; Claude Code's login, default ~/.claude
+//     "claudeExecutable": "/…/claude",  // optional; default the Claude Code build bundled with the SDK
 //     "journalPath": "…/journal.sqlite",
 //     "logFile": "~/Library/Logs/NanoHost/host.log",
 //     "vapidContact": "mailto:me@example.org"  // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
@@ -27,7 +29,7 @@ import { configDir, logsDir } from './paths.js';
 export const DEFAULT_HOST_PORT = DEFAULT_PORT;
 
 /** Agents this host build can drive. */
-export const KNOWN_AGENTS = ['codex'] as const;
+export const KNOWN_AGENTS = ['codex', 'claude'] as const;
 export type AgentId = (typeof KNOWN_AGENTS)[number];
 
 export interface HostConfig {
@@ -38,6 +40,10 @@ export interface HostConfig {
   tls: { certPath: string; keyPath: string };
   enabledAgents: AgentId[];
   codexBinary: string;
+  /** Claude Code's config folder (its login); absent means defaultClaudeConfigDir() (~/.claude). */
+  claudeConfigDir?: string;
+  /** The Claude Code executable; absent means the build bundled with the Claude Agent SDK. */
+  claudeExecutable?: string;
   journalPath: string;
   logFile: string;
   /** VAPID `sub` claim (`https:` or `mailto:` with a real domain); absent means DEFAULT_VAPID_CONTACT. */
@@ -80,6 +86,8 @@ const KEYS: readonly (keyof HostConfig)[] = [
   'tls',
   'enabledAgents',
   'codexBinary',
+  'claudeConfigDir',
+  'claudeExecutable',
   'journalPath',
   'logFile',
   'vapidContact',
@@ -139,6 +147,9 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     fail('vapidContact must be an https: URL or a mailto: address with a real domain (not localhost)');
   }
 
+  const claudeConfigDir = raw.claudeConfigDir ?? defaults.claudeConfigDir;
+  const claudeExecutable = raw.claudeExecutable ?? defaults.claudeExecutable;
+
   return {
     hostId: hostId as string,
     listenAddresses: [...(listenAddresses as string[])],
@@ -146,6 +157,8 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     tls,
     enabledAgents: [...new Set(enabledAgents as AgentId[])],
     codexBinary: absolute(raw.codexBinary ?? defaults.codexBinary, 'codexBinary'),
+    ...(claudeConfigDir !== undefined ? { claudeConfigDir: absolute(claudeConfigDir, 'claudeConfigDir') } : {}),
+    ...(claudeExecutable !== undefined ? { claudeExecutable: absolute(claudeExecutable, 'claudeExecutable') } : {}),
     journalPath: absolute(raw.journalPath ?? defaults.journalPath, 'journalPath'),
     logFile: absolute(raw.logFile ?? defaults.logFile, 'logFile'),
     ...(vapidContact !== undefined ? { vapidContact: vapidContact as string } : {}),

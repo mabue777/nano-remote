@@ -17,6 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli/main.js",
     "acceptance": "pnpm generate && pnpm build && node scripts/acceptance.ts",
+    "acceptance:claude": "NANO_ACCEPTANCE_AGENT=claude pnpm acceptance",
     "verify": "node scripts/generate-types.mjs && tsc --noEmit -p tsconfig.json && vitest run"
   },
   "devDependencies": {

@@ -1,7 +1,8 @@
 // The Claude adapter against the scripted fake query (testing/fake-query.ts): the option mapping, the
 // message sequences of the spike and the live test, approvals and questions with every decision,
 // interrupts, child exits and kills.
-import { mkdtempSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -10,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Settings } from '../../generated/common.js';
 import type { AdapterEvent } from '../../core/adapter.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
-import { ClaudeAdapter, Inbox, loadQuery, type QueryFn } from './adapter.js';
+import { bundledExecutable, ClaudeAdapter, executablePath, Inbox, loadQuery, type QueryFn } from './adapter.js';
 import { CANCEL_MESSAGE, DECLINE_MESSAGE } from './mapping.js';
 import { FakeClaude, until, type FakeClaudeOptions } from './testing/fake-query.js';
 
@@ -51,6 +52,25 @@ const find = <M extends AdapterEvent['method']>(events: AdapterEvent[], method: 
 const turnEnd = (events: AdapterEvent[], from = 0) => find(events, 'turn/completed', from);
 const requestOf = (event: AdapterEvent) => (event.params as { request: Record<string, unknown> & { requestId: string } }).request;
 
+describe('the Claude Code executable', () => {
+  it('finds the build bundled with the SDK from the SDK\'s real folder, even after a stat of a pipe', () => {
+    // Node 26.5's cached realpath skips symlinks after a synchronous stat of a pipe or socket; the lookup
+    // must not depend on it. A stat of a FIFO primes that state before the first lookup.
+    const fifo = path.join(mkdtempSync(path.join(tmpdir(), 'nano-fifo-')), 'fifo');
+    expect(spawnSync('mkfifo', [fifo]).status).toBe(0);
+    expect(statSync(fifo).isFIFO()).toBe(true);
+    const file = bundledExecutable();
+    expect(file).toBeDefined();
+    expect(existsSync(file!)).toBe(true);
+    expect(file).toMatch(new RegExp(`claude-agent-sdk-${process.platform}-${process.arch}/claude$`));
+  });
+
+  it('prefers the configured executable', () => {
+    expect(executablePath(claudeConfig({ executable: '/opt/claude/bin/claude' }))).toBe('/opt/claude/bin/claude');
+    expect(executablePath(claudeConfig({ executable: undefined }))).toBe(bundledExecutable());
+  });
+});
+
 describe('ClaudeAdapter: start, resume and the query options', () => {
   it('start returns "" and opens a streaming query with the mapped options; the id comes with the first turn', async () => {
     const { fake, adapter, events, cwd, versions, config } = rig({}, { env: { NANO_EXTRA: '1' } });
@@ -65,7 +85,7 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
     });
     expect(options.resume).toBeUndefined();
     expect(options.allowDangerouslySkipPermissions).toBeUndefined();
-    expect(options.pathToClaudeCodeExecutable).toBeUndefined();
+    expect(options.pathToClaudeCodeExecutable).toBe(bundledExecutable());
     expect(options.env).toMatchObject({ CLAUDE_CONFIG_DIR: config.configDir, NANO_EXTRA: '1' });
     expect(Object.keys(options.env!).filter((k) => k.startsWith('CLAUDE_CODE_'))).toEqual([]);
     expect(adapter.pid).toEqual(expect.any(Number));

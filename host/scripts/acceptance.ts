@@ -1,16 +1,19 @@
-// Phase 1 acceptance (docs/plan/roadmap.md section 4): a scripted client against the real host, started
-// with the nano-host CLI, driving the real Codex engine. Not part of the gate (it needs the operator's
-// Codex login and spends tokens). Run it with:
+// Host acceptance (docs/plan/roadmap.md section 4; Phase 1 for Codex, Phase 4 for Claude Code): a scripted
+// client against the real host, started with the nano-host CLI, driving the real engine of one agent. Not
+// part of the gate (it needs the operator's login and spends tokens). Run it with:
 //
-//   pnpm -C host acceptance        (builds dist/, then runs this file with node's type stripping)
+//   pnpm -C host acceptance                                  (Codex; builds dist/, then runs this file)
+//   NANO_ACCEPTANCE_AGENT=claude pnpm -C host acceptance     (Claude Code; same as pnpm -C host acceptance:claude)
 //
-// Every step writes one timestamped line to acceptance/host-v0.log (overwritten per run, committed as
-// evidence). Exit 0 only when all eight steps pass.
+// The agent comes from NANO_ACCEPTANCE_AGENT (codex or claude, default codex). For claude the host config
+// carries claudeConfigDir from CLAUDE_CONFIG_DIR (absolute) or ~/.claude, where the operator's login lives.
+// Every step writes one timestamped line to acceptance/host-<agent>.log (overwritten per run, committed as
+// evidence). The Phase 1 Codex run is kept as acceptance/host-v0.log. Exit 0 only when all eight steps pass.
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +21,14 @@ import WebSocket from 'ws';
 
 const HOST_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(HOST_DIR, 'dist', 'cli', 'main.js');
-const LOG = path.join(HOST_DIR, 'acceptance', 'host-v0.log');
+const AGENTS = ['codex', 'claude'] as const;
+type Agent = (typeof AGENTS)[number];
+const AGENT = (process.env.NANO_ACCEPTANCE_AGENT || 'codex') as Agent;
+if (!AGENTS.includes(AGENT)) {
+  console.error(`NANO_ACCEPTANCE_AGENT must be one of ${AGENTS.join(', ')}, not ${JSON.stringify(AGENT)}`);
+  process.exit(2);
+}
+const LOG = path.join(HOST_DIR, 'acceptance', `host-${AGENT}.log`);
 const STEP_MS = 240_000;
 
 type Json = Record<string, any>;
@@ -274,10 +284,54 @@ function reply(events: Json[], turnId: string): string {
     .join(' ');
 }
 
+// -------------------------------------------------------------------------------------------- agent
+
+/** What differs per agent: the host config keys, the first turn's settings and prompt. */
+interface AgentPlan {
+  config: Json;
+  settings: Json;
+  prompt: string;
+  /** For the step 3 log line. */
+  describe: string;
+}
+
+function claudeConfigDir(): string {
+  const value = process.env.CLAUDE_CONFIG_DIR;
+  return value && path.isAbsolute(value) ? value : path.join(homedir(), '.claude');
+}
+
+const PLANS: Record<Agent, () => AgentPlan> = {
+  codex: () => ({
+    config: {},
+    settings: { sandbox: 'read-only' },
+    prompt:
+      'Create a file named hello.txt in the current directory containing exactly the word hello, without a newline. ' +
+      'The sandbox is read-only, so run the shell command with escalated permissions; I will approve it. Then reply with "done".',
+    describe: 'read-only sandbox',
+  }),
+  claude: () => ({
+    config: { enabledAgents: ['claude'], claudeConfigDir: claudeConfigDir() },
+    // Default settings: permission mode default, so the Write call asks for approval.
+    settings: {},
+    prompt:
+      'Create a file named hello.txt in the current directory containing exactly the word hello, without a newline. ' +
+      'Use your file writing tool; I will approve it. Then reply with "done".',
+    describe: 'default settings',
+  }),
+};
+
+/** One approval request in a log line: the command, or the paths of the file changes. */
+function approvalSummary(request: Json): string {
+  if (request.kind === 'command') return JSON.stringify(request.command ?? '');
+  if (request.kind === 'fileChange') return (request.changes as Json[]).map((c) => `${c.kind} ${c.path}`).join(', ');
+  return JSON.stringify(request.permissions ?? {});
+}
+
 // -------------------------------------------------------------------------------------------- steps
 
 async function main(): Promise<void> {
   const port = await freePort();
+  const plan = PLANS[AGENT]();
   mkdirSync(configDir, { recursive: true, mode: 0o700 });
   writeFileSync(
     configPath,
@@ -287,10 +341,11 @@ async function main(): Promise<void> {
       tls: { certPath: path.join(configDir, 'tls-cert.pem'), keyPath: path.join(configDir, 'tls-key.pem') },
       journalPath: path.join(configDir, 'journal.sqlite'),
       logFile: path.join(configDir, 'host.log'),
+      ...plan.config,
     }),
     { mode: 0o600 },
   );
-  log(`acceptance host-v0: node ${process.version}, work dir ${work}`);
+  log(`acceptance host-${AGENT}: node ${process.version}, work dir ${work}${plan.config.claudeConfigDir ? `, claudeConfigDir ${plan.config.claudeConfigDir}` : ''}`);
 
   // 1. Start the host with the CLI.
   let host = await startHost();
@@ -301,32 +356,25 @@ async function main(): Promise<void> {
   const deviceB = await pairDevice(host.origin, 'Acceptance B');
   log(`step 2 ok: nano-host pair printed a code, POST /v1/pair returned clientId ${deviceA.clientId} with a device token (${deviceA.deviceToken.length} chars); second client ${deviceB.clientId} paired the same way`);
 
-  // 3. Stream, initialize, session/start (Codex), turn/start that must write a file.
+  // 3. Stream, initialize, session/start (the agent under test), turn/start that must write a file.
   let a = await Client.connect(host.origin, deviceA);
   const init = await a.handshake('Acceptance A');
-  const codex = (init.agents as Json[]).find((agent) => agent.id === 'codex');
-  check(codex?.status === 'ready', `codex not ready: ${JSON.stringify(codex)}`);
-  const { session } = await a.call('session/start', { agentId: 'codex', cwd, settings: { sandbox: 'read-only' } });
+  const agent = (init.agents as Json[]).find((entry) => entry.id === AGENT);
+  check(agent?.status === 'ready', `${AGENT} not ready: ${JSON.stringify(agent)}`);
+  const { session } = await a.call('session/start', { agentId: AGENT, cwd, settings: plan.settings });
   const sessionId = session.sessionId as string;
   await a.call('session/open', { sessionId });
   const { turn } = await a.call('turn/start', {
     sessionId,
-    input: [
-      {
-        type: 'text',
-        text:
-          'Create a file named hello.txt in the current directory containing exactly the word hello, without a newline. ' +
-          'The sandbox is read-only, so run the shell command with escalated permissions; I will approve it. Then reply with "done".',
-      },
-    ],
+    input: [{ type: 'text', text: plan.prompt }],
     clientMessageId: randomUUID(),
   });
-  log(`step 3 ok: stream open, initialize (host ${init.host.hostId}, codex ${codex.status}${codex.version ? ` ${codex.version}` : ""}), session/start ${sessionId} in ${cwd} (read-only sandbox), turn/start ${turn.turnId}`);
+  log(`step 3 ok: stream open, initialize (host ${init.host.hostId}, ${AGENT} ${agent.status}${agent.version ? ` ${agent.version}` : ''}), session/start ${sessionId} in ${cwd} (${plan.describe}; settings in effect ${JSON.stringify(session.settings)}), turn/start ${turn.turnId}`);
 
   // 4. Approval round trip, turn completes, the file exists.
   const approvals: string[] = [];
   const first = await driveTurn(a, sessionId, turn.turnId, (request, decision) =>
-    approvals.push(`seq ${request.seq} ${request.kind} ${JSON.stringify(request.command ?? '')} -> ${decision}`),
+    approvals.push(`seq ${request.seq} ${request.kind} ${approvalSummary(request)} -> ${decision}`),
   );
   check(approvals.length > 0, 'the turn completed without an approval/request');
   check(first.status === 'completed', `first turn ${first.status}: ${JSON.stringify(first.error)}`);
@@ -377,7 +425,12 @@ async function main(): Promise<void> {
   check(missedTurn, 'the follow-up turn/completed is not among the missed events');
   check(reply(missed, follow.turn.turnId).includes('hello.txt'), 'the follow-up reply is not among the missed events');
   const methods = [...new Set(missed.map((e) => e.method as string))].join(', ');
-  log(`step 6 ok: client A reconnected with the same token; session/open cursor ${savedCursor} returned mode events with ${missed.length} events, seq ${missed[0].params.seq} to ${missed.at(-1)!.params.seq} (cursor ${resumed.cursor}), methods ${methods}; the resumed session continued: follow-up turn ${follow.turn.turnId} ${missedTurn.params.turn.status}, reply ${JSON.stringify(reply(missed, follow.turn.turnId))}`);
+  // Claude Code reports its own session id in every system/init (host log, module claude): one id across
+  // both host processes means the restarted host resumed the same engine session.
+  const engineIds = [...readFileSync(path.join(configDir, 'host.log'), 'utf8').matchAll(/system\/init session=([0-9a-f-]+)/g)].map((m) => m[1]);
+  const engineNote =
+    engineIds.length > 0 ? `; engine system/init session ids across both host processes: ${[...new Set(engineIds)].join(', ')} (${engineIds.length} inits)` : '';
+  log(`step 6 ok: client A reconnected with the same token; session/open cursor ${savedCursor} returned mode events with ${missed.length} events, seq ${missed[0].params.seq} to ${missed.at(-1)!.params.seq} (cursor ${resumed.cursor}), methods ${methods}; the resumed session continued: follow-up turn ${follow.turn.turnId} ${missedTurn.params.turn.status}, reply ${JSON.stringify(reply(missed, follow.turn.turnId))}${engineNote}`);
 
   // 7. session/open without a cursor: snapshot with the turns.
   const snapshot = await a.call('session/open', { sessionId, turns: 5 });
@@ -398,7 +451,7 @@ async function main(): Promise<void> {
   a.close();
   host.child.kill('SIGTERM');
   await new Promise((resolve) => host.child.once('exit', resolve));
-  log('acceptance host-v0 passed: all eight steps ok');
+  log(`acceptance host-${AGENT} passed: all eight steps ok`);
 }
 
 main()
@@ -407,7 +460,7 @@ main()
     process.exit(0);
   })
   .catch((error: unknown) => {
-    log(`acceptance host-v0 FAILED: ${error instanceof Error ? error.message : String(error)}`);
+    log(`acceptance host-${AGENT} FAILED: ${error instanceof Error ? error.message : String(error)}`);
     running?.kill('SIGTERM');
     process.exit(1);
   });
