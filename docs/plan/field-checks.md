@@ -34,13 +34,13 @@ Operator with an iPhone, Safari home-screen install, host running the Phase 3 bu
 
 | Step | Result |
 | --- | --- |
-| 1. Turn notifications on, send test | Operator reported a test notification at 06:45, but host.log shows that push (and every push since the Phase 3 deploy, 68 of 68) rejected by Apple with 403. Re-check after defect 1 is fixed. |
-| 2. Turn finished while locked | Pending. |
-| 3. Approval while app open | FAIL. Approval raised at 06:59 with the app open: no notification (defect 1). |
-| 4. Approval raised while locked, tap opens approval card | FAIL. Phone locked at 07:00 with the approval pending: lock screen empty (defect 1). |
-| 5. Short task while open: no completion notification | Pending. |
+| 1. Turn notifications on, send test | First try 06:45: operator saw a notification, but host.log shows that push rejected by Apple with 403 (defects 1 and 2). After both fixes (07:29): pass, test notification arrived. |
+| 2. Turn finished while locked | Pass (07:36). Turn finished notification arrived on the locked phone; tapping it opened the session. |
+| 3. Approval while app open | First try 06:59: no notification (defects 1 and 2). After both fixes (07:31): pass, approval notifications arrive with the app open; host.log shows each delivered 201. |
+| 4. Approval raised while locked, tap opens approval card | First try 07:00: lock screen empty (defects 1 and 2). After both fixes: pass, the lock-screen notification opened the session with the approval card in view. |
+| 5. Short task while open: no completion notification | Pass. No completion notification with the app open and connected. |
 | 6. Badge while approval pending, clears after answering | Pass. One pending approval showed badge 1 on the home-screen icon and on the session row; the waiting session was listed first with the "Needs approval" state line; badge cleared after approving. |
-| 7. Record results | This section. |
+| 7. Record results | This section. All seven observations in by 07:40; both defects fixed, merged and re-checked the same morning. |
 
 ### Defects found
 
