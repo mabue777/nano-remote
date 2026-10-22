@@ -41,7 +41,7 @@ describe('push sender', () => {
       'content-type': 'application/octet-stream',
       ttl: '60',
       urgency: 'high',
-      topic: 'req_123',
+      topic: topicHeader('req_123'),
     });
     expect(push!.headers.authorization).toMatch(new RegExp(`^vapid t=[^,]+, k=${keys.publicKey}$`));
     const jwtClaims = JSON.parse(Buffer.from(push!.headers.authorization!.split('.')[1]!, 'base64url').toString());
@@ -143,11 +143,16 @@ describe('push sender', () => {
     expect(await plain.send('c', { endpoint: service.endpoint(), keys: receiver.keys }, payload)).toMatchObject({ outcome: 'delivered' });
   });
 
-  it('keeps a valid topic and hashes anything else into 32 base64url characters', () => {
-    expect(topicHeader('req_1-A')).toBe('req_1-A');
-    for (const topic of ['approval:req/1', 'x'.repeat(33), '']) {
+  it('hashes every topic into 32 base64url characters, a length Apple accepts (not 1 mod 4)', () => {
+    const requestId = 'req_0mvj3howlad4286488f8469bf';
+    expect(requestId).toHaveLength(29);
+    for (const topic of ['push-test', requestId, 'req_1-A', 'approval:req/1', 'x'.repeat(33), '']) {
       expect(topicHeader(topic)).toMatch(/^[A-Za-z0-9_-]{32}$/);
     }
-    expect(topicHeader('approval:req/1')).toBe(topicHeader('approval:req/1'));
+    expect(topicHeader('push-test')).not.toBe('push-test');
+    expect(topicHeader(requestId)).toBe(topicHeader(requestId));
+    expect(topicHeader('push-test')).toBe(topicHeader('push-test'));
+    expect(topicHeader(requestId)).not.toBe(topicHeader('req_0mvj3howlad4286488f8469bg'));
+    expect(topicHeader('push-test')).not.toBe(topicHeader(requestId));
   });
 });

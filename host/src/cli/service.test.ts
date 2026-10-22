@@ -14,6 +14,7 @@ import { Journal } from '../journal/journal.js';
 import { CloseCode } from '../stream/constants.js';
 import { TestClient } from '../stream/testing/client.js';
 import { decrypt, FakePushService, newReceiver } from '../push/testing/web-push.js';
+import { topicHeader } from '../push/sender.js';
 import { DEFAULT_VAPID_CONTACT } from '../push/vapid-jwt.js';
 import { EXIT_FAILURE, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli, stableNodePath, type CliEnv } from './commands.js';
 import { defaultConfig, type HostConfig } from './config.js';
@@ -308,7 +309,7 @@ describe('event pushes (spec 9 rules)', () => {
       expect(pushService.received).toHaveLength(1);
       const [push] = pushService.received;
       expect(push!.path).toBe('/push/phone');
-      expect(push!.headers).toMatchObject({ ttl: '3600', topic: turn.turnId, 'content-encoding': 'aes128gcm' });
+      expect(push!.headers).toMatchObject({ ttl: '3600', topic: topicHeader(turn.turnId), 'content-encoding': 'aes128gcm' });
       expect(JSON.parse(decrypt(push!.body, receiver.privateKey, receiver.keys.auth).plaintext.toString())).toEqual({
         title: 'Run the secret migration',
         body: 'Turn finished',

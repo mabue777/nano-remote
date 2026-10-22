@@ -100,9 +100,14 @@ function endpointUrl(endpoint: string): URL | undefined {
   return undefined;
 }
 
-/** RFC 8030 section 5.4: a Topic is at most 32 base64url characters; anything else is hashed into one. */
+/**
+ * Every topic is hashed into exactly 32 base64url characters (RFC 8030 section 5.4 allows at most 32).
+ * Apple decodes the Topic header as base64url and refuses a value whose length is 1 mod 4 with
+ * 400 BadWebPushTopic (probed against a live iPhone subscription on 2026-10-22: lengths 5, 9 and 29
+ * refused, 6, 7, 8, 30 and 32 accepted). Host ids are 29 characters, so nothing passes through unchanged.
+ * The hash is deterministic: equal topics still replace each other.
+ */
 export function topicHeader(topic: string): string {
-  if (/^[A-Za-z0-9_-]{1,32}$/.test(topic)) return topic;
   return createHash('sha256').update(topic).digest('base64url').slice(0, 32);
 }
 
