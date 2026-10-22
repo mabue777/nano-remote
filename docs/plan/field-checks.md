@@ -60,3 +60,30 @@ Operator with an iPhone, Safari home-screen install, host running the Phase 3 bu
 
 Not a defect but filed from this check: the operator wants a per-session mode that bypasses all approvals
 (session-bypass-approvals-mode).
+
+## Phase 4 more agents — 2026-10-22
+
+Operator with an iPhone (Safari home-screen app, Tailscale on); host = current main under launchd with codex and claude enabled. Claude Code sessions (SDK 0.3.308 / Claude Code 2.1.308, model claude-opus-5-5), work folder ~/Desktop/phone-test. Method: the operator started the first session from the phone; the rest of the turns were sent from the Mac by a protocol v1 client script paired as its own device (controller-script, revoked afterwards), so the operator only handled the phone side. Pushes are evaluated per device, so the script device did not suppress the phone's pushes. All times UTC.
+
+| Step | Result |
+| --- | --- |
+| 1. New session sheet, Claude in the picker, first session | Pass. 09:31 the operator started a Claude session from the phone (bypass on, model claude-opus-5-5); three turns completed with success results; the engine process was a child of the live host (ps: the SDK's darwin-arm64 claude binary, parent = host pid). |
+| 2. Approval card with push, accept, file exists | Pass. New session with default approvals; 14:20:59 the agent asked to write push-check.txt two seconds after turn start; host.log push.sent 201 at 14:21:00; the notification arrived on the phone, tapping it opened the session with the approval card; accepted 14:24:14; turn completed with "done"; file contains "hello". |
+| 3. AskUserQuestion card, answer, turn continues | Pass. 14:29:03 input/request with three options (red, green, blue), push.sent 201; the notification opened the question card; answered "blue" 14:31:53; the agent then raised a fileChange approval for colour.txt (push.sent 201), accepted; turn completed with "colour saved"; file contains "blue". |
+| 4. Interrupt a turn | Pass (host side). 14:29:07 a 120-second ping turn started in the bypass session; turn/interrupt at 14:29:27 returned ok; turn/completed status interrupted 0.1 s later; session status idle. Driven over the protocol, not via the composer's Stop button (the button is Phase 1 UI, unchanged). |
+| 5. Lock the phone during a long turn, completion push, catch-up | Pass. First attempt 14:24:30 ended after 15 s because Claude Code refuses a foreground `sleep` and backgrounded it; a completion push was still sent (201) since the phone had no open stream. Second attempt 14:25:01 ran `ping -c 90` for two minutes; turn/completed 14:27:00, push.sent 201 at 14:27:01; the "turn finished" notification arrived on the locked phone; tapping it opened the session with the catch-up applied and the reply visible. |
+| 6. Bypass session: red marker, write without approval | Pass. The 09:31 session was started with "Bypass approvals (full access)" on; shell commands (sleep, ping) ran with no approval card and no push. The red marker was seen at session start; it was not separately re-checked later in the day. |
+| 7. Kill the host between turns, follow-up resumes the engine | Pass. 14:28:28 launchctl kickstart -k; the host was listening again after one second with codex and claude ready; 14:28:33 a follow-up in the 09:31 session; 14:28:41 the reply quoted its previous reply ("slept, done / pinged, done") and the command before it (`ping -c 90 127.0.0.1 \| tail -3`) exactly. |
+
+### Defects found
+
+None.
+
+Notes:
+
+- Cosmetic log nits, not filed: the adapter logs `turn=running` on the line that reports the result (it logs before
+  the state flips); an interrupt shows in claude.log as `result subtype=error_during_execution is_error=true` (the SDK
+  reports an interrupt as an error; the host maps it to status interrupted correctly).
+- For long-turn tests ask for a real long command (ping -c N); Claude Code backgrounds `sleep`.
+- Aside, not a Nano Remote matter: the phone session sent Claude Code peer messages to the controller session over
+  /tmp/cc-socks; they arrived, but that session type has no SendMessage tool and could not reply.
