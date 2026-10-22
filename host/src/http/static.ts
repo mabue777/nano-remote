@@ -1,5 +1,5 @@
 // Static files of the web client (ADR 0004): `pnpm -C web build` writes host/public; the host serves it
-// on the same origin as the stream. Client-side routes (the pairing page) get index.html.
+// on the same origin as the stream. Client-side routes (pairing, chats, session and chat pages) get index.html.
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type http from 'node:http';
@@ -10,10 +10,13 @@ import { fileURLToPath } from 'node:url';
 export const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 
 /** Paths the web app routes itself; each answers with index.html. */
-export const CLIENT_ROUTES: readonly string[] = ['/', '/pair'];
+export const CLIENT_ROUTES: readonly string[] = ['/', '/pair', '/chats'];
 
-/** Session pages, `/s/<sessionId>` (web/src/routes): also index.html, so a reload or a push link works. */
-const SESSION_ROUTE = /^\/s\/[A-Za-z0-9_-]{1,128}$/;
+/**
+ * Session pages, `/s/<sessionId>`, and local chat pages, `/c/<chatId>` (web/src/routes): also index.html,
+ * so a reload or a push link works.
+ */
+const PAGE_ROUTE = /^\/[sc]\/[A-Za-z0-9_-]{1,128}$/;
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -47,7 +50,7 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * Client routes map to index.html.
  */
 export function resolveStatic(root: string, urlPath: string): string | null {
-  if (CLIENT_ROUTES.includes(urlPath) || SESSION_ROUTE.test(urlPath)) return path.join(root, 'index.html');
+  if (CLIENT_ROUTES.includes(urlPath) || PAGE_ROUTE.test(urlPath)) return path.join(root, 'index.html');
   let decoded: string;
   try {
     decoded = decodeURIComponent(urlPath);

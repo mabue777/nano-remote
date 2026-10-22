@@ -1,7 +1,9 @@
 // The app shell: the router picks the screen; a paired device gets one StreamClient and one Replica for
-// the page's lifetime. No clientId stored (never paired, or forgotten after `unpaired`) means the
-// pairing page. Close 4003 or `unauthorized` (revoked, or the host lost the cookie) forgets the device
-// and goes back to pairing.
+// the page's lifetime. Local chat (screens/chat) lives outside the pairing: its stores and engine exist for
+// the page's lifetime, and the stream client is plugged into it while the phone is paired. No clientId
+// stored (never paired, or forgotten after `unpaired`) means the pairing page, unless this phone already
+// has a provider or a chat: then Home shows Chats with a "Pair your Mac" link. Close 4003 or
+// `unauthorized` (revoked, or the host lost the cookie) forgets the device and goes back to pairing.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import { watchBadge } from './pwa/badge';
@@ -9,6 +11,10 @@ import { PushModel, type PushEnvironment } from './pwa/push';
 import { Replica } from './replica/replica';
 import { defaultStorage, type StorageLike } from './replica/storage';
 import { Router, type Route } from './routes/router';
+import { ChatScreen } from './screens/chat/ChatScreen';
+import { ChatsHome } from './screens/chat/ChatsHome';
+import { ChatsPanel } from './screens/chat/ChatsPanel';
+import { createChatServices, hasLocalChat, type ChatServices } from './screens/chat/services';
 import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
 import { AwayTracker, type SessionStorageLike } from './screens/home-model';
 import { HomeScreen } from './screens/HomeScreen';
@@ -30,12 +36,21 @@ export interface AppProps {
 export function App({ router, storage = defaultStorage(), fetch = window.fetch.bind(window), userAgent = navigator.userAgent, push = null }: AppProps) {
   const [route, setRoute] = useState<Route>(router.route);
   const [device, setDevice] = useState<PairedDevice | null>(() => loadDevice(storage));
+  const chat = useMemo(() => createChatServices({ storage }), [storage]);
   useEffect(() => router.subscribe(setRoute), [router]);
 
+  // Without a host, local chat still works: home, /chats and chat pages stay when this phone has any.
+  const localOnly = device === null && hasLocalChat(chat) && (route.name === 'home' || route.name === 'chats' || route.name === 'chat');
   useEffect(() => {
-    if (device === null && route.name !== 'pair') router.navigate('/pair', { replace: true });
-  }, [device, route, router]);
+    if (device === null && route.name !== 'pair' && !localOnly) router.navigate('/pair', { replace: true });
+  }, [device, route, router, localOnly]);
 
+  if (localOnly) {
+    if (route.name === 'chat') {
+      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/')} />;
+    }
+    return <ChatsHome services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />;
+  }
   if (route.name === 'pair' || device === null) {
     return (
       <PairScreen
@@ -58,6 +73,7 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
       router={router}
       storage={storage}
       push={push}
+      chat={chat}
       onUnpaired={() => {
         forgetDevice(storage);
         setDevice(null);
@@ -72,10 +88,11 @@ interface ConnectedProps {
   router: Router;
   storage: StorageLike | null;
   push: PushEnvironment | null;
+  chat: ChatServices;
   onUnpaired: () => void;
 }
 
-function Connected({ device, route, router, storage, push, onUnpaired }: ConnectedProps) {
+function Connected({ device, route, router, storage, push, chat, onUnpaired }: ConnectedProps) {
   const services = useMemo(() => {
     const client = new StreamClient({ clientId: device.clientId, optOutNotifications: ['item/reasoning/delta'] });
     const replica = new Replica({ client, storage });
@@ -88,12 +105,14 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
 
   useEffect(() => {
     const { client, replica } = services;
+    chat.host.set(client); // host-routed providers (ADR 0006) go through this stream
     const stopBadge = watchBadge({ replica, client, nav: navigator, doc: document });
     const off = client.on('state', (state) => {
       if (state === 'unpaired') onUnpaired();
     });
     client.start();
     return () => {
+      chat.host.set(null);
       off();
       stopBadge();
       services.away.dispose();
@@ -103,12 +122,26 @@ function Connected({ device, route, router, storage, push, onUnpaired }: Connect
     };
     // onUnpaired is stable enough: it only forgets the device
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [services]);
+  }, [services, chat]);
 
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
   switch (route.name) {
     case 'home':
-      return <HomeScreen client={services.client} replica={services.replica} notifications={services.notifications} away={services.away} onOpenSession={open} />;
+    case 'chats':
+      return (
+        <HomeScreen
+          client={services.client}
+          replica={services.replica}
+          notifications={services.notifications}
+          away={services.away}
+          onOpenSession={open}
+          tab={route.name === 'chats' ? 'chats' : 'sessions'}
+          onTab={(tab) => router.navigate(tab === 'chats' ? '/chats' : '/', { replace: true })}
+          chats={<ChatsPanel services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />}
+        />
+      );
+    case 'chat':
+      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/chats')} />;
     case 'session':
       return (
         <SessionScreen

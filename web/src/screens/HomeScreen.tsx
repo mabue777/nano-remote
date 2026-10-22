@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { PushModel } from '../pwa/push';
@@ -18,9 +19,16 @@ export interface HomeScreenProps {
   /** "Finished while away" markers; absent means none are shown. */
   away?: AwayTracker;
   onOpenSession: (sessionId: string) => void;
+  /** Which half of the "Sessions | Chats" switch shows; Sessions by default while a host is paired. */
+  tab?: HomeTab;
+  onTab?: (tab: HomeTab) => void;
+  /** The Chats tab's content (chat/ChatsPanel). */
+  chats?: ComponentChildren;
 }
 
-export function HomeScreen({ client, replica, notifications, away, onOpenSession }: HomeScreenProps) {
+export type HomeTab = 'sessions' | 'chats';
+
+export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats }: HomeScreenProps) {
   const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
   const [creating, setCreating] = useState(false);
@@ -29,50 +37,57 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
   const sessions = model.sessions;
 
   return (
-    <main class="screen home" {...pull.handlers}>
+    <main class="screen home" {...(tab === 'sessions' ? pull.handlers : {})}>
       <header class="topbar">
         <h1>Nano Remote</h1>
         <ConnectionBadge connection={model.connection} onRetry={() => model.retryNow()} />
       </header>
-      <div class="pull" style={{ height: `${pull.distance}px` }} aria-hidden={pull.distance === 0}>
-        {pull.distance > 0 && <span>{pull.distance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}</span>}
-      </div>
-      <HostCard host={model.host} />
-      {notifications !== undefined && <NotificationsCard push={notifications} />}
-      <section class="sessions" aria-labelledby="sessions-title">
-        <div class="section-head">
-          <h2 id="sessions-title">Sessions</h2>
-          <div class="actions">
-            <button type="button" class="ghost" onClick={() => void model.refresh()} disabled={model.refreshing} aria-label="Refresh sessions">
-              {model.refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-            <button type="button" class="primary small" onClick={() => setCreating(true)}>
-              New session
-            </button>
+      {chats !== undefined && <HomeTabs tab={tab} onTab={onTab} />}
+      {tab === 'chats' ? (
+        chats
+      ) : (
+        <>
+          <div class="pull" style={{ height: `${pull.distance}px` }} aria-hidden={pull.distance === 0}>
+            {pull.distance > 0 && <span>{pull.distance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}</span>}
           </div>
-        </div>
-        {model.error !== undefined && (
-          <p class="error" role="alert">
-            {model.error}
-          </p>
-        )}
-        {sessions.length === 0 ? (
-          <p class="empty muted">{model.connection.kind === 'connected' ? 'No sessions yet. Start one to drive an agent from here.' : 'Sessions appear once the host is connected.'}</p>
-        ) : (
-          <ul class="session-list" aria-label="Sessions">
-            {sessions.map((row) => (
-              <SessionItem key={row.sessionId} row={row} onOpen={onOpenSession} />
-            ))}
-          </ul>
-        )}
-        {model.hasMore && (
-          <div ref={sentinel} class="more">
-            <button type="button" class="ghost" onClick={() => void model.loadMore()} disabled={model.loadingMore}>
-              {model.loadingMore ? 'Loading…' : 'Load more'}
-            </button>
-          </div>
-        )}
-      </section>
+          <HostCard host={model.host} />
+          {notifications !== undefined && <NotificationsCard push={notifications} />}
+          <section class="sessions" aria-labelledby="sessions-title">
+            <div class="section-head">
+              <h2 id="sessions-title">Sessions</h2>
+              <div class="actions">
+                <button type="button" class="ghost" onClick={() => void model.refresh()} disabled={model.refreshing} aria-label="Refresh sessions">
+                  {model.refreshing ? 'Refreshing…' : 'Refresh'}
+                </button>
+                <button type="button" class="primary small" onClick={() => setCreating(true)}>
+                  New session
+                </button>
+              </div>
+            </div>
+            {model.error !== undefined && (
+              <p class="error" role="alert">
+                {model.error}
+              </p>
+            )}
+            {sessions.length === 0 ? (
+              <p class="empty muted">{model.connection.kind === 'connected' ? 'No sessions yet. Start one to drive an agent from here.' : 'Sessions appear once the host is connected.'}</p>
+            ) : (
+              <ul class="session-list" aria-label="Sessions">
+                {sessions.map((row) => (
+                  <SessionItem key={row.sessionId} row={row} onOpen={onOpenSession} />
+                ))}
+              </ul>
+            )}
+            {model.hasMore && (
+              <div ref={sentinel} class="more">
+                <button type="button" class="ghost" onClick={() => void model.loadMore()} disabled={model.loadingMore}>
+                  {model.loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              </div>
+            )}
+          </section>
+        </>
+      )}
       {creating && (
         <NewSessionSheet
           client={client}
@@ -85,6 +100,23 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
         />
       )}
     </main>
+  );
+}
+
+/** The segmented "Sessions | Chats" switch at the top of Home. */
+function HomeTabs({ tab, onTab }: { tab: HomeTab; onTab: ((tab: HomeTab) => void) | undefined }) {
+  const options: [HomeTab, string][] = [
+    ['sessions', 'Sessions'],
+    ['chats', 'Chats'],
+  ];
+  return (
+    <div class="segmented" role="tablist" aria-label="Home">
+      {options.map(([value, label]) => (
+        <button key={value} type="button" role="tab" aria-selected={tab === value} class={tab === value ? 'selected' : ''} onClick={() => onTab?.(value)}>
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }
 

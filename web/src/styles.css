@@ -1406,3 +1406,223 @@ button.danger {
 .session.away {
   box-shadow: inset 3px 0 0 var(--accent);
 }
+
+/* ---- local chat (screens/chat) ---- */
+/* The "Sessions | Chats" switch on Home. */
+.segmented {
+  display: flex;
+  padding: 3px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.segmented button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  min-height: 38px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.segmented button.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.pair-hint {
+  margin: 0 0 14px;
+}
+
+.pair-hint a,
+.settings-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Rows take vertical pans; a horizontal move reaches the swipe-to-delete gesture. */
+.chat-row .session {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.chat-row.revealed .session {
+  border-color: var(--error);
+}
+
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+button.danger {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+  font-weight: 600;
+}
+
+.model-button {
+  max-width: 60%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+
+.model-button .model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.chat-sub p {
+  margin: 0;
+}
+
+.thinking-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.chat-message {
+  gap: 6px;
+}
+
+.chat-message .msg {
+  -webkit-touch-callout: none;
+}
+
+.chat-message .usage,
+.chat-message .turn-state {
+  margin: 0;
+}
+
+.chat-message.user .turn-state,
+.chat-message.user .error {
+  align-self: flex-end;
+}
+
+.markdown > * {
+  margin: 0 0 8px;
+}
+
+.markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown li,
+.markdown blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown h3,
+.markdown h4 {
+  font-size: 1rem;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 10px;
+  color: var(--muted);
+}
+
+.markdown .code-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  white-space: pre;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
+.chat-notice {
+  margin: 0 0 6px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 96px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  z-index: 6;
+}
+
+.toast.error {
+  background: var(--error);
+  color: #fff;
+}
+
+.picker-group {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.picker-head h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.picker-head p {
+  margin: 0;
+}
+
+.picker-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.picker-models .choice {
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}

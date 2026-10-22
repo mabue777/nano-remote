@@ -22,6 +22,8 @@
 // goes back to the built one).
 // `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
 // /test/push-test-error {code, message, data}` makes push/test refuse with that error ({} clears it).
+// Local chat: a fake model provider (fake-provider.ts) listens with https on the next port; `POST
+// /test/provider-chats` answers {chats} (the chat request bodies it received, newest last).
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
@@ -30,9 +32,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { FakeHost } from './fake-host';
+import { startFakeProvider } from './fake-provider';
 
 const PUBLIC = fileURLToPath(new URL('../../host/public/', import.meta.url));
-const CLIENT_ROUTE = /^\/(pair\/?)?$|^\/s\/[^/]+$/;
+const CLIENT_ROUTE = /^\/((pair|chats)\/?)?$|^\/[sc]\/[^/]+$/;
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -70,6 +73,7 @@ interface Code {
 }
 
 export async function startE2eHost(port: number): Promise<{ url: string; close: () => Promise<void> }> {
+  const provider = await startFakeProvider(port + 1);
   const codes = new Map<string, Code>();
   let swVersion: string | null = null; // POST /test/new-build
   const tokens = new Map<string, string>(); // token -> clientId
@@ -102,7 +106,10 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/reset':
               seed(host);
               swVersion = null;
+              provider.chats.length = 0;
               return json(200, { ok: true });
+            case '/test/provider-chats':
+              return json(200, { chats: provider.chats });
             case '/test/run':
               host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.');
               return json(200, { ok: true });
@@ -211,6 +218,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
     url: `http://127.0.0.1:${port}`,
     close: async () => {
       await host.stop();
+      await provider.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
