@@ -273,6 +273,15 @@ export class FakeHost {
   /** When set, push/test answers this error instead of {ok: true}. */
   pushTestError: { code: string; message: string; data?: Json } | undefined;
   pongStatus: 'active' | 'degraded' | 'draining' = 'active';
+  /** Local chat's relay (protocol section 15): the providers kept on the host, for `provider/list`. */
+  hostProviders: Json[] = [];
+  /** What `provider/discover` finds. */
+  discoverCandidates: Json[] = [];
+  /**
+   * `provider/models` by providerId or baseURL: a model list, or the `provider_unavailable` reason it fails
+   * with. Anything not here fails `unreachable`.
+   */
+  readonly providerModels = new Map<string, Json[] | { reason: string; status?: number }>();
   onRequest: RequestHook | undefined;
   /** When above 0, scripted turns emit one step per this many ms instead of all at once. */
   paceMs = 0;
@@ -382,6 +391,9 @@ export class FakeHost {
     this.pushSubscriptions.clear();
     this.pushTests.length = 0;
     this.pushTestError = undefined;
+    this.hostProviders = [];
+    this.discoverCandidates = [];
+    this.providerModels.clear();
   }
 
   session(sessionId: string): FakeSession {
@@ -665,6 +677,16 @@ export class FakeHost {
           throw new HostError({ code: 'not_found', message: 'no push subscription for this device', data: { reason: 'no_subscription' } });
         }
         return { result: { ok: true } };
+      case 'provider/list':
+        return { result: { providers: this.hostProviders } };
+      case 'provider/discover':
+        return { result: { candidates: this.discoverCandidates } };
+      case 'provider/models': {
+        const target = String(params.providerId ?? params.baseURL);
+        const answer = this.providerModels.get(target) ?? { reason: 'unreachable' };
+        if (Array.isArray(answer)) return { result: { models: answer } };
+        throw new HostError({ code: 'provider_unavailable', message: `${target}: ${answer.reason}`, data: { ...answer, message: answer.reason } });
+      }
       default:
         throw new HostError({ code: 'method_not_found', message: `unknown method ${method}` });
     }

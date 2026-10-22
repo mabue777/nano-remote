@@ -24,11 +24,13 @@ export interface HomeScreenProps {
   onTab?: (tab: HomeTab) => void;
   /** The Chats tab's content (chat/ChatsPanel). */
   chats?: ComponentChildren;
+  /** The gear: Settings > Providers. */
+  onSettings?: () => void;
 }
 
 export type HomeTab = 'sessions' | 'chats';
 
-export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats }: HomeScreenProps) {
+export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings }: HomeScreenProps) {
   const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
   const [creating, setCreating] = useState(false);
@@ -40,7 +42,10 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
     <main class="screen home" {...(tab === 'sessions' ? pull.handlers : {})}>
       <header class="topbar">
         <h1>Nano Remote</h1>
-        <ConnectionBadge connection={model.connection} onRetry={() => model.retryNow()} />
+        <div class="topbar-end">
+          <ConnectionBadge connection={model.connection} onRetry={() => model.retryNow()} />
+          {onSettings !== undefined && <SettingsGear onClick={onSettings} />}
+        </div>
       </header>
       {chats !== undefined && <HomeTabs tab={tab} onTab={onTab} />}
       {tab === 'chats' ? (
@@ -300,4 +305,21 @@ function useInfiniteScroll(onMore: () => void, active: boolean) {
     return () => observer.disconnect();
   }, [active]);
   return ref;
+}
+
+/** The gear in the top bar: Settings > Providers. */
+export function SettingsGear({ onClick }: { onClick: () => void }) {
+  return (
+    <a
+      class="gear"
+      href="/settings/providers"
+      aria-label="Settings"
+      onClick={(event) => {
+        event.preventDefault();
+        onClick();
+      }}
+    >
+      ⚙︎
+    </a>
+  );
 }

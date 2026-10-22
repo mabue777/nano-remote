@@ -3,10 +3,11 @@
 // (src/chat/engine/fixtures) frame by frame, paced so the browser sees the reply stream in.
 //
 // The app calls a provider directly only for https on a public host (ADR 0006), so the smoke's browser maps
-// two public names to this server (playwright.config.ts: --host-resolver-rules, and ignoreHTTPSErrors for
+// two public names to this server (playwright.config.ts: --host-rules, and ignoreHTTPSErrors for
 // the throwaway self-signed certificate made here with openssl):
 //   https://api.fake-provider.test:<port>/v1   openai-compatible: GET /v1/models, POST /v1/chat/completions
 //   https://ollama.com:<port>                  ollama (the preset's host): GET /api/tags, POST /api/chat
+// A models request with a key starting `sk-bad` is refused with 401 (the wrong-key message).
 // A last user message containing "slowly" streams the reasoning and the first frame of answer text, then
 // holds the stream open until the client aborts (the Stop test). Every answer carries CORS headers for the app's origin.
 import { execFileSync } from 'node:child_process';
@@ -90,7 +91,10 @@ export async function startFakeProvider(port: number): Promise<FakeProvider> {
     if (request.method === 'OPTIONS') return void response.writeHead(204, cors(request)).end();
     const json = (status: number, body: unknown) =>
       void response.writeHead(status, { ...cors(request), 'content-type': 'application/json' }).end(JSON.stringify(body));
-    if (request.method === 'GET' && url.pathname === '/v1/models') return json(200, FAKE_MODELS.openai);
+    const wrongKey = (request.headers.authorization ?? '').startsWith('Bearer sk-bad');
+    if (request.method === 'GET' && url.pathname === '/v1/models') {
+      return wrongKey ? json(401, { error: { message: 'Incorrect API key provided' } }) : json(200, FAKE_MODELS.openai);
+    }
     if (request.method === 'GET' && url.pathname === '/api/tags') return json(200, FAKE_MODELS.ollama);
     if (request.method === 'POST' && (url.pathname === '/v1/chat/completions' || url.pathname === '/api/chat')) {
       let text = '';

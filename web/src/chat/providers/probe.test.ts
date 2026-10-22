@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { FetchLike, HostProbe } from './probe';
+import type { FetchLike, HostProbe, HostProbeReply } from './probe';
 import { HOST_UNAVAILABLE_MESSAGE, modelsRequest, parseModels, probeModels } from './probe';
 
 interface Call {
@@ -248,35 +248,48 @@ describe('probeModels, direct route', () => {
 
 describe('probeModels, host route', () => {
   const ollama = { name: 'Ollama', baseURL: 'http://LOCALHOST:11434/', kind: 'ollama' as const, apiKey: 'never-sent' };
+  const reply = (r: HostProbeReply): HostProbe => async () => r;
 
-  it('asks the host for the models path and never sends a key or calls fetch', async () => {
+  it('asks the host by base URL and kind, never sends a key and never calls fetch', async () => {
     const { fetch, calls } = fakeFetch(200, []);
     const requests: Parameters<HostProbe>[0][] = [];
     const hostProbe: HostProbe = async (request) => {
       requests.push(request);
-      return { status: 200, body: { models: [{ name: 'llama3.2:3b' }] } };
+      return { models: [{ id: 'llama3.2:3b' }, { id: 'qwen3:4b', displayName: 'Qwen 3' }, { id: 'llama3.2:3b' }, { id: '' }] };
     };
     const result = await probeModels(ollama, { fetch, hostProbe });
-    expect(result).toEqual({ ok: true, models: [{ id: 'llama3.2:3b', displayName: 'llama3.2:3b', capabilities: {}, source: 'unknown' }] });
+    expect(result).toEqual({
+      ok: true,
+      models: [
+        { id: 'llama3.2:3b', displayName: 'llama3.2:3b', capabilities: {}, source: 'unknown' },
+        { id: 'qwen3:4b', displayName: 'Qwen 3', capabilities: {}, source: 'unknown' },
+      ],
+    });
     expect(calls).toEqual([]);
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ baseURL: 'http://localhost:11434', kind: 'ollama', path: '/api/tags' });
+    expect(requests[0]).toMatchObject({ baseURL: 'http://localhost:11434', kind: 'ollama' });
     expect(JSON.stringify(requests[0])).not.toContain('never-sent');
   });
 
-  it('maps host replies through the same messages', async () => {
-    const reply = (r: Awaited<ReturnType<HostProbe>>): HostProbe => async () => r;
-    expect(await probeModels(ollama, { hostProbe: reply({ status: 401, body: null }) })).toMatchObject({ code: 'wrong-key' });
-    expect(await probeModels(ollama, { hostProbe: reply({ status: 200, body: { models: [] } }) })).toMatchObject({ code: 'no-models' });
-    expect(await probeModels(ollama, { hostProbe: reply({ error: 'unreachable' }) })).toMatchObject({
-      code: 'unreachable',
-      message: expect.stringMatching(/^Ollama did not answer/),
-    });
-    expect(await probeModels(ollama, { hostProbe: reply({ error: 'host-unreachable' }) })).toEqual({
-      ok: false,
-      code: 'host-unavailable',
-      message: HOST_UNAVAILABLE_MESSAGE,
-    });
+  it('maps provider_unavailable reasons to one sentence each', async () => {
+    const cases: [HostProbeReply, string, string][] = [
+      [{ error: 'provider', reason: 'unauthorized', status: 401 }, 'wrong-key', "Ollama rejected the request. Add its key to your Mac's config.json."],
+      [{ error: 'provider', reason: 'rate_limited' }, 'rate-limited', 'Ollama is rate limiting requests. Wait a minute and try again.'],
+      [{ error: 'provider', reason: 'rate_limited', retryAfterMs: 41_200 }, 'rate-limited', 'Ollama is rate limiting requests. Try again in 42 s.'],
+      [{ error: 'provider', reason: 'unreachable', retryAfterMs: 12_000 }, 'unreachable', 'Ollama did not answer within 10 seconds. Check the address and that the server is running.'],
+      [{ error: 'provider', reason: 'timeout' }, 'unreachable', 'Ollama did not answer within 10 seconds. Check the address and that the server is running.'],
+      [{ error: 'provider', reason: 'not_found', status: 404 }, 'not-found', 'Ollama has no model list at this address. Check the base URL.'],
+      [{ error: 'provider', reason: 'bad_response' }, 'bad-response', 'Ollama answered, but not with a model list. Check the base URL.'],
+      [{ error: 'provider', reason: 'upstream', status: 502 }, 'server-error', 'Ollama answered with an error (HTTP 502). Try again later.'],
+      [{ error: 'provider', reason: 'something-new' }, 'server-error', 'Ollama answered with an error. Try again later.'],
+      [{ error: 'refused' }, 'server-error', 'Your Mac could not ask Ollama for its models. Check the base URL.'],
+      [{ error: 'host-unreachable' }, 'host-unavailable', HOST_UNAVAILABLE_MESSAGE],
+      [{ models: [] }, 'no-models', 'Ollama answered but lists no models. Check the key or the service status.'],
+      [{ models: 'nope' as unknown as [] }, 'no-models', 'Ollama answered but lists no models. Check the key or the service status.'],
+    ];
+    for (const [r, code, message] of cases) {
+      expect(await probeModels(ollama, { hostProbe: reply(r) })).toEqual({ ok: false, code, message });
+    }
   });
 
   it('says the Mac is not reachable when no host is paired', async () => {
@@ -288,5 +301,14 @@ describe('probeModels, host route', () => {
       throw new Error('socket closed');
     };
     expect(await probeModels(ollama, { hostProbe })).toMatchObject({ code: 'unreachable' });
+  });
+
+  it('reports a cancelled host probe as cancelled', async () => {
+    const controller = new AbortController();
+    const hostProbe: HostProbe = async ({ signal }) =>
+      new Promise((resolve) => signal.addEventListener('abort', () => resolve({ error: 'host-unreachable' })));
+    const pending = probeModels(ollama, { hostProbe, signal: controller.signal });
+    controller.abort();
+    expect(await pending).toMatchObject({ code: 'aborted' });
   });
 });

@@ -1,7 +1,8 @@
 // Model list probing per kind (provider-connection.md section 3, steps 3 and 4): the "Test" button and
 // the models cache refresh. Direct providers are fetched from the phone with the injected fetch; host
-// providers (ADR 0006) go through a HostProbe that the relay ticket implements. Failures come back as one
-// plain sentence that names the provider and the fix, never as the server's raw body.
+// providers (ADR 0006) go through a HostProbe, which asks the paired host with `provider/models` (protocol
+// section 15; host-probe.ts). Failures come back as one plain sentence that names the provider and the
+// fix, never as the server's raw body.
 import type { ModelInfo, ProviderKind } from './types';
 import { hostLabel, normalizeBaseURL, routeFor } from './url';
 
@@ -15,25 +16,21 @@ export type FetchLike = (
   init: { method: 'GET'; headers: Record<string, string>; signal: AbortSignal },
 ) => Promise<FetchResponseLike>;
 
-/** What the paired host answers when asked to GET a models endpoint for a host-routed provider. */
+/** What a HostProbe answers: the host's `provider/models` result, or why there is none. */
 export type HostProbeReply =
-  | { status: number; body: unknown }
-  /** The host could not reach the provider. */
-  | { error: 'unreachable' }
+  | { models: { id: string; displayName?: string }[] }
   /** The phone could not reach the host. */
-  | { error: 'host-unreachable' };
+  | { error: 'host-unreachable' }
+  /** `provider_unavailable`: the host reached for the provider and it failed (`reason` as in `provider/done`). */
+  | { error: 'provider'; reason: string; status?: number; retryAfterMs?: number }
+  /** The host refused the request (for example a base URL it does not relay). */
+  | { error: 'refused' };
 
 /**
- * Implemented by the relay ticket. The host holds host-routed providers' keys (ADR 0006, ruling R2), so
- * the request names the provider by its normalized base URL and carries no key.
+ * Asks the paired host for a host-routed provider's models. The host holds such providers' keys (ADR 0006,
+ * ruling R2), so the request names the provider by its normalized base URL and carries no key.
  */
-export type HostProbe = (request: {
-  baseURL: string;
-  kind: ProviderKind;
-  /** Path and query relative to the base URL, e.g. `/api/tags`. */
-  path: string;
-  signal: AbortSignal;
-}) => Promise<HostProbeReply>;
+export type HostProbe = (request: { baseURL: string; kind: ProviderKind; signal: AbortSignal }) => Promise<HostProbeReply>;
 
 export interface ProbeTarget {
   /** Used in messages; falls back to the host. */
@@ -108,7 +105,6 @@ export async function probeModels(target: ProbeTarget, deps: ProbeDeps): Promise
   const timeoutMs = deps.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
   if (cancelled(deps.signal)) return fail('aborted', CANCELLED_MESSAGE);
   const route = routeFor(baseURL);
-  const { path, headers } = modelsRequest(baseURL, target.kind, route === 'direct' ? target.apiKey : null);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -124,18 +120,15 @@ export async function probeModels(target: ProbeTarget, deps: ProbeDeps): Promise
   try {
     if (route === 'host') {
       if (deps.hostProbe === undefined) return fail('host-unavailable', HOST_UNAVAILABLE_MESSAGE);
-      const reply = await deps.hostProbe({ baseURL, kind: target.kind, path, signal: controller.signal });
-      if ('error' in reply) {
-        if (reply.error === 'host-unreachable') return fail('host-unavailable', HOST_UNAVAILABLE_MESSAGE);
-        return unreachable(name, timeoutMs);
-      }
-      ({ status, body } = reply);
-    } else {
-      if (deps.fetch === undefined) throw new Error('probeModels: no fetch for a direct provider');
-      const response = await deps.fetch(`${baseURL}${path}`, { method: 'GET', headers, signal: controller.signal });
-      status = response.status;
-      body = status >= 200 && status < 300 ? await response.json().catch(() => undefined) : undefined;
+      const reply = await deps.hostProbe({ baseURL, kind: target.kind, signal: controller.signal });
+      if (cancelled(deps.signal) && !timedOut) return fail('aborted', CANCELLED_MESSAGE);
+      return hostResult(name, reply, timeoutMs);
     }
+    if (deps.fetch === undefined) throw new Error('probeModels: no fetch for a direct provider');
+    const { path, headers } = modelsRequest(baseURL, target.kind, target.apiKey);
+    const response = await deps.fetch(`${baseURL}${path}`, { method: 'GET', headers, signal: controller.signal });
+    status = response.status;
+    body = status >= 200 && status < 300 ? await response.json().catch(() => undefined) : undefined;
   } catch {
     if (cancelled(deps.signal) && !timedOut) return fail('aborted', CANCELLED_MESSAGE);
     return unreachable(name, timeoutMs);
@@ -147,17 +140,70 @@ export async function probeModels(target: ProbeTarget, deps: ProbeDeps): Promise
   if (status === 401 || status === 403 || (status === 400 && target.kind === 'gemini')) {
     return fail('wrong-key', `${name} rejected the key. Check that you pasted the whole key.`);
   }
-  if (status === 429) return fail('rate-limited', `${name} is rate limiting requests. Wait a minute and try again.`);
-  if (status === 404) return fail('not-found', `${name} has no model list at this address. Check the base URL.`);
-  if (status < 200 || status >= 300) {
-    return fail('server-error', `${name} answered with an error (HTTP ${status}). Try again later.`);
-  }
+  if (status === 429) return rateLimited(name);
+  if (status === 404) return notFound(name);
+  if (status < 200 || status >= 300) return serverError(name, status);
   const models = parseModels(target.kind, body);
-  if (models === null) return fail('bad-response', `${name} answered, but not with a model list. Check the base URL.`);
-  if (models.length === 0) {
-    return fail('no-models', `${name} answered but lists no models. Check the key or the service status.`);
-  }
+  if (models === null) return badResponse(name);
+  if (models.length === 0) return noModels(name);
   return { ok: true, models };
+}
+
+function rateLimited(name: string, retryAfterMs?: number): ProbeResult {
+  if (retryAfterMs !== undefined && retryAfterMs > 0) {
+    return fail('rate-limited', `${name} is rate limiting requests. Try again in ${Math.ceil(retryAfterMs / 1000)} s.`);
+  }
+  return fail('rate-limited', `${name} is rate limiting requests. Wait a minute and try again.`);
+}
+
+function notFound(name: string): ProbeResult {
+  return fail('not-found', `${name} has no model list at this address. Check the base URL.`);
+}
+
+function serverError(name: string, status: number | undefined): ProbeResult {
+  const code = status === undefined ? '' : ` (HTTP ${status})`;
+  return fail('server-error', `${name} answered with an error${code}. Try again later.`);
+}
+
+function badResponse(name: string): ProbeResult {
+  return fail('bad-response', `${name} answered, but not with a model list. Check the base URL.`);
+}
+
+function noModels(name: string): ProbeResult {
+  return fail('no-models', `${name} answered but lists no models. Check the key or the service status.`);
+}
+
+/** The sentence for a host probe's reply; same codes as the direct route. */
+function hostResult(name: string, reply: HostProbeReply, timeoutMs: number): ProbeResult {
+  if ('models' in reply) {
+    const models: ModelInfo[] = [];
+    const seen = new Set<string>();
+    for (const m of Array.isArray(reply.models) ? reply.models : []) {
+      const id = str(m?.id);
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      models.push(plain(id, str(m.displayName) ?? id));
+    }
+    if (models.length === 0) return noModels(name);
+    return { ok: true, models };
+  }
+  if (reply.error === 'host-unreachable') return fail('host-unavailable', HOST_UNAVAILABLE_MESSAGE);
+  if (reply.error === 'refused') return fail('server-error', `Your Mac could not ask ${name} for its models. Check the base URL.`);
+  switch (reply.reason) {
+    case 'unauthorized':
+      return fail('wrong-key', `${name} rejected the request. Add its key to your Mac's config.json.`);
+    case 'rate_limited':
+      return rateLimited(name, reply.retryAfterMs);
+    case 'unreachable':
+    case 'timeout':
+      return unreachable(name, timeoutMs);
+    case 'not_found':
+      return notFound(name);
+    case 'bad_response':
+      return badResponse(name);
+    default:
+      return serverError(name, reply.status);
+  }
 }
 
 /**

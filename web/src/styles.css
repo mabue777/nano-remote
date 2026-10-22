@@ -1626,3 +1626,173 @@ button.danger {
   text-align: left;
   overflow-wrap: anywhere;
 }
+
+/* Settings > Providers (screens/settings/providers). */
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.3rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.settings-screen h1 {
+  margin-top: 0;
+}
+
+.settings-screen > section {
+  margin-bottom: 18px;
+}
+
+.settings-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+}
+
+.provider-list,
+.candidates,
+.test-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.provider-row p {
+  margin: 0;
+}
+
+.provider-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.provider-name {
+  font-weight: 600;
+  margin-right: auto;
+  overflow-wrap: anywhere;
+}
+
+.provider-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.provider-meta span {
+  white-space: nowrap;
+}
+
+.key-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.key-prompt .field {
+  width: 100%;
+}
+
+.actions.wrap {
+  flex-wrap: wrap;
+}
+
+.candidate {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 14px;
+  text-align: left;
+}
+
+.candidate .muted {
+  overflow-wrap: anywhere;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
+}
+
+.preset-grid .preset {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 0.85rem;
+}
+
+.detection {
+  font-size: 0.85rem;
+}
+
+.test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.test-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.test-result.ok .dot {
+  background: var(--ok);
+}
+
+.test-result.busy .dot {
+  background: var(--busy);
+}
+
+.test-result.attention .dot {
+  background: var(--warn);
+}
+
+.test-result.error .dot {
+  background: var(--error);
+}
+
+.test-models {
+  gap: 2px;
+  padding-left: 17px;
+  font-size: 0.9rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}

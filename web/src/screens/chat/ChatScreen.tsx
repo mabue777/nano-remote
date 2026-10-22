@@ -18,9 +18,11 @@ export interface ChatScreenProps {
   onBack: () => void;
   /** Label of the back link: where it goes. */
   backLabel: string;
+  /** Settings > Providers, linked from the empty model picker. */
+  onSettings?: () => void;
 }
 
-export function ChatScreen({ chatId, services, onBack, backLabel }: ChatScreenProps) {
+export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: ChatScreenProps) {
   const model = useLiveModel(
     useMemo(
       () =>
@@ -159,7 +161,7 @@ export function ChatScreen({ chatId, services, onBack, backLabel }: ChatScreenPr
           </div>
         </form>
       </footer>
-      {model.pickerOpen && <ModelPicker model={model} />}
+      {model.pickerOpen && <ModelPicker model={model} onSettings={onSettings} />}
     </main>
   );
 }
@@ -198,7 +200,7 @@ function Message({ row, model }: { row: MessageRow; model: ChatModel }) {
   );
 }
 
-function ModelPicker({ model }: { model: ChatModel }) {
+function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() => void) | undefined }) {
   const groups = model.pickerGroups;
   return (
     <div class="sheet-backdrop" onClick={(event) => event.target === event.currentTarget && model.closePicker()}>
@@ -209,7 +211,22 @@ function ModelPicker({ model }: { model: ChatModel }) {
             Done
           </button>
         </header>
-        {groups.length === 0 && <p class="muted">No providers yet. Add one in Settings › Providers.</p>}
+        {groups.length === 0 && (
+          <p class="muted">
+            No providers yet.{' '}
+            <a
+              class="settings-link"
+              href="/settings/providers"
+              onClick={(event) => {
+                event.preventDefault();
+                model.closePicker();
+                onSettings?.();
+              }}
+            >
+              Add one in Settings › Providers
+            </a>
+          </p>
+        )}
         {groups.map((group) => (
           <section key={group.providerId} class="picker-group" aria-label={group.name}>
             <div class="picker-head">

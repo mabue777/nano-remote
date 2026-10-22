@@ -4,6 +4,7 @@
 // stored (never paired, or forgotten after `unpaired`) means the pairing page, unless this phone already
 // has a provider or a chat: then Home shows Chats with a "Pair your Mac" link. Close 4003 or
 // `unauthorized` (revoked, or the host lost the cookie) forgets the device and goes back to pairing.
+// Settings > Providers opens without a host too: a cloud provider needs no Mac (ADR 0006).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import { watchBadge } from './pwa/badge';
@@ -15,6 +16,7 @@ import { ChatScreen } from './screens/chat/ChatScreen';
 import { ChatsHome } from './screens/chat/ChatsHome';
 import { ChatsPanel } from './screens/chat/ChatsPanel';
 import { createChatServices, hasLocalChat, type ChatServices } from './screens/chat/services';
+import { ProviderSettingsScreen } from './screens/settings/providers/ProviderSettingsScreen';
 import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
 import { AwayTracker, type SessionStorageLike } from './screens/home-model';
 import { HomeScreen } from './screens/HomeScreen';
@@ -40,14 +42,17 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
   useEffect(() => router.subscribe(setRoute), [router]);
 
   // Without a host, local chat still works: home, /chats and chat pages stay when this phone has any.
-  const localOnly = device === null && hasLocalChat(chat) && (route.name === 'home' || route.name === 'chats' || route.name === 'chat');
+  const localOnly =
+    device === null && (route.name === 'providers' || (hasLocalChat(chat) && (route.name === 'home' || route.name === 'chats' || route.name === 'chat')));
+  const settings = () => router.navigate('/settings/providers');
   useEffect(() => {
     if (device === null && route.name !== 'pair' && !localOnly) router.navigate('/pair', { replace: true });
   }, [device, route, router, localOnly]);
 
   if (localOnly) {
+    if (route.name === 'providers') return <ProviderSettingsScreen services={chat} backLabel="Chats" onBack={() => router.navigate('/')} />;
     if (route.name === 'chat') {
-      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/')} />;
+      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/')} onSettings={settings} />;
     }
     return <ChatsHome services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />;
   }
@@ -137,11 +142,23 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           onOpenSession={open}
           tab={route.name === 'chats' ? 'chats' : 'sessions'}
           onTab={(tab) => router.navigate(tab === 'chats' ? '/chats' : '/', { replace: true })}
+          onSettings={() => router.navigate('/settings/providers')}
           chats={<ChatsPanel services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />}
         />
       );
     case 'chat':
-      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/chats')} />;
+      return (
+        <ChatScreen
+          key={route.chatId}
+          chatId={route.chatId}
+          services={chat}
+          backLabel="Chats"
+          onBack={() => router.navigate('/chats')}
+          onSettings={() => router.navigate('/settings/providers')}
+        />
+      );
+    case 'providers':
+      return <ProviderSettingsScreen services={chat} backLabel="Chats" onBack={() => router.navigate('/chats')} />;
     case 'session':
       return (
         <SessionScreen

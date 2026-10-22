@@ -20,8 +20,8 @@ on the host, driven from the phone.
 _Avoid_: job, task ("task" belongs to the issue tracker), run
 
 **Local chat**:
-The mode where the phone chats directly with a model provider (Ollama and
-friends), with no host involved.
+The mode where the phone chats with a model provider (Ollama and friends):
+it talks to https providers directly and to private ones through the paired host (ADR 0006).
 _Avoid_: offline chat
 
 **Journal**:

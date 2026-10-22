@@ -23,7 +23,9 @@
 // `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
 // /test/push-test-error {code, message, data}` makes push/test refuse with that error ({} clears it).
 // Local chat: a fake model provider (fake-provider.ts) listens with https on the next port; `POST
-// /test/provider-chats` answers {chats} (the chat request bodies it received, newest last).
+// /test/provider-chats` answers {chats} (the chat request bodies it received, newest last). The fake host
+// keeps one provider in its "config.json" (provider/list) and its scan finds an Ollama on 127.0.0.1:11434
+// (provider/discover, provider/models).
 // Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
@@ -35,7 +37,7 @@ import { FakeHost } from './fake-host';
 import { startFakeProvider } from './fake-provider';
 
 const PUBLIC = fileURLToPath(new URL('../../host/public/', import.meta.url));
-const CLIENT_ROUTE = /^\/((pair|chats)\/?)?$|^\/[sc]\/[^/]+$/;
+const CLIENT_ROUTE = /^\/((pair|chats|settings\/providers)\/?)?$|^\/[sc]\/[^/]+$/;
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -65,6 +67,11 @@ function seed(host: FakeHost): void {
   host.session(finished).summary.updatedAt = now - 600;
   host.session(fresh).summary.updatedAt = now - 86_400;
   host.paceMs = PACE_MS;
+  // Local chat through the Mac: one provider kept in its config.json, and one Ollama its scan finds.
+  host.hostProviders = [{ id: 'prv_studio', name: 'Studio vLLM', baseURL: 'http://studio.local:8000/v1', kind: 'openai-compatible', hasKey: true }];
+  host.providerModels.set('prv_studio', [{ id: 'Qwen/Qwen3-8B' }]);
+  host.discoverCandidates = [{ baseURL: 'http://127.0.0.1:11434', kind: 'ollama' }];
+  host.providerModels.set('http://127.0.0.1:11434', [{ id: 'llama3.2:1b' }, { id: 'qwen3:4b' }]);
 }
 
 interface Code {
