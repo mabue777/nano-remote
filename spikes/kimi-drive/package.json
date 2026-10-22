@@ -1,0 +1,10 @@
+{
+  "name": "spike-kimi-drive",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway spike: can the Kimi CLI be driven to an approval round trip from a scripted client? No dependencies; not part of the workspace or the verify gate.",
+  "scripts": {
+    "stream-json": "node src/run-stream-json.ts",
+    "acp": "node src/run-acp.ts"
+  }
+}

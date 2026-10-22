@@ -1,0 +1,8 @@
+2026-10-22T07:31:07.462Z  1. session/start  ok sessionId=ses_v33j17sj engineSession=session_8a1eeee3-e5aa-4043-b095-11ae3a002b57 cwd=/tmp/nano-kimi-drive/kimi-acp enginePid=19956
+2026-10-22T07:31:07.463Z  2. turn/start  ok turnId=turn_abfee167-ca3d-4e8e-bd68-f86078534be4 engineSession=session_8a1eeee3-e5aa-4043-b095-11ae3a002b57 prompt="Create a file named hello.txt in the current directory conta..."
+2026-10-22T07:31:07.529Z  3. approval/request received  seq=3 requestId=req_0 kind=fileChange engineMethod=session/request_permission changes={"title":"Write","text":"Requesting approval to Writing /tmp/nano-kimi-drive/kimi-acp/hello.txt","options":["approve_once:allow_once","approve_always:allow_alwa availableDecisions=accept,acceptForSession,decline,cancel
+2026-10-22T07:31:07.533Z  4. approval/resolve (accept) sent  requestId=req_0 reply={"ok":true}
+2026-10-22T07:31:07.570Z  5. turn/completed  seq=7 turnId=turn_abfee167-ca3d-4e8e-bd68-f86078534be4 status=completed hello.txt="hello"
+2026-10-22T07:31:07.581Z  6. process killed  pid=19956 signal=SIGKILL exitCode=null phoneOffline cursor=7
+2026-10-22T07:31:08.300Z  7. session resumed  newPid=19967 engineSession=session_8a1eeee3-e5aa-4043-b095-11ae3a002b57 (same id) session/load replayed [user_message_chunkx1 tool_callx1 tool_call_updatex1 agent_message_chunkx1 available_commands_updatex1] mode=default; follow-up turnId=turn_71c968a6-f17d-416b-b58a-f6f5331aac9d ran while phone offline, journal head=10
+2026-10-22T07:31:08.305Z  8. catch-up delivered  session/open mode=events cursor 7->10 events=3 [turn/startedx1 item/completedx1 turn/completedx1] pendingApprovals=0 phone.lastApplied=10 followUpReply="hello.txt"

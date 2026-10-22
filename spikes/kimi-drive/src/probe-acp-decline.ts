@@ -1,0 +1,30 @@
+// Does the ACP approval really gate the write? Same first turn, answered with "decline".
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { startFakeModel } from "./fake-model.ts";
+import { KimiAcpAdapter } from "./kimi-acp.ts";
+import { FakePhone, Host, type Ev } from "./host.ts";
+import { StepLog, Trace, fakeHome, freshDir } from "./log.ts";
+import { FIRST_PROMPT } from "./scenario.ts";
+
+const log = new StepLog("kimi-acp-decline");
+const trace = new Trace("kimi-acp-decline");
+const cwd = freshDir("kimi-acp-decline");
+const model = await startFakeModel(trace, join(cwd, "hello.txt"));
+const home = fakeHome("kimi-acp-decline", model.url);
+const host = new Host(new KimiAcpAdapter(trace, { KIMI_CODE_HOME: home }, cwd), trace);
+const phone = new FakePhone(host);
+const { session } = await phone.call("session/start", { agentId: "kimi", cwd });
+log.step("session/start", `ok engineSession=${host.engineSessionId}`);
+await phone.call("turn/start", { sessionId: session.sessionId, input: [{ type: "text", text: FIRST_PROMPT }], clientMessageId: randomUUID() });
+const a = await phone.waitFor((e: Ev) => e.method === "approval/request");
+log.step("approval/request received", `requestId=${a.params.request.requestId} hello.txt exists before answer=${existsSync(join(cwd, "hello.txt"))}`);
+await phone.call("approval/resolve", { sessionId: session.sessionId, requestId: a.params.request.requestId, decision: "decline" });
+log.step("approval/resolve (decline) sent", `requestId=${a.params.request.requestId}`);
+const done = await phone.waitFor((e: Ev) => e.method === "turn/completed");
+const tool = phone.received.find((e) => e.method === "item/completed" && e.params.item.type === "fileChange");
+log.step("turn/completed", `status=${done.params.turn.status} writeItem=${tool?.params.item.status} rawOutput=${JSON.stringify(String(tool?.params.item.rawOutput ?? "")).slice(0, 160)} hello.txt exists=${existsSync(join(cwd, "hello.txt"))}`);
+await host.adapter.kill();
+await model.close();
+process.exit(0);

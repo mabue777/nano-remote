@@ -1,0 +1,4 @@
+2026-10-22T07:29:09.176Z  1. session/start  ok engineSession=session_8b8be4ff-0fca-40ca-bc93-8064c6d72e06
+2026-10-22T07:29:09.257Z  2. approval/request received  requestId=req_0 hello.txt exists before answer=false
+2026-10-22T07:29:09.262Z  3. approval/resolve (decline) sent  requestId=req_0
+2026-10-22T07:29:09.290Z  4. turn/completed  status=completed writeItem=failed rawOutput="Tool \"Write\" was not run because the user rejected the approval request." hello.txt exists=false
