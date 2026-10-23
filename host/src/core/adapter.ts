@@ -8,6 +8,12 @@
 // (spikes/host-drive/NOTES.md); engines that do have one (Codex) keep it inside their adapter, like
 // their method names, and use it for their own `steer`/`interrupt` calls. So adapter events carry no
 // turnId: everything an adapter emits belongs to the turn that is running.
+//
+// Engine-initiated turns: an engine can also start a turn by itself (Claude Code does when a background
+// task reports in: a Monitor event, a background Bash or subagent finishing). The adapter then emits
+// `turn/started` before the turn's first item; the core opens a turn without a user message and mints
+// its id. A `turn/start` from the user while such a turn runs joins that turn instead of failing with
+// `session_busy` (the engine takes the message mid-turn).
 import type {
   Agent,
   ApprovalRequest,
@@ -52,6 +58,11 @@ export type AdapterEvent =
   /** The engine dropped a request on its own (timeout, superseded). Journaled as resolved by "agent". */
   | { method: 'request/withdrawn'; params: { requestId: string } }
   | { method: 'usage/updated'; params: { usage: Usage } }
+  /**
+   * The engine started a turn on its own, with no `turnStart` from the core. The core opens a turn with
+   * no user message; ignored while a turn runs.
+   */
+  | { method: 'turn/started'; params: Record<string, never> }
   /** The running turn ended. */
   | { method: 'turn/completed'; params: { status: FinalTurnStatus; error?: TurnError } }
   /** The engine told us its session id late (Claude reports it with the first turn). Not journaled. */

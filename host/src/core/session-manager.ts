@@ -77,6 +77,8 @@ interface RunningTurn {
   readonly items: string[];
   /** Resolves once the engine accepted the turn's input; steer waits for it so it never overtakes the input. */
   delivered?: Promise<Adapter>;
+  /** The engine started it by itself (adapter `turn/started`); a user `turn/start` joins it. */
+  readonly engine: boolean;
 }
 
 /** In-memory state of a session the host has touched since it started. */
@@ -293,28 +295,25 @@ export class SessionManager {
 
   // ---- turns -----------------------------------------------------------------------------------
 
-  /** `turn/start` (spec 7). A repeated `clientMessageId` returns the turn it started the first time. */
+  /**
+   * `turn/start` (spec 7). A repeated `clientMessageId` returns the turn it started the first time. While
+   * an engine-initiated turn runs, the message joins that turn (the engine takes it mid-turn).
+   */
   async turnStart(sessionId: string, input: InputPart[], clientMessageId: string): Promise<Turn> {
     const summary = this.session(sessionId);
     const earlier = this.earlierTurn(sessionId, clientMessageId);
     if (earlier) return earlier;
     const live = this.liveOf(sessionId);
+    if (live.turn?.engine) return this.joinEngineTurn(live, summary.agentId, input, clientMessageId);
     if (live.turn) {
       throw new RpcError('session_busy', `a turn is running in ${sessionId}`, { turnId: live.turn.turnId });
     }
     if (this.store.get(sessionId).archived) this.store.setArchived(sessionId, false);
     if (summary.title === '') this.changeSession(sessionId, { title: titleFrom(input) });
 
-    const turnId = newId('trn');
-    const running: RunningTurn = { turnId, startedAt: this.now(), items: [] };
-    live.turn = running;
+    const running = this.openTurn(live, false);
+    const turnId = running.turnId;
     this.store.rememberClientMessage(sessionId, clientMessageId, turnId);
-    this.append(sessionId, {
-      method: 'turn/started',
-      params: {
-        turn: { turnId, status: 'inProgress', startedAt: running.startedAt, completedAt: null, error: null, items: [] },
-      },
-    });
     this.appendUserMessage(live, input, clientMessageId);
     this.setStatus(sessionId, 'running');
     // The start snapshot (turn/diff) runs alongside the engine start and is sealed before the input goes out.
@@ -333,6 +332,28 @@ export class SessionManager {
       throw failure;
     }
     return this.turn(sessionId, turnId)!;
+  }
+
+  /** A user message for the engine-initiated turn that is running: journaled in it, handed to the engine. */
+  private async joinEngineTurn(live: Live, agentId: string, input: InputPart[], clientMessageId: string): Promise<Turn> {
+    const running = live.turn!;
+    const sessionId = live.sessionId;
+    const ready = running.delivered ?? Promise.reject(new Error('the engine is not attached'));
+    const adapter = await ready.catch((error: unknown) => {
+      throw this.unavailable(agentId, error);
+    });
+    if (live.turn !== running) {
+      // The engine turn ended while the adapter was looked up: start a turn of its own.
+      return this.turnStart(sessionId, input, clientMessageId);
+    }
+    this.store.rememberClientMessage(sessionId, clientMessageId, running.turnId);
+    this.appendUserMessage(live, input, clientMessageId);
+    try {
+      await adapter.turnStart(input, clientMessageId);
+    } catch (error) {
+      throw this.unavailable(agentId, error);
+    }
+    return this.turn(sessionId, running.turnId)!;
   }
 
   /** `turn/steer` (spec 7): adds input to the running turn. */
@@ -514,6 +535,18 @@ export class SessionManager {
       case 'usage/updated':
         this.append(sessionId, { method: 'usage/updated', params: { usage: event.params.usage } });
         return;
+      case 'turn/started':
+        // The engine started a turn by itself (a background task reported in).
+        if (live.turn) return;
+        {
+          const running = this.openTurn(live, true);
+          // The engine already runs, so steer and a joining message wait on the adapter itself.
+          running.delivered = live.ready;
+          // Best-effort start snapshot for turn/diff: no input to hold back, so it is not sealed.
+          this.changes.begin(sessionId, running.turnId, this.session(sessionId).cwd);
+        }
+        this.setStatus(sessionId, 'running');
+        return;
       case 'agent/exited': {
         this.detach(live);
         if (live.turn) this.finishTurn(live, 'failed', { code: 'agent_exited', message: event.params.reason });
@@ -630,6 +663,19 @@ export class SessionManager {
       live.sessionId,
       pending.approvals > 0 ? 'waiting_approval' : pending.inputs > 0 ? 'waiting_input' : 'running',
     );
+  }
+
+  /** Mints the turn id, makes it the running turn, journals `turn/started`. */
+  private openTurn(live: Live, engine: boolean): RunningTurn {
+    const running: RunningTurn = { turnId: newId('trn'), startedAt: this.now(), items: [], engine };
+    live.turn = running;
+    this.append(live.sessionId, {
+      method: 'turn/started',
+      params: {
+        turn: { turnId: running.turnId, status: 'inProgress', startedAt: running.startedAt, completedAt: null, error: null, items: [] },
+      },
+    });
+    return running;
   }
 
   private appendUserMessage(live: Live, input: InputPart[], clientMessageId: string): void {

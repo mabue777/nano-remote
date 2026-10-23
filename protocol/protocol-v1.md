@@ -274,7 +274,7 @@ Clients apply events in `seq` order and ignore any `seq <= lastApplied` (idempot
 |---|---|---|
 | `session/changed` | `session` (full Session) | title, settings, cwd changed |
 | `status/changed` | `status` | any session status transition |
-| `turn/started` | `turn` | adapter reports a new turn |
+| `turn/started` | `turn` | adapter reports a new turn (after a `turn/start`, or an engine-initiated turn, below) |
 | `turn/completed` | `turn` | status `completed`, `interrupted` or `failed` |
 | `item/started` | `item`, `turnId` | item appears |
 | `item/delta` | `itemId`, `turnId`, `field`, `delta` | streamed text; `field` is `text`, `summary`, `output` or `patch` |
@@ -287,6 +287,13 @@ Clients apply events in `seq` order and ignore any `seq <= lastApplied` (idempot
 
 Unsequenced notifications (not part of any Journal): `session/updated {summary}` for the session list,
 `host/status/changed`.
+
+Engine-initiated turns (additive within v1): an engine may start a turn by itself, without a
+`turn/start`; Claude Code does when a background task reports in (a Monitor event, a background Bash
+command or subagent finishing). The host journals it like any turn (`turn/started`, `status/changed
+running`, items, `turn/completed`), except that it has no `userMessage` item of its own. Clients show it
+like any other turn. The Claude adapter shows the notification that woke the engine as a finished
+`toolCall` item whose `tool` is `background task: <summary>`.
 
 Departure from Codex: Codex has 84 notification methods; the phone used 11 of them in the capture (P7). The
 table above is the normalized set. Adapters may put anything else into `item.type: other`.
@@ -383,7 +390,9 @@ host has compacted old events into a snapshot (an implementation choice; v1 host
   `clientMessageId` arrives twice (client retried after an uncertain delivery), the host returns the
   existing turn instead of starting another. This replaces envelope replay (capture: Codex reconciles lost
   `turn/start` by `clientUserMessageId`, local-link report 23).
-- If a turn is already running: error `session_busy {turnId}`; the client offers steer instead.
+- If a turn is already running: error `session_busy {turnId}`; the client offers steer instead. Exception:
+  while an engine-initiated turn runs (5.2), the message joins that turn. The host journals its
+  `userMessage` item in it, hands it to the engine (which takes it mid-turn), and returns that turn.
 - One writer per session is enforced by the host, not the client (local-link report 26, 32).
 
 ### `turn/steer {sessionId, turnId, input, clientMessageId}` → `{turn}`
@@ -519,7 +528,7 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 | `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | reverse request `session/request_permission` (not probed for shell commands) | Nano's extension `tool_call` hook calls `ctx.ui.confirm`; it arrives as `extension_ui_request {method: confirm, title: "nano-approval"}` for bash, answered with `extension_ui_response {confirmed}`; a refusal blocks the tool (accepted and declined both probed). Decisions `accept`, `decline`, `cancel` |
 | `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed, with suggestions, so `acceptForSession` is offered) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome | the same confirm for `write` (probed) and `edit` (not probed); any other tool except read, grep, find, ls asks as `permission` (not probed) |
 | `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) | other dialogs (`select`, `input`, `editor`) become one question (not probed) |
-| `status/changed` | `thread/status/changed` | derived from stream state (running on a user message, idle on `result`) | derived (active while `session/prompt` is pending) | derived (running from `turn/start` to `agent_settled`, `error` when pi exits) |
+| `status/changed` | `thread/status/changed` | derived from stream state (running on a user message or on output while no turn runs, idle on `result`) | derived (active while `session/prompt` is pending) | derived (running from `turn/start` to `agent_settled`, `error` when pi exits) |
 | `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` | `get_session_stats` after every turn (`tokens`, `contextUsage.percent`) |
 
 The Claude Code approvals and questions reach `canUseTool` only when the adapter passes

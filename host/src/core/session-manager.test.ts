@@ -13,6 +13,7 @@ import { newId } from './ids.js';
 import { DEFAULT_TITLE, SessionManager, TITLE_MAX, titleFrom } from './session-manager.js';
 import { SessionStore } from './store.js';
 import { FAKE_APPROVAL_MODES, FakeAdapter, FakeAgent, echoScript, scripted, type FakeAgentOptions } from './testing/fake-adapter.js';
+import { makeRepo } from './testing/git-repo.js';
 
 const cwd = mkdtempSync(path.join(tmpdir(), 'nano-sm-'));
 const text = (value: string) => [{ type: 'text' as const, text: value }];
@@ -264,6 +265,68 @@ describe('adapter events', () => {
     adapter.emit({ method: 'usage/updated', params: { usage: { inputTokens: 1, outputTokens: 1 } } });
     expect(events.length).toBe(after);
     expect(methods(events)).toContain('usage/updated');
+  });
+
+  it('an engine turn/started opens a turn without a user message; ignored while a turn runs; a turn/start joins it', async () => {
+    const { adapter, events, journal, sessionId, manager, turn } = await running({ script: [[{ hold: true }], [{ hold: true }]] });
+    adapter.emit({ method: 'turn/started', params: {} });
+    expect(manager.runningTurnId(sessionId)).toBe(turn.turnId);
+    expect(methods(events).filter((m) => m === 'turn/started')).toHaveLength(1);
+    adapter.release();
+    expect(journal.summary(sessionId)?.status).toBe('idle');
+
+    adapter.emit({ method: 'turn/started', params: {} });
+    const engineTurnId = manager.runningTurnId(sessionId)!;
+    expect(engineTurnId).not.toBe(turn.turnId);
+    expect(journal.summary(sessionId)?.status).toBe('running');
+    expect(manager.activeCount()).toBe(1);
+    adapter.emit({ method: 'item/started', params: { item: { itemId: 'itm_c', type: 'command', status: 'inProgress', command: 'sleep 9', cwd, output: '' } } });
+
+    const calls = adapter.calls.length;
+    const joined = await manager.turnStart(sessionId, text('status?'), cmid());
+    expect(joined.turnId).toBe(engineTurnId);
+    expect(joined.items).toHaveLength(2); // the command, then the user message
+    expect(adapter.calls.slice(calls).map((c) => c.method)).toEqual(['turnStart']);
+    expect(methods(events).filter((m) => m === 'turn/started')).toHaveLength(2);
+
+    adapter.release();
+    expect(manager.runningTurnId(sessionId)).toBeUndefined();
+    expect(journal.turn(sessionId, engineTurnId)?.status).toBe('completed');
+    expect(journal.summary(sessionId)?.status).toBe('idle');
+  });
+
+  it('an engine-initiated turn gets a start snapshot: turn/diff shows only its own change, without a note', async () => {
+    const repo = makeRepo({ 'readme.md': '# Demo\n' });
+    repo.commit('initial');
+    try {
+      const journal = new Journal({ path: ':memory:' });
+      const agent = new FakeAgent({ script: [[{ reply: 'done' }]] });
+      const manager = new SessionManager({ journal, agents: [agent], startSnapshotWaitMs: 30_000 });
+      open.push({ journal, manager });
+      const { session } = await manager.start({ agentId: 'fake', cwd: repo.root });
+      const sessionId = session.sessionId;
+      // An earlier user turn leaves a change behind that the engine turn must not show.
+      const userTurn = await manager.turnStart(sessionId, text('write'), cmid());
+      repo.write('earlier.txt', 'from the user turn\n');
+      expect(journal.turn(sessionId, userTurn.turnId)?.status).toBe('completed');
+
+      agent.last.emit({ method: 'turn/started', params: {} });
+      const engineTurnId = manager.runningTurnId(sessionId)!;
+      // The git snapshot is best-effort and slow on a busy machine; wait well under the 30 s test limit.
+      await vi.waitFor(() => expect(manager.store.turnTrees(sessionId, engineTurnId).start).toMatch(/^[0-9a-f]{40}$/), {
+        timeout: 15_000,
+        interval: 50,
+      });
+      repo.write('engine.txt', 'from the background task\n');
+      agent.last.emit({ method: 'turn/completed', params: { status: 'completed' } });
+      expect(journal.turn(sessionId, engineTurnId)?.status).toBe('completed');
+
+      const diff = await manager.diff(sessionId, engineTurnId);
+      expect(diff.files.map((f) => [f.path, f.kind])).toEqual([['engine.txt', 'add']]);
+      expect(diff).not.toHaveProperty('note');
+    } finally {
+      repo.remove();
+    }
   });
 
   it('an observer that throws is logged and does not stop the Journal', async () => {

@@ -243,18 +243,20 @@ describe('ClaudeAdapter: a turn', () => {
     expect(texts).toEqual(['Outer.']);
   });
 
-  it('messages outside a turn are dropped (a result included)', async () => {
-    const { fake, adapter, events, cwd } = rig();
+  it('a result with no output and no turn emits nothing', async () => {
+    const { fake, adapter, events, cwd, logs } = rig();
     await adapter.start(cwd, {});
     await adapter.turnStart(text('hi'), 'c1');
     await turnEnd(events);
     const count = events.length;
-    fake.last.send({ type: 'assistant', message: { id: 'late', content: [{ type: 'text', text: 'late' }] }, parent_tool_use_id: null });
-    fake.last.send({ type: 'stream_event', event: { type: 'message_start', message: { id: 'late' } }, parent_tool_use_id: null });
-    fake.last.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x' }] }, parent_tool_use_id: null });
     fake.last.send({ type: 'result', subtype: 'success', is_error: false, usage: {} });
+    fake.last.send({ type: 'user', message: { content: [{ type: 'text', text: 'not a tool result' }] }, parent_tool_use_id: null });
     await new Promise((r) => setTimeout(r, 30));
     expect(events).toHaveLength(count);
+    expect(logs.filter((l) => l.startsWith('claude result'))).toEqual([
+      'claude result subtype=success is_error=false turn=host',
+      'claude result subtype=success is_error=false turn=empty',
+    ]);
   });
 
   it('an error result fails the turn with the subtype as code', async () => {
@@ -460,10 +462,22 @@ describe('ClaudeAdapter: tools, approvals and questions', () => {
     expect(fake.last.permissions).toHaveLength(1);
   });
 
-  it('canUseTool outside a turn is denied without a request', async () => {
+  it('canUseTool outside a turn opens an engine-initiated turn and asks', async () => {
     const { fake, adapter, events, cwd } = rig();
     await adapter.start(cwd, {});
-    const answer = await fake.last.options.canUseTool!('Bash', { command: 'ls' }, { signal: new AbortController().signal, requestId: 'ctl_1', toolUseID: 't' });
+    const asked = fake.last.options.canUseTool!('Bash', { command: 'ls' }, { signal: new AbortController().signal, requestId: 'ctl_1', toolUseID: 't' });
+    const request = requestOf(await find(events, 'approval/request'));
+    expect(methods(events)).toEqual(['turn/started', 'status/changed', 'approval/request']);
+    await adapter.resolveApproval(request.requestId, 'accept');
+    expect(await asked).toEqual({ behavior: 'allow', updatedInput: { command: 'ls' } });
+  });
+
+  it('canUseTool after kill() is denied without a request', async () => {
+    const { fake, adapter, events, cwd } = rig();
+    await adapter.start(cwd, {});
+    const canUseTool = fake.last.options.canUseTool!;
+    await adapter.kill();
+    const answer = await canUseTool('Bash', { command: 'ls' }, { signal: new AbortController().signal, requestId: 'ctl_1', toolUseID: 't' });
     expect(answer).toEqual({ behavior: 'deny', message: CANCEL_MESSAGE, interrupt: true });
     expect(events).toEqual([]);
   });
@@ -491,6 +505,128 @@ describe('ClaudeAdapter: tools, approvals and questions', () => {
     );
     // The withdrawn request no longer resolves anything.
     await adapter.resolveApproval(request.requestId, 'accept');
+  });
+});
+
+describe('ClaudeAdapter: engine-initiated turns (a background task reports in)', () => {
+  const toolUse = (id: string, command: string) => ({
+    message: { type: 'assistant', message: { id: `msg_${id}`, content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] }, parent_tool_use_id: null },
+  });
+  const toolResult = (id: string, output: string) => ({
+    message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: output }] }, parent_tool_use_id: null },
+  });
+
+  it('init, text, tool_use, tool_result and result with no host turn: turn/started ... turn/completed', async () => {
+    const { fake, adapter, events, cwd, logs } = rig();
+    await adapter.start(cwd, {});
+    await fake.last.engineTurn(
+      [{ text: 'Checking the tree.', chunks: 1 }, toolUse('toolu_git', 'git status'), toolResult('toolu_git', 'clean'), { text: 'All clean.', chunks: 1 }],
+      { summary: 'Monitor  "ci"\n finished', status: 'completed' },
+    );
+    await turnEnd(events);
+    expect(methods(events)).toEqual([
+      'engine/session',
+      'turn/started',
+      'status/changed', // running
+      'item/started', // background task
+      'item/completed',
+      'item/started', // agentMessage
+      'item/delta',
+      'item/completed',
+      'item/started', // command
+      'item/completed',
+      'item/started', // agentMessage
+      'item/delta',
+      'item/completed',
+      'usage/updated',
+      'turn/completed',
+      'status/changed', // idle
+    ]);
+    expect(events[2]!.params).toEqual({ status: 'running' });
+    expect((events[4]!.params as { item: unknown }).item).toMatchObject({
+      type: 'toolCall',
+      status: 'completed',
+      tool: 'background task: Monitor "ci" finished',
+      arguments: { taskId: 'task_fake', status: 'completed', summary: 'Monitor "ci" finished' },
+    });
+    expect((events[8]!.params as { item: unknown }).item).toMatchObject({ itemId: 'toolu_git', type: 'command', status: 'inProgress', command: 'git status' });
+    expect((events[9]!.params as { item: unknown }).item).toMatchObject({ itemId: 'toolu_git', type: 'command', status: 'completed', output: 'clean' });
+    expect(events[14]!.params).toEqual({ status: 'completed' });
+    expect(logs).toContain('claude result subtype=success is_error=false turn=engine');
+    expect(logs.some((l) => l.includes('turn=none') || l.includes('turn=empty'))).toBe(false);
+  });
+
+  it('a second engine turn after the first ends opens a new turn; ambient notifications are not shown', async () => {
+    const { fake, adapter, events, cwd } = rig();
+    await adapter.start(cwd, {});
+    await fake.last.engineTurn([{ text: 'One.' }], null);
+    await turnEnd(events);
+    const from = events.length;
+    await fake.last.engineTurn([{ text: 'Two.' }], { summary: 'watcher', ambient: true });
+    await turnEnd(events, from);
+    expect(methods(events).filter((m) => m === 'turn/started' || m === 'turn/completed')).toEqual([
+      'turn/started',
+      'turn/completed',
+      'turn/started',
+      'turn/completed',
+    ]);
+    const tools = events.filter((e) => e.method === 'item/started' && (e.params as { item: { type: string } }).item.type === 'toolCall');
+    expect(tools).toEqual([]);
+  });
+
+  it('a failed background task is a failed item; a notification during a running turn shows in that turn', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[{ hold: true }, { text: 'Done.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    await until(() => (fake.last.holdingNow ? true : undefined), 'the hold');
+    fake.last.send({ type: 'system', subtype: 'task_notification', task_id: 't1', status: 'failed', summary: 'build failed', output_file: '/tmp/x' });
+    fake.last.release();
+    await turnEnd(events);
+    expect(methods(events).filter((m) => m === 'turn/started')).toEqual([]);
+    const item = events.find((e) => e.method === 'item/completed' && (e.params as { item: { type: string } }).item.type === 'toolCall');
+    expect((item!.params as { item: unknown }).item).toMatchObject({ status: 'failed', tool: 'background task: build failed', error: 'build failed' });
+  });
+
+  it('turnStart during an engine turn with a long tool running joins it: no second turn, the tool stays visible', async () => {
+    const { fake, adapter, events, cwd } = rig();
+    await adapter.start(cwd, {});
+    const played = fake.last.engineTurn([
+      toolUse('toolu_cov', 'pnpm test:coverage'),
+      { hold: true },
+      toolResult('toolu_cov', 'all tests passed'),
+      { text: 'Tests pass. Status: done.', chunks: 1 },
+    ]);
+    const running = await until(
+      () => events.find((e) => e.method === 'item/started' && (e.params as { item: { type: string } }).item.type === 'command'),
+      'the long tool',
+    );
+    expect((running!.params as { item: unknown }).item).toMatchObject({ itemId: 'toolu_cov', status: 'inProgress', command: 'pnpm test:coverage' });
+    const before = events.length;
+
+    await adapter.turnStart(text('status?'), 'c1');
+    await until(() => (fake.last.midTurn.length > 0 ? true : undefined), 'the mid-turn message');
+    expect(fake.last.midTurn.map((m) => m.message.content)).toEqual(['status?']);
+    expect(methods(events.slice(before))).toEqual(['status/changed']); // running, already so in the core
+
+    fake.last.release();
+    await played;
+    await turnEnd(events);
+    expect(methods(events).filter((m) => m === 'turn/started' || m === 'turn/completed')).toEqual(['turn/started', 'turn/completed']);
+    const completed = events.filter((e) => e.method === 'item/completed').map((e) => (e.params as { item: { itemId: string; type: string } }).item);
+    expect(completed.map((i) => i.type)).toEqual(['toolCall', 'command', 'agentMessage']);
+    expect(methods(events).at(-1)).toBe('status/changed');
+    expect(events.at(-1)!.params).toEqual({ status: 'idle' });
+  });
+
+  it('an engine turn can be interrupted', async () => {
+    const { fake, adapter, events, cwd } = rig();
+    await adapter.start(cwd, {});
+    const played = fake.last.engineTurn([toolUse('toolu_long', 'sleep 100'), { hold: true }, { text: 'never' }]);
+    await find(events, 'item/started');
+    await adapter.interrupt();
+    await played;
+    expect((await turnEnd(events)).params).toEqual({ status: 'interrupted' });
+    expect(fake.last.interrupts).toBe(1);
   });
 });
 

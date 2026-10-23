@@ -15,7 +15,7 @@ import { SessionStore } from '../../core/store.js';
 import { eventsOf, openAfterTurn, rpc, rpcError, startHarness, text, waitEvent, type Harness } from '../../core/testing/harness.js';
 import { claudeConfig } from '../../config/claude.js';
 import { ClaudeAgent } from './provider.js';
-import { FakeClaude, type FakeClaudeOptions } from './testing/fake-query.js';
+import { FakeClaude, until, type FakeClaudeOptions } from './testing/fake-query.js';
 
 let harness: Harness | undefined;
 afterEach(async () => {
@@ -435,5 +435,120 @@ describe('session core end to end with the Claude adapter', () => {
     const phone = await h.connect();
     const error = await rpcError(phone, 'session/start', { agentId: 'claude', cwd: h.cwd });
     expect(error).toMatchObject({ code: 'agent_unavailable', data: { agentId: 'claude', reason: expect.stringContaining('executable not found') } });
+  });
+});
+
+describe('engine-initiated turns end to end (a background task reports in)', () => {
+  const toolUse = (id: string, command: string) => ({
+    message: { type: 'assistant', message: { id: `msg_${id}`, content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] }, parent_tool_use_id: null },
+  });
+  const toolResult = (id: string, output: string) => ({
+    message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: output }] }, parent_tool_use_id: null },
+  });
+  type SnapshotTurn = { turnId: string; status: string; items: { type: string; status: string; text?: string; command?: string; tool?: string }[] };
+
+  it('a turn the engine starts by itself is journaled with its items, without a user message', async () => {
+    const { h, fake } = await setup();
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    const opened = await rpc<{ cursor: number }>(phone, 'session/open', { sessionId });
+
+    await fake.last.engineTurn(
+      [{ text: 'Checking.', chunks: 1 }, toolUse('toolu_git', 'git status'), toolResult('toolu_git', 'clean'), { text: 'All clean.', chunks: 1 }],
+      { summary: 'Monitor event: CI finished' },
+    );
+    const completed = await waitEvent(phone, 'turn/completed');
+    expect(turnOf(completed).status).toBe('completed');
+    await waitEvent(phone, 'status/changed', (p) => p.status === 'idle');
+
+    const live = eventsOf(phone, sessionId);
+    expectDenseFrom(live, opened.cursor);
+    expect(live.map((e) => e.method)).toEqual([
+      'turn/started',
+      'status/changed', // running
+      'item/started', // background task
+      'item/completed',
+      'item/started', // agentMessage
+      'item/delta',
+      'item/completed',
+      'item/started', // command
+      'item/completed',
+      'item/started', // agentMessage
+      'item/delta',
+      'item/completed',
+      'usage/updated',
+      'turn/completed',
+      'status/changed', // idle
+    ]);
+    const { turns } = await rpc<{ turns: SnapshotTurn[] }>(phone, 'session/open', { sessionId });
+    expect(turns).toHaveLength(1);
+    expect(turns[0]!.status).toBe('completed');
+    expect(turns[0]!.items.map((i) => [i.type, i.status])).toEqual([
+      ['toolCall', 'completed'],
+      ['agentMessage', 'completed'],
+      ['command', 'completed'],
+      ['agentMessage', 'completed'],
+    ]);
+    expect(turns[0]!.items[0]!.tool).toBe('background task: Monitor event: CI finished');
+    expect(h.core.sessions.journal.summary(sessionId)?.status).toBe('idle');
+  });
+
+  it('turn/start during an engine turn with a long tool joins it: the running tool, then the reply, no orphan turn', async () => {
+    const { h, fake } = await setup();
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+
+    const played = fake.last.engineTurn([
+      toolUse('toolu_cov', 'pnpm test:coverage'),
+      { hold: true },
+      toolResult('toolu_cov', 'all tests passed'),
+      { text: 'Tests pass. Status: done.', chunks: 1 },
+    ]);
+    const started = await waitEvent(phone, 'turn/started');
+    const engineTurnId = turnOf(started).turnId;
+    await waitEvent(phone, 'item/started', (p) => (p.item as { type: string }).type === 'command');
+
+    const clientMessageId = randomUUID();
+    const { turn } = await rpc<{ turn: { turnId: string; status: string } }>(phone, 'turn/start', {
+      sessionId,
+      input: text('status?'),
+      clientMessageId,
+    });
+    expect(turn).toMatchObject({ turnId: engineTurnId, status: 'inProgress' });
+    expect(h.core.sessions.journal.summary(sessionId)?.status).toBe('running');
+
+    // While the tool runs the phone sees it running, with the user's message in the same turn.
+    const during = await rpc<{ turns: SnapshotTurn[] }>(phone, 'session/open', { sessionId });
+    expect(during.turns).toHaveLength(1);
+    expect(during.turns[0]!.items.map((i) => [i.type, i.status])).toEqual([
+      ['toolCall', 'completed'],
+      ['command', 'inProgress'],
+      ['userMessage', 'completed'],
+    ]);
+    expect(during.turns[0]!.items[1]!.command).toBe('pnpm test:coverage');
+    await until(() => (fake.last.midTurn.length > 0 ? true : undefined), 'the mid-turn message');
+
+    // A retry of the same message returns the same turn.
+    const again = await rpc<{ turn: { turnId: string } }>(phone, 'turn/start', { sessionId, input: text('status?'), clientMessageId });
+    expect(again.turn.turnId).toBe(engineTurnId);
+
+    fake.last.release();
+    await played;
+    const completed = await waitEvent(phone, 'turn/completed');
+    expect(turnOf(completed)).toMatchObject({ turnId: engineTurnId, status: 'completed' });
+    await waitEvent(phone, 'status/changed', (p) => p.status === 'idle');
+
+    const after = await rpc<{ turns: SnapshotTurn[] }>(phone, 'session/open', { sessionId });
+    expect(after.turns.map((t) => t.status)).toEqual(['completed']);
+    expect(after.turns[0]!.items.map((i) => [i.type, i.status])).toEqual([
+      ['toolCall', 'completed'],
+      ['command', 'completed'],
+      ['userMessage', 'completed'],
+      ['agentMessage', 'completed'],
+    ]);
+    expect(after.turns[0]!.items[3]!.text).toBe('Tests pass. Status: done.');
+    expect(eventsOf(phone, sessionId).filter((e) => e.method === 'turn/started')).toHaveLength(1);
+    expect(h.core.sessions.activeCount()).toBe(0);
   });
 });

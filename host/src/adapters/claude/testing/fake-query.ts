@@ -126,6 +126,10 @@ export class FakeQuery implements ClaudeQuery {
   private holding: (() => void) | undefined;
   private readonly spawnAbort = new AbortController();
   private counter = 0;
+  /** An engine-initiated turn is playing: user messages arriving now are taken mid-turn. */
+  private engineBusy = false;
+  /** User messages the engine took mid-turn (during an engine-initiated turn). */
+  readonly midTurn: SDKUserMessage[] = [];
 
   constructor(fake: FakeClaude, prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.fake = fake;
@@ -160,6 +164,34 @@ export class FakeQuery implements ClaudeQuery {
   /** Sends an SDK message now, outside any script. */
   send(message: Json): void {
     this.push(message as unknown as SDKMessage);
+  }
+
+  /**
+   * Plays a turn the engine starts by itself, as Claude Code does when a background task reports in:
+   * system/task_notification (unless `notification` is null), system/init, the steps, then `result`.
+   * User messages pushed meanwhile are taken mid-turn (recorded in `midTurn`, no turn of their own).
+   */
+  async engineTurn(steps: FakeClaudeTurn, notification: Json | null = { summary: 'Monitor event' }): Promise<void> {
+    this.engineBusy = true;
+    try {
+      if (notification) {
+        this.send({
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'task_fake',
+          status: 'completed',
+          output_file: '/tmp/task_fake.out',
+          summary: '',
+          uuid: randomUUID(),
+          session_id: this.sessionId,
+          ...notification,
+        });
+      }
+      this.sendInit();
+      await this.playSteps(steps);
+    } finally {
+      this.engineBusy = false;
+    }
   }
 
   /** Ends the message stream as the SDK does when its process is gone. */
@@ -223,24 +255,32 @@ export class FakeQuery implements ClaudeQuery {
       const text = typeof content === 'string' ? content : '';
       // An engine that never accepts: no init, no turn.
       if (this.fake.options.noInit) continue;
-      this.send({
-        type: 'system',
-        subtype: 'init',
-        session_id: this.sessionId,
-        claude_code_version: '2.1.999',
-        model: 'claude-opus-5-5',
-        cwd: this.options.cwd,
-        permissionMode: this.options.permissionMode,
-        tools: ['Bash', 'Write', 'Edit', 'AskUserQuestion'],
-      });
-      await this.playTurn(text);
+      if (this.engineBusy) {
+        this.midTurn.push(message);
+        continue;
+      }
+      this.sendInit();
+      await this.playSteps(this.fake.steps(text));
     }
   }
 
-  private async playTurn(text: string): Promise<void> {
+  private sendInit(): void {
+    this.send({
+      type: 'system',
+      subtype: 'init',
+      session_id: this.sessionId,
+      claude_code_version: '2.1.999',
+      model: 'claude-opus-5-5',
+      cwd: this.options.cwd,
+      permissionMode: this.options.permissionMode,
+      tools: ['Bash', 'Write', 'Edit', 'AskUserQuestion'],
+    });
+  }
+
+  private async playSteps(steps: FakeClaudeTurn): Promise<void> {
     this.interrupted = false;
     let reply = '';
-    for (const step of this.fake.steps(text)) {
+    for (const step of steps) {
       if (this.ended || this.failure) return;
       if (this.interrupted) break;
       if ('text' in step) {

@@ -11,6 +11,11 @@
 //   questions      <- canUseTool for AskUserQuestion (answers keyed by question text; protocol ids are indexes)
 //   items          <- assistant text/thinking/tool_use blocks, user tool_result blocks, stream_event deltas
 //   turn end       <- result (usage/updated, then turn/completed)
+//   engine turns   <- top-level output while no turn runs: turn/started, then the items as usual. Claude
+//                     Code starts a turn by itself when a background task reports in (Monitor event,
+//                     run_in_background Bash, async Agent); the system/task_notification before it becomes
+//                     a "background task: <summary>" toolCall item. A turnStart during such a turn joins
+//                     it: the message goes into the inbox and Claude Code takes it mid-turn.
 //
 // Settings: approvalMode `never` runs bypassPermissions (with allowDangerouslySkipPermissions), `acceptEdits`
 // and `plan` the Claude modes of the same name, anything else `default`. Only `default` with
@@ -208,6 +213,8 @@ interface StreamItem {
 }
 
 interface TurnState {
+  /** Started by the engine itself (a background task reported in), not by turnStart. */
+  engine: boolean;
   interrupted: boolean;
   messageId: string;
   streaming: StreamItem[];
@@ -239,6 +246,8 @@ export class ClaudeAdapter implements Adapter {
   private cwd = '';
   private settings: Settings = {};
   private turn: TurnState | undefined;
+  /** Background-task notifications that arrived while no turn ran: shown in the engine turn they start. */
+  private notes: AdapterItem[] = [];
   private readonly requests = new Map<string, PendingRequest>();
 
   constructor(options: ClaudeAdapterOptions = {}) {
@@ -278,7 +287,11 @@ export class ClaudeAdapter implements Adapter {
   /** Pushes the user message; on a fresh query resolves once system/init shows the engine took it. */
   async turnStart(input: InputPart[], _clientMessageId: string): Promise<void> {
     const run = await this.ready();
-    this.turn = { interrupted: false, messageId: '', streaming: [], tools: new Map() };
+    // During an engine-initiated turn the message joins it: Claude Code delivers it mid-turn.
+    if (!this.turn) {
+      this.turn = newTurn(false);
+      this.notes = [];
+    }
     this.emit({ method: 'status/changed', params: { status: 'running' } });
     run.inbox.push({ type: 'user', message: { role: 'user', content: toUserText(input) }, parent_tool_use_id: null });
     if (!run.initialized) await this.initialized(run);
@@ -317,6 +330,7 @@ export class ClaudeAdapter implements Adapter {
     await this.opening?.catch(() => {});
     this.denyAll(CANCEL_MESSAGE);
     this.turn = undefined;
+    this.notes = [];
     const run = this.run;
     this.run = undefined;
     if (run) await this.end(run, 'killed by the host');
@@ -490,6 +504,7 @@ export class ClaudeAdapter implements Adapter {
     switch (message.type) {
       case 'system':
         if (message.subtype === 'init') this.onInit(run, message);
+        else if (message.subtype === 'task_notification') this.onTaskNotification(message);
         return;
       case 'stream_event':
         if (message.parent_tool_use_id == null) this.onStreamEvent(obj(message.event));
@@ -520,9 +535,39 @@ export class ClaudeAdapter implements Adapter {
     for (const waiter of run.initWaiters.splice(0)) waiter.resolve();
   }
 
+  /**
+   * The running turn; without one the engine started a turn by itself (a background task reported in):
+   * it is opened here, with the notifications that woke the engine as its first items.
+   */
+  private engineTurn(): TurnState | undefined {
+    if (this.turn || this.killed) return this.turn;
+    const turn = newTurn(true);
+    this.turn = turn;
+    this.log('claude engine-initiated turn');
+    this.emit({ method: 'turn/started', params: {} });
+    this.emit({ method: 'status/changed', params: { status: 'running' } });
+    for (const item of this.notes.splice(0)) {
+      this.emit({ method: 'item/started', params: { item } });
+      this.emit({ method: 'item/completed', params: { item } });
+    }
+    return turn;
+  }
+
+  /** A background task settled: shown in the running turn, else kept for the turn it starts. */
+  private onTaskNotification(message: Json): void {
+    if (message.ambient === true || message.skip_transcript === true) return;
+    const item = taskItem(message);
+    if (!this.turn) {
+      this.notes.push(item);
+      return;
+    }
+    this.emit({ method: 'item/started', params: { item } });
+    this.emit({ method: 'item/completed', params: { item } });
+  }
+
   /** Raw API stream events: text and thinking deltas of the top-level assistant message. */
   private onStreamEvent(event: Json): void {
-    const turn = this.turn;
+    const turn = this.engineTurn();
     if (!turn) return;
     if (event.type === 'message_start') {
       turn.messageId = str(obj(event.message).id);
@@ -556,7 +601,7 @@ export class ClaudeAdapter implements Adapter {
   }
 
   private onAssistant(message: Json): void {
-    const turn = this.turn;
+    const turn = this.engineTurn();
     if (!turn) return;
     const messageId = str(message.id);
     for (const raw of Array.isArray(message.content) ? message.content : []) {
@@ -580,8 +625,9 @@ export class ClaudeAdapter implements Adapter {
   }
 
   private onToolResults(message: Json): void {
-    const turn = this.turn;
-    if (!turn || !Array.isArray(message.content)) return;
+    if (!Array.isArray(message.content) || !message.content.some((b) => obj(b).type === 'tool_result')) return;
+    const turn = this.engineTurn();
+    if (!turn) return;
     for (const raw of message.content) {
       const block = obj(raw);
       if (block.type !== 'tool_result') continue;
@@ -595,7 +641,10 @@ export class ClaudeAdapter implements Adapter {
 
   private onResult(result: Json): void {
     const turn = this.turn;
-    this.log(`claude result subtype=${str(result.subtype)} is_error=${String(result.is_error)} turn=${turn ? 'running' : 'none'}`);
+    this.log(
+      `claude result subtype=${str(result.subtype)} is_error=${String(result.is_error)} turn=${turn ? (turn.engine ? 'engine' : 'host') : 'empty'}`,
+    );
+    // No turn: the engine ended one that produced no output at all, so there is nothing to show.
     if (!turn) return;
     // Requests the engine stopped waiting for are void now.
     for (const request of [...this.requests.values()]) {
@@ -625,7 +674,7 @@ export class ClaudeAdapter implements Adapter {
     input: Json,
     context: { signal?: AbortSignal; suggestions?: unknown; toolUseID: string; title?: string; decisionReason?: string },
   ): Promise<PermissionAnswer> {
-    if (this.killed || run !== this.run || run.gone !== undefined || !this.turn) {
+    if (this.killed || run !== this.run || run.gone !== undefined || !this.engineTurn()) {
       return Promise.resolve({ behavior: 'deny', message: CANCEL_MESSAGE, interrupt: true });
     }
     const existing = [...this.requests.values()].find((r) => r.toolUseID === context.toolUseID);
@@ -688,6 +737,29 @@ export class ClaudeAdapter implements Adapter {
   private emit(event: AdapterEvent): void {
     for (const listener of [...this.listeners]) listener(event);
   }
+}
+
+function newTurn(engine: boolean): TurnState {
+  return { engine, interrupted: false, messageId: '', streaming: [], tools: new Map() };
+}
+
+/** Longest task summary shown in a "background task" item's name. */
+const TASK_SUMMARY_MAX = 120;
+
+/** A system/task_notification as a finished toolCall item: "background task: <summary>". */
+function taskItem(message: Json): AdapterItem {
+  const summary = str(message.summary).replace(/\s+/g, ' ').trim();
+  const short = summary.length > TASK_SUMMARY_MAX ? `${summary.slice(0, TASK_SUMMARY_MAX - 1).trimEnd()}…` : summary;
+  const status = str(message.status);
+  const item: AdapterItem = {
+    itemId: newId('itm'),
+    type: 'toolCall',
+    status: status === 'failed' ? 'failed' : 'completed',
+    tool: short === '' ? 'background task' : `background task: ${short}`,
+    arguments: { taskId: str(message.task_id), status, summary },
+  };
+  if (status === 'failed') item.error = summary === '' ? 'the background task failed' : summary;
+  return item;
 }
 
 function streamItem(item: StreamItem, status: 'inProgress' | 'completed'): AdapterItem {
