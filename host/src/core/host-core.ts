@@ -13,7 +13,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-import type { DirEntry, Host, HostStatus, ProjectEntry } from '../generated/common.js';
+import type { DirEntry, Host, HostStatus, KeepAwakeStatus, ProjectEntry } from '../generated/common.js';
 import { CursorExpired } from '../journal/errors.js';
 import { DEFAULT_SNAPSHOT_TURNS, MAX_SINCE_LIMIT, type Journal } from '../journal/journal.js';
 import type { JournalEvent, Subscription } from '../journal/types.js';
@@ -45,6 +45,8 @@ export interface HostCoreOptions {
   onJournalEvent?: (event: JournalEvent) => void;
   /** Longest a turn start waits for its git snapshot (turn/diff, spec 7); tests on a busy machine raise it. */
   startSnapshotWaitMs?: number;
+  /** The keep-awake status `host/status` carries (spec 4); absent: the field is left out. */
+  keepAwake?: () => KeepAwakeStatus;
 }
 
 type Result<M extends keyof MethodMap> = MethodMap[M]['result'];
@@ -60,6 +62,7 @@ export class HostCore {
   private readonly subscriptions = new Map<string, Map<string, Subscription>>();
   private readonly unwatch: (() => void)[] = [];
   private readonly observer: ((event: JournalEvent) => void) | undefined;
+  private readonly keepAwake: (() => KeepAwakeStatus) | undefined;
 
   constructor(options: HostCoreOptions) {
     this.journal = options.journal;
@@ -67,6 +70,7 @@ export class HostCore {
     this.uptime = options.uptime ?? (() => Math.floor(process.uptime()));
     this.log = options.log ?? (() => {});
     this.observer = options.onJournalEvent;
+    this.keepAwake = options.keepAwake;
     this.sessions = new SessionManager({
       journal: options.journal,
       agents: options.agents,
@@ -102,6 +106,7 @@ export class HostCore {
       agents: this.sessions.agents().map(describeAgent),
       sessionsActive: this.sessions.activeCount(),
       uptimeSeconds: this.uptime(),
+      ...(this.keepAwake ? { keepAwake: this.keepAwake() } : {}),
     };
   }
 

@@ -1018,6 +1018,37 @@
         },
         "uptimeSeconds": {
           "$ref": "#/$defs/Count"
+        },
+        "keepAwake": {
+          "description": "Additive within v1 (section 4). Absent from a host that cannot keep its computer awake.",
+          "$ref": "#/$defs/KeepAwakeStatus"
+        }
+      }
+    },
+    "KeepAwakeSetting": {
+      "description": "pluggedIn: the host holds a system-sleep assertion that is valid on AC power only; off: none.",
+      "enum": [
+        "pluggedIn",
+        "off"
+      ]
+    },
+    "KeepAwakeStatus": {
+      "type": "object",
+      "required": [
+        "setting",
+        "active",
+        "onBattery"
+      ],
+      "properties": {
+        "setting": {
+          "$ref": "#/$defs/KeepAwakeSetting"
+        },
+        "active": {
+          "description": "True only when the assertion is held and the computer runs on AC power.",
+          "type": "boolean"
+        },
+        "onBattery": {
+          "type": "boolean"
         }
       }
     },

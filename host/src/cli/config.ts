@@ -17,9 +17,14 @@
 //     "vapidContact": "mailto:me@example.org", // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
 //     "providers": [{"id": "mac-ollama", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "apiKey": "…"}]
 //                                         // optional; Providers kept on the host for the relay (config/providers.ts)
+//     "keepAwake": "pluggedIn"            // optional; "pluggedIn" (default) or "off" (power/keep-awake.ts)
 //   }
+//
+// The phone changes `keepAwake` with `host/settings/update`: updateConfigFile() rewrites the file
+// atomically (a temporary file renamed over it), keeps the previous file as config.json.bak, and leaves
+// every other key as it was.
 import { randomBytes } from 'node:crypto';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import path from 'node:path';
 
@@ -27,6 +32,7 @@ import { DEFAULT_CODEX_BINARY } from '../config/codex.js';
 import { ensurePrivateDir } from '../config/private-files.js';
 import { validateProviders, type ProviderConfig } from '../config/providers.js';
 import { DEFAULT_PORT, TLS_CERT_FILE, TLS_KEY_FILE } from '../http/server.js';
+import { KEEP_AWAKE_SETTINGS, type KeepAwakeSetting } from '../power/keep-awake.js';
 import { isValidVapidContact } from '../push/vapid-jwt.js';
 import { configDir, logsDir } from './paths.js';
 
@@ -59,6 +65,8 @@ export interface HostConfig {
   vapidContact?: string;
   /** Providers the relay serves (protocol-v1.md section 15); absent means none. Keys never leave the host. */
   providers?: ProviderConfig[];
+  /** Keep this Mac awake while plugged in (protocol-v1.md section 4); absent means "pluggedIn". */
+  keepAwake?: KeepAwakeSetting;
 }
 
 export class ConfigError extends Error {
@@ -104,6 +112,7 @@ const KEYS: readonly (keyof HostConfig)[] = [
   'logFile',
   'vapidContact',
   'providers',
+  'keepAwake',
 ];
 
 /**
@@ -164,6 +173,10 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
   const claudeExecutable = raw.claudeExecutable ?? defaults.claudeExecutable;
   const piBinary = raw.piBinary ?? defaults.piBinary;
   const providers = raw.providers === undefined ? defaults.providers : validateProviders(raw.providers, fail);
+  const keepAwake = raw.keepAwake ?? defaults.keepAwake;
+  if (keepAwake !== undefined && !(KEEP_AWAKE_SETTINGS as readonly unknown[]).includes(keepAwake)) {
+    fail(`keepAwake must be one of ${KEEP_AWAKE_SETTINGS.map((v) => JSON.stringify(v)).join(', ')}`);
+  }
 
   return {
     hostId: hostId as string,
@@ -179,6 +192,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     logFile: absolute(raw.logFile ?? defaults.logFile, 'logFile'),
     ...(vapidContact !== undefined ? { vapidContact: vapidContact as string } : {}),
     ...(providers !== undefined ? { providers } : {}),
+    ...(keepAwake !== undefined ? { keepAwake: keepAwake as KeepAwakeSetting } : {}),
   };
 }
 
@@ -221,4 +235,53 @@ export function loadConfig(file: string, options: { home?: string; create?: bool
   // A config written by hand may lack hostId; persist the generated one so the identity stays stable.
   if (options.create && (parsed as Record<string, unknown>).hostId === undefined) writeConfig(file, config);
   return { config, created: false };
+}
+
+/** The config keys a paired device may change (`host/settings/update`). */
+export type ConfigPatch = Pick<HostConfig, 'keepAwake'>;
+
+/**
+ * Sets keys in the config file and leaves every other key exactly as written (no defaults are added).
+ * The result is validated first; the new text goes to a temporary file that is flushed and renamed over
+ * the old one, so a crash leaves either the old or the new file, and the old one stays as `<file>.bak`.
+ */
+export function updateConfigFile(file: string, patch: ConfigPatch, options: { home?: string } = {}): HostConfig {
+  let raw: Record<string, unknown> = {};
+  let existed = true;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new ConfigError(file, 'must be a JSON object');
+    raw = parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof ConfigError) throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ConfigError(file, (error as Error).message);
+    existed = false;
+  }
+  const next: Record<string, unknown> = { ...raw };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  const config = validateConfig(next, file, defaultConfig(options.home));
+  if (!existed) ensurePrivateDir(path.dirname(file)); // an existing file's folder was made private at start
+  const temp = `${file}.tmp-${process.pid}`;
+  try {
+    const fd = openSync(temp, 'w', 0o600);
+    try {
+      writeSync(fd, `${JSON.stringify(next, null, 2)}\n`);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    chmodSync(temp, 0o600);
+    if (existed) {
+      copyFileSync(file, `${file}.bak`);
+      chmodSync(`${file}.bak`, 0o600);
+    }
+    renameSync(temp, file);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+  return config;
 }

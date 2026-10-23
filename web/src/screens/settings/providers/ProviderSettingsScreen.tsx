@@ -7,6 +7,8 @@ import type { HostRequester } from '../../../chat/providers/host-probe';
 import { PRESETS } from '../../../chat/providers/presets';
 import type { FetchLike } from '../../../chat/providers/probe';
 import { useLiveModel } from '../../chat/hooks';
+import { KeepAwakeSection } from '../host/KeepAwakeSection';
+import type { KeepAwakeLink } from '../host/keep-awake-model';
 import type { ChatServices } from '../../chat/services';
 import { HOST_KEY_NOTE, kindLabel, ProviderSettingsModel, routeLabel, type Form, type ProviderRow } from './settings-model';
 
@@ -17,9 +19,11 @@ export interface ProviderSettingsScreenProps {
   services: Pick<ChatServices, 'providers' | 'host'>;
   onBack: () => void;
   backLabel: string;
+  /** The paired host's stream: shows the host section (keep this Mac awake). Absent without a host. */
+  hostLink?: KeepAwakeLink;
 }
 
-export function ProviderSettingsScreen({ services, onBack, backLabel }: ProviderSettingsScreenProps) {
+export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }: ProviderSettingsScreenProps) {
   const model = useLiveModel(
     useMemo(
       () =>
@@ -61,6 +65,7 @@ export function ProviderSettingsScreen({ services, onBack, backLabel }: Provider
         </p>
       )}
       {form !== null ? <ProviderForm model={model} form={form} /> : <Overview model={model} />}
+      {form === null && hostLink !== undefined && <KeepAwakeSection link={hostLink} />}
       {model.confirm !== null && <ConfirmSheet model={model} />}
     </main>
   );

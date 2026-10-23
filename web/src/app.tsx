@@ -4,7 +4,8 @@
 // stored (never paired, or forgotten after `unpaired`) means the pairing page, unless this phone already
 // has a provider or a chat: then Home shows Chats with a "Pair your Mac" link. Close 4003 or
 // `unauthorized` (revoked, or the host lost the cookie) forgets the device and goes back to pairing.
-// Settings > Providers opens without a host too: a cloud provider needs no Mac (ADR 0006).
+// Settings > Providers opens without a host too: a cloud provider needs no Mac (ADR 0006). With a host it
+// also shows the host section (keep this Mac awake while plugged in).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import { watchBadge } from './pwa/badge';
@@ -167,7 +168,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
         />
       );
     case 'providers':
-      return <ProviderSettingsScreen services={chat} backLabel="Chats" onBack={() => router.navigate('/chats')} />;
+      return <ProviderSettingsScreen services={chat} hostLink={services.client} backLabel="Chats" onBack={() => router.navigate('/chats')} />;
     case 'session':
       return (
         <SessionScreen

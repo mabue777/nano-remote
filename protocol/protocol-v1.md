@@ -137,7 +137,7 @@ The `message` field holds one of three shapes, identical to the Codex engine's J
 
 | Direction | Requests | Notifications |
 |---|---|---|
-| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `push/*`, `device/*`, `host/status`, `provider/*` (section 15) | `initialized` |
+| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `push/*`, `device/*`, `host/status`, `host/settings/update`, `provider/*` (section 15) | `initialized` |
 | Host to client | none in v1 (see 5.3 for why) | every Journal event (section 5), `session/updated`, `host/status/changed`, `provider/delta`, `provider/usage`, `provider/done` (section 15) |
 
 Departure: the Codex engine sends approvals as host-to-client requests that must be answered on the same
@@ -177,8 +177,22 @@ Result:
 - The client then sends the `initialized` notification (mirrors Codex; the host uses it to start sending
   unsolicited notifications such as `session/updated`).
 
-### `host/status` → `{host, agents, sessionsActive, uptimeSeconds}`; `host/status/changed` notification
-with the same shape whenever an agent's status changes.
+### `host/status` → `{host, agents, sessionsActive, uptimeSeconds, keepAwake?}`; `host/status/changed` notification
+with the same shape whenever an agent's status or `keepAwake` changes.
+
+`keepAwake {setting, active, onBattery}` (additive within v1) says whether the host keeps its computer awake
+so a phone away from home can still reach it (a sleeping computer drops off the tailnet). `setting` is
+`pluggedIn` (the default) or `off`. With `pluggedIn` the host holds a system-sleep assertion that the OS
+honours on AC power only (macOS: `caffeinate -s -w <host pid>`, restarted if it dies, ended with the host);
+the display may still sleep, and a Mac with its lid closed and no external display sleeps anyway. `active`
+is true only while the assertion is held and the computer is on AC power; `onBattery` is the power source the
+host last read (it polls lightly). A host that sends no `keepAwake` cannot do this: clients show no control.
+
+### `host/settings/update {keepAwake?}` → `{keepAwake}` (additive within v1)
+Changes host settings from a paired device, at least one per request. `keepAwake` is a `setting` value; the
+host writes it to its config file (atomically, keeping the previous file as `.bak`), applies it without a
+restart, answers with the new `keepAwake` status and sends `host/status/changed` to every stream. An unknown
+value is `invalid_params`.
 
 ### `agent/list` → `{agents}` (same objects as in `initialize`).
 `capabilities` (additive within v1) is what the agent supports, fixed per agent: `steer` (`turn/steer` works),

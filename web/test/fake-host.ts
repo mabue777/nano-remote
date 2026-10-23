@@ -296,6 +296,11 @@ export class FakeHost {
   /** When set, push/test answers this error instead of {ok: true}. */
   pushTestError: { code: string; message: string; data?: Json } | undefined;
   pongStatus: 'active' | 'degraded' | 'draining' = 'active';
+  /**
+   * Keep this Mac awake (spec 4): the setting and the power source behind `host/status.keepAwake`;
+   * `host/settings/update` changes the setting, setPower() the source. Null: an older host without it.
+   */
+  keepAwake: { setting: 'pluggedIn' | 'off'; onBattery: boolean } | null = { setting: 'pluggedIn', onBattery: false };
   /** Local chat's relay (protocol section 15): the providers kept on the host, for `provider/list`. */
   hostProviders: Json[] = [];
   /** What `provider/discover` finds. */
@@ -424,6 +429,27 @@ export class FakeHost {
     this.hostProviders = [];
     this.discoverCandidates = [];
     this.providerModels.clear();
+    this.keepAwake = { setting: 'pluggedIn', onBattery: false };
+  }
+
+  /** The `keepAwake` status object, as the real host reports it. */
+  keepAwakeStatus(): Json {
+    if (this.keepAwake === null) return undefined;
+    const { setting, onBattery } = this.keepAwake;
+    return { setting, active: setting === 'pluggedIn' && !onBattery, onBattery };
+  }
+
+  hostStatus(): Json {
+    const { keepAwake: _example, ...status } = exampleMessage('44').params;
+    const keepAwake = this.keepAwakeStatus();
+    return keepAwake === undefined ? status : { ...status, keepAwake };
+  }
+
+  /** The Mac is unplugged (or plugged back in): host/status/changed to every stream, as the poll would. */
+  setPower(onBattery: boolean): void {
+    if (this.keepAwake === null) return;
+    this.keepAwake.onBattery = onBattery;
+    this.broadcast('host/status/changed', this.hostStatus());
   }
 
   session(sessionId: string): FakeSession {
@@ -694,7 +720,16 @@ export class FakeHost {
         return { result: { files: [...files.values()] } };
       }
       case 'host/status':
-        return { result: exampleMessage('44').params };
+        return { result: this.hostStatus() };
+      case 'host/settings/update': {
+        if (this.keepAwake === null) throw new HostError({ code: 'method_not_found', message: 'host/settings/update' });
+        if (params.keepAwake !== 'pluggedIn' && params.keepAwake !== 'off') {
+          throw new HostError({ code: 'invalid_params', message: 'keepAwake must be pluggedIn or off', data: { path: 'params.keepAwake' } });
+        }
+        this.keepAwake.setting = params.keepAwake;
+        this.broadcast('host/status/changed', this.hostStatus());
+        return { result: { keepAwake: this.keepAwakeStatus() } };
+      }
       case 'push/subscribe': {
         const subscription = params.subscription;
         if (typeof subscription?.endpoint !== 'string' || typeof subscription?.keys?.p256dh !== 'string' || typeof subscription?.keys?.auth !== 'string') {

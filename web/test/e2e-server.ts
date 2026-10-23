@@ -156,6 +156,12 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/touch':
               host.session(body.sessionId).summary.updatedAt = Math.floor(Date.now() / 1000) - Number(body.agoSeconds ?? 0);
               return json(200, { ok: true });
+            case '/test/power':
+              host.setPower(body.onBattery === true);
+              return json(200, { ok: true });
+            case '/test/keep-awake':
+              host.keepAwake = body.supported === false ? null : { setting: body.setting ?? 'pluggedIn', onBattery: body.onBattery === true };
+              return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);
               return json(200, { ok: true });

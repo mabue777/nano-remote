@@ -231,6 +231,14 @@ NEGATIVE = [
      {"files": [{"path": "a.txt", "kind": "renamed", "diff": ""}]}),
     ("provider/list entry carrying no hasKey is rejected", "common.json#/$defs/ProviderInfo",
      {"id": "p1", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "kind": "ollama"}),
+    ("host/settings/update with an unknown keepAwake value is rejected",
+     "methods.json#/$defs/host~1settings~1update.params", {"keepAwake": "always"}),
+    ("host/settings/update with no setting is rejected",
+     "methods.json#/$defs/host~1settings~1update.params", {}),
+    ("host/status keepAwake without active is rejected", "common.json#/$defs/HostStatus",
+     {"host": {"hostId": "host_1", "name": "m", "version": "0.1.0", "os": "darwin", "arch": "arm64"},
+      "agents": [], "sessionsActive": 0, "uptimeSeconds": 1,
+      "keepAwake": {"setting": "pluggedIn", "onBattery": False}}),
 ]
 
 

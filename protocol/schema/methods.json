@@ -43,6 +43,17 @@
     "host/status.params": {"type": "object"},
     "host/status.result": {"$ref": "common.json#/$defs/HostStatus"},
 
+    "host/settings/update.params": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {"keepAwake": {"$ref": "common.json#/$defs/KeepAwakeSetting"}}
+    },
+    "host/settings/update.result": {
+      "type": "object",
+      "required": ["keepAwake"],
+      "properties": {"keepAwake": {"$ref": "common.json#/$defs/KeepAwakeStatus"}}
+    },
+
     "agent/list.params": {"type": "object"},
     "agent/list.result": {
       "type": "object",

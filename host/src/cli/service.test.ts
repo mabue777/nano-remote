@@ -1,6 +1,7 @@
 // The running service end to end on loopback: config -> HostService -> control channel -> pairing ->
 // stream -> graceful shutdown. Also the bin's commands through runCli with an injected environment.
 import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import net, { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -22,6 +23,8 @@ import { DEFAULT_VAPID_CONTACT } from '../push/vapid-jwt.js';
 import { EXIT_FAILURE, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli, stableNodePath, type CliEnv } from './commands.js';
 import { defaultConfig, type HostConfig } from './config.js';
 import { controlRequest } from './control.js';
+import type { ChildLike, PowerSource } from '../power/keep-awake.js';
+import { rpcError } from '../core/testing/harness.js';
 import { createLogger } from './log.js';
 import { controlSecretPath, controlSocketPath } from './paths.js';
 import { buildAgents, HostService, listenPlan, shortHostname } from './service.js';
@@ -31,8 +34,35 @@ let home: string;
 let services: HostService[] = [];
 let clients: TestClient[] = [];
 
+/** A caffeinate stand-in: no real power assertion in tests. */
+class FakeCaffeinate extends EventEmitter implements ChildLike {
+  killed = false;
+  constructor(readonly args: readonly string[]) {
+    super();
+    queueMicrotask(() => this.emit('spawn'));
+  }
+  kill(): boolean {
+    this.killed = true;
+    queueMicrotask(() => this.emit('exit', null, 'SIGTERM'));
+    return true;
+  }
+}
+let caffeinated: FakeCaffeinate[] = [];
+const power: { source: PowerSource } = { source: 'ac' };
+const fakeKeepAwake = {
+  supported: true,
+  spawn: (_command: string, args: readonly string[]) => {
+    const child = new FakeCaffeinate(args);
+    caffeinated.push(child);
+    return child;
+  },
+  readPower: async () => power.source,
+};
+
 beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), 'nano-svc-'));
+  caffeinated = [];
+  power.source = 'ac';
 });
 
 afterEach(async () => {
@@ -74,6 +104,7 @@ async function startService(options: { drainMs?: number; agent?: FakeAgent; conf
     agents: [options.agent ?? new FakeAgent()],
     publicDir: home,
     drainMs: options.drainMs ?? 0,
+    keepAwake: fakeKeepAwake,
   });
   services.push(service);
   return { service, lines, configPath, target: { socketPath: controlSocketPath(configPath), secretPath: controlSecretPath(configPath) } };
@@ -420,6 +451,64 @@ describe('host service', () => {
       providers: [{ id: 'mac', name: 'Ollama on this Mac', baseURL: 'http://127.0.0.1:11434', kind: 'ollama', hasKey: true }],
     });
     expect(JSON.stringify(client.frames)).not.toContain('sk-never-leaves');
+  });
+
+  it('keeps the Mac awake by default: caffeinate -s -w <pid> runs, host/status says active, stop kills it', async () => {
+    const started = await startService();
+    expect(caffeinated).toHaveLength(1);
+    expect(caffeinated[0]!.args).toEqual(['-s', '-w', String(process.pid)]);
+    const client = await connect(started, await pairDevice(started));
+    await client.handshake();
+    expect((await client.call('host/status')).result).toMatchObject({ keepAwake: { setting: 'pluggedIn', active: true, onBattery: false } });
+    await started.service.shutdown('test');
+    expect(caffeinated[0]!.killed).toBe(true);
+  });
+
+  it('with keepAwake "off" in the config starts no assertion', async () => {
+    const started = await startService({ config: { keepAwake: 'off' } });
+    expect(caffeinated).toHaveLength(0);
+    expect(started.service.core.hostStatus().keepAwake).toEqual({ setting: 'off', active: false, onBattery: false });
+  });
+
+  it('host/settings/update keepAwake persists to config.json (with .bak), applies at once, and tells every stream', async () => {
+    const started = await startService();
+    const original = { hostId: 'host_test', port: 7420, enabledAgents: ['codex'], vapidContact: 'mailto:me@example.org' };
+    writeFileSync(started.configPath, JSON.stringify(original));
+    const client = await connect(started, await pairDevice(started));
+    await client.handshake();
+    const other = await connect(started, await pairDevice(started, 'iPad'));
+    await other.handshake();
+
+    const result = await client.call('host/settings/update', { keepAwake: 'off' });
+    expect(result.result).toEqual({ keepAwake: { setting: 'off', active: false, onBattery: false } });
+    expect(caffeinated[0]!.killed).toBe(true);
+    expect(JSON.parse(readFileSync(started.configPath, 'utf8'))).toEqual({ ...original, keepAwake: 'off' });
+    expect(JSON.parse(readFileSync(`${started.configPath}.bak`, 'utf8'))).toEqual(original);
+    const changed = (c: TestClient, setting: string) =>
+      c.until(() =>
+        c.messages.find(
+          (m) => m.method === 'host/status/changed' && (m.params as { keepAwake?: { setting?: string } }).keepAwake?.setting === setting,
+        ),
+      );
+    await changed(other, 'off');
+
+    await client.call('host/settings/update', { keepAwake: 'pluggedIn' });
+    await other.until(() => caffeinated.length === 2 && caffeinated[1]!.listenerCount('spawn') === 0);
+    await changed(other, 'pluggedIn');
+    expect(started.service.core.hostStatus().keepAwake).toEqual({ setting: 'pluggedIn', active: true, onBattery: false });
+
+    expect(await rpcError(client, 'host/settings/update', { keepAwake: 'always' })).toMatchObject({
+      code: 'invalid_params',
+      data: { path: 'params.keepAwake' },
+    });
+    expect(await rpcError(client, 'host/settings/update', {})).toMatchObject({ code: 'invalid_params' });
+    expect(JSON.parse(readFileSync(started.configPath, 'utf8')).keepAwake).toBe('pluggedIn');
+  });
+
+  it('host/status reports battery: not active while the Mac runs on battery', async () => {
+    power.source = 'battery';
+    const started = await startService();
+    expect(started.service.core.hostStatus().keepAwake).toEqual({ setting: 'pluggedIn', active: false, onBattery: true });
   });
 
   it('revoking through the control channel closes the device stream with 4003', async () => {

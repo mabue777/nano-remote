@@ -13,7 +13,8 @@
         {"id": "claude", "name": "Claude Code", "status": "ready"}
       ],
       "sessionsActive": 1,
-      "uptimeSeconds": 86400
+      "uptimeSeconds": 86400,
+      "keepAwake": {"setting": "pluggedIn", "active": true, "onBattery": false}
     }
   }
 }

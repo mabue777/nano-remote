@@ -13,6 +13,7 @@ export { RpcError, type ErrorBody, type ErrorCode };
 export interface MethodMap {
   initialize: { params: m.InitializeParams; result: m.InitializeResult };
   'host/status': { params: m.HostStatusParams; result: m.HostStatus };
+  'host/settings/update': { params: m.HostSettingsUpdateParams; result: m.HostSettingsUpdateResult };
   'agent/list': { params: m.AgentListParams; result: m.AgentListResult };
   'model/list': { params: m.ModelListParams; result: m.ModelListResult };
   'fs/readDirectory': { params: m.FsReadDirectoryParams; result: m.FsReadDirectoryResult };

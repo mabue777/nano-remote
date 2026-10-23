@@ -33,7 +33,9 @@ import { VapidSigner } from '../push/vapid-jwt.js';
 import { MAX_MESSAGE_BYTES } from '../stream/constants.js';
 import { PresenceRegistry } from '../stream/presence.js';
 import { MethodRegistry } from '../stream/router.js';
-import type { HostConfig } from './config.js';
+import { KEEP_AWAKE_SETTINGS, KeepAwake, DEFAULT_KEEP_AWAKE, type KeepAwakeOptions, type KeepAwakeSetting } from '../power/keep-awake.js';
+import { RpcError } from '../errors.js';
+import { updateConfigFile, type HostConfig } from './config.js';
 import { ControlRequestError, ControlServer, ensureControlSecret, type ControlStatus } from './control.js';
 import type { Logger } from './log.js';
 import { controlSecretPath, controlSocketPath, vapidKeysPath } from './paths.js';
@@ -56,6 +58,8 @@ export interface ServiceOptions {
   publicDir?: string;
   drainMs?: number;
   pingTimeoutMs?: number;
+  /** Overrides the keep-awake process spawner and power reader (tests: no caffeinate, no pmset). */
+  keepAwake?: Pick<KeepAwakeOptions, 'spawn' | 'readPower' | 'supported' | 'pollMs' | 'restartMs'>;
 }
 
 /** This Mac's short name: `mabue-mbp` from `mabue-mbp.local`. */
@@ -122,6 +126,7 @@ export class HostService {
     readonly control: ControlServer,
     readonly notifier: PushNotifier,
     readonly relay: ProviderRelay,
+    readonly keepAwake: KeepAwake,
     private readonly options: ServiceOptions,
     private readonly startedAt: number,
   ) {}
@@ -172,8 +177,17 @@ export class HostService {
       isPaired: (clientId) => devices.get(clientId) !== undefined,
       log: (event, fields) => logger.info(event, { ...fields }),
     });
-    const core = new HostCore({
+    // Keep this Mac awake while plugged in (spec 4): a sleeping Mac drops off the tailnet.
+    let core: HostCore | undefined;
+    const keepAwake = new KeepAwake({
+      setting: config.keepAwake ?? DEFAULT_KEEP_AWAKE,
+      onChange: () => core?.notifyHostStatusChanged(),
+      log: (event, fields) => logger.info(event, fields ?? {}),
+      ...options.keepAwake,
+    });
+    core = new HostCore({
       journal,
+      keepAwake: () => keepAwake.status(),
       agents,
       host,
       store,
@@ -200,6 +214,21 @@ export class HostService {
       relay,
       notify: (streamId, method, params) => server?.streams.notifyStream(streamId, method, params) ?? false,
       log: (event, fields) => logger.info(event, fields),
+    });
+    const hostCore = core;
+    registry.register('host/settings/update', (params) => {
+      const raw = (params as Record<string, unknown>).keepAwake;
+      if (raw === undefined) throw RpcError.invalidParams('params', 'name at least one setting (keepAwake)');
+      if (!(KEEP_AWAKE_SETTINGS as readonly unknown[]).includes(raw)) {
+        throw RpcError.invalidParams('params.keepAwake', `keepAwake must be one of ${KEEP_AWAKE_SETTINGS.join(', ')}`);
+      }
+      const setting = raw as KeepAwakeSetting;
+      // Persist first: a setting the file does not keep would come back after a restart.
+      updateConfigFile(options.configPath, { keepAwake: setting });
+      logger.info('settings.updated', { keepAwake: setting });
+      keepAwake.set(setting); // notifies host/status/changed when the status changes
+      hostCore.notifyHostStatusChanged();
+      return { keepAwake: keepAwake.status() };
     });
     try {
       server = await HostServer.start({
@@ -240,15 +269,17 @@ export class HostService {
         },
         log: (event, fields) => logger.info(event, fields),
       });
-      service = new HostService(server, core, journal, store, devices, control, notifier, relay, options, startedAt);
+      service = new HostService(server, core, journal, store, devices, control, notifier, relay, keepAwake, options, startedAt);
       logger.info('host.listening', {
         origin: server.origin,
         addresses: server.addresses.map((a) => a.address),
         port: server.port,
         agents: agents.map((a) => ({ id: a.id, status: a.state().status })),
       });
+      await keepAwake.start();
       return service;
     } catch (error) {
+      keepAwake.stop();
       await control?.close();
       await server?.close();
       await core.close();
@@ -295,6 +326,7 @@ export class HostService {
     if (drainMs > 0 && streams > 0) await new Promise((resolve) => setTimeout(resolve, drainMs));
     await this.server.close(); // every stream closes with 4010, then the listeners
     logger.info('host.streams_closed', { streams });
+    this.keepAwake.stop();
     await this.core.close();
     // Queued pushes read the subscriptions: let them finish before the device store closes.
     await this.notifier.close();

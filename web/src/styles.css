@@ -1745,6 +1745,34 @@ button.danger {
   margin-bottom: 18px;
 }
 
+.host-settings h2 {
+  margin: 0 0 10px;
+}
+
+.keep-awake-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.host-settings p {
+  margin: 8px 0 0;
+}
+
+/* The status line: green when the Mac is kept awake, plain text otherwise (amber is too faint for text). */
+.keep-awake-status {
+  font-weight: 600;
+}
+
+.keep-awake-status[data-kind='active'] {
+  color: var(--ok);
+}
+
+.keep-awake-status[data-kind='off'] {
+  color: var(--muted);
+}
+
 .settings-notice {
   display: flex;
   align-items: center;
