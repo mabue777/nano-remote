@@ -7,15 +7,15 @@ import path from 'node:path';
 import type {
   Decision,
   FileChange,
-  InputPart,
   InputQuestion,
   ModelInfo,
   Settings,
   TurnError,
   Usage,
 } from '../../generated/common.js';
-import type { AdapterApprovalRequest, AdapterInputRequest, AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
+import type { AdapterApprovalRequest, AdapterInputPart, AdapterInputRequest, AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
 import type { ClaudeConfig } from '../../config/claude.js';
+import { fileLine, inlineImage } from '../shared/attachments.js';
 
 type Json = Record<string, unknown>;
 
@@ -80,18 +80,44 @@ export function sessionModel(settings: Settings, config: Pick<ClaudeConfig, 'def
 }
 
 /**
- * Protocol input as the text of one user message. Text parts are joined by blank lines. The adapter sends
- * no image or document blocks: a mention becomes `@path` (Claude Code's own way to point at a file) and an
- * image its URL (a data URL is too large for a prompt and is left out with a note).
+ * Protocol input as the text of one user message. Text parts are joined by blank lines. A mention becomes
+ * `@path` (Claude Code's own way to point at a file), a file attachment (spec 8.1) `Attached file: <path>`,
+ * and an image that is not sent as an image block its path line or URL (a data URL is too large for a
+ * prompt and is left out with a note).
  */
-export function toUserText(input: readonly InputPart[]): string {
+export function toUserText(input: readonly AdapterInputPart[]): string {
   return input
     .map((part) => {
       if (part.type === 'text') return part.text;
       if (part.type === 'mention') return `@${part.path}`;
+      if (part.type === 'file' || part.path !== undefined) return fileLine(part);
       return part.url.startsWith('data:') ? '[an image was attached, but this agent cannot receive images]' : `[image: ${part.url}]`;
     })
     .join('\n\n');
+}
+
+/** An Anthropic image content block (base64 source). */
+export interface ImageBlock {
+  type: 'image';
+  source: { type: 'base64'; media_type: string; data: string };
+}
+
+/**
+ * The content of one user message: the text alone when no image goes as an image block, else the image
+ * blocks (stored attachments read from their path, data URLs decoded; JPEG, PNG, GIF and WebP) followed
+ * by one text block with everything else (toUserText). Images of other types go as their path line.
+ */
+export async function toUserContent(input: readonly AdapterInputPart[]): Promise<string | (ImageBlock | { type: 'text'; text: string })[]> {
+  const images: ImageBlock[] = [];
+  const rest: AdapterInputPart[] = [];
+  for (const part of input) {
+    const image = part.type === 'image' ? await inlineImage(part) : undefined;
+    if (image !== undefined) images.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
+    else rest.push(part);
+  }
+  const text = toUserText(rest);
+  if (images.length === 0) return text;
+  return text === '' ? images : [...images, { type: 'text', text }];
 }
 
 /** The decisions an approval offers: "for the session" only when the SDK suggested rules to remember. */

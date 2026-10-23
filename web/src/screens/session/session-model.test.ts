@@ -5,8 +5,12 @@ import { SID, agentItem, approval, ev, inputRequest, session, snapshot, summary,
 import { Replica } from '../../replica/replica';
 import type { Item, TurnView } from '../../replica/types';
 import type { AgentsSource } from '../capabilities';
+import { FakeUploader, fakeObjectUrls, fakeResize, picked } from '../../../test/attachment-doubles';
+import type { Agent } from '../../generated/common';
 import {
+  type AttachmentServices,
   commandSummary,
+  inputText,
   formatDuration,
   itemRow,
   NO_STEER_NOTE,
@@ -25,7 +29,7 @@ function command(over: Record<string, unknown> = {}): any {
   return { itemId: 'c1', type: 'command', turnId: 't1', status: 'inProgress', command: '/bin/zsh -lc "echo hello > hello.txt"', cwd: '/w', output: '', ...over };
 }
 
-async function setup(options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource } = {}) {
+async function setup(options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource; attachments?: AttachmentServices } = {}) {
   const client = new FakeTransport();
   client.rule('session/list', () => ({ sessions: [summary({ title: 'Listed title', cwd: '/Users/me/Desktop/phone-test' })] }));
   client.rule('session/close', () => ({ ok: true }));
@@ -33,7 +37,12 @@ async function setup(options: { open?: boolean; turns?: any[]; over?: Record<str
   const replica = new Replica({ client, storage: null, newClientMessageId: () => `cm-${++n}`, now: () => 100 });
   client.goReady();
   await settle();
-  const model = new SessionModel({ sessionId: SID, replica, ...(options.agents ? { agents: options.agents } : {}) });
+  const model = new SessionModel({
+    sessionId: SID,
+    replica,
+    ...(options.agents ? { agents: options.agents } : {}),
+    ...(options.attachments ? { attachments: options.attachments } : {}),
+  });
   const changes = vi.fn();
   model.subscribe(changes);
   if (options.open !== false) {
@@ -90,7 +99,7 @@ describe('helpers', () => {
     const base = { turnId: 't1', status: 'completed' };
     expect(
       itemRow({ ...base, itemId: 'u', type: 'userMessage', content: [{ type: 'text', text: 'hi' }, { type: 'mention', name: 'a.ts', path: '/a.ts' }, { type: 'image', url: 'data:' }] } as Item, false),
-    ).toEqual({ kind: 'user', itemId: 'u', text: 'hi\n@a.ts', attachments: 1 });
+    ).toEqual({ kind: 'user', itemId: 'u', text: 'hi\n@a.ts', images: [{ url: 'data:', name: 'image' }], files: [] });
     expect(itemRow(agentItem('a', 't1', 'yo'), false)).toEqual({ kind: 'agent', itemId: 'a', text: 'yo', streaming: true });
     expect(itemRow({ ...base, itemId: 'r', type: 'reasoning', summary: 'Thinking' } as Item, true)).toEqual({
       kind: 'reasoning', itemId: 'r', summary: 'Thinking', text: '', expanded: true, streaming: false,
@@ -198,7 +207,7 @@ describe('SessionModel: what the screen shows', () => {
     expect(model.runningTurnId).toBe('t1');
     expect(model.mode).toBe('steer');
     expect(model.turns[0]!.items).toEqual([
-      { kind: 'user', itemId: 'u1', text: 'hi', attachments: 0 },
+      { kind: 'user', itemId: 'u1', text: 'hi', images: [], files: [] },
       { kind: 'agent', itemId: 'a1', text: 'Hel', streaming: true },
     ]);
     live(6, [
@@ -336,7 +345,7 @@ describe('SessionModel: agent capabilities (spec 4)', () => {
     model.setDraft('after this');
     model.send();
     expect(client.count('turn/steer')).toBe(0);
-    expect(model.steerRows).toEqual([{ clientMessageId: 'cm-1', text: 'after this', state: 'queued', label: 'Queued until the turn ends' }]);
+    expect(model.steerRows).toEqual([{ clientMessageId: 'cm-1', text: 'after this', images: [], files: [], state: 'queued', label: 'Queued until the turn ends' }]);
     live(2, [['turn/completed', { turn: turn('t1', { status: 'completed' }) }]]);
     expect(model.steerRows).toEqual([]);
     expect(client.last('turn/start').params.input).toEqual([{ type: 'text', text: 'after this' }]);
@@ -425,7 +434,7 @@ describe('SessionModel: composer (spec 7)', () => {
     model.steerInstead('cm-1');
     expect(model.turns).toEqual([]);
     expect(client.last('turn/steer').params).toEqual({ sessionId: SID, turnId: 't9', input: [{ type: 'text', text: 'also list files' }], clientMessageId: 'cm-2' });
-    expect(model.steerRows).toEqual([{ clientMessageId: 'cm-2', text: 'also list files', state: 'sending', label: 'Sending…' }]);
+    expect(model.steerRows).toEqual([{ clientMessageId: 'cm-2', text: 'also list files', images: [], files: [], state: 'sending', label: 'Sending…' }]);
     model.steerInstead('cm-unknown'); // nothing to do
   });
 
@@ -645,5 +654,165 @@ describe('SessionModel: "N files changed" per finished turn (turn/diff, spec 7)'
     expect(diffCalls(client)).toHaveLength(0);
     model.openChanges('t1');
     expect(model.changesTurnId).toBeUndefined();
+  });
+});
+
+describe('SessionModel: attachments (spec 8.1)', () => {
+  const codex = (attachments?: { images: boolean; files: boolean }): Agent => ({
+    id: 'codex',
+    name: 'Codex',
+    status: 'ready',
+    capabilities: { steer: true, diff: true, approvalModes: [], ...(attachments ? { attachments } : {}) },
+  });
+  const MAX = 20 * 1024 * 1024;
+
+  /** `null`: a host without `limits.maxAttachmentBytes`. */
+  function services(maxBytes: number | null = MAX) {
+    const uploader = new FakeUploader();
+    const urls = fakeObjectUrls();
+    const attachments: AttachmentServices = { maxBytes: () => maxBytes ?? undefined, uploader: uploader.upload, resize: fakeResize().deps, objectUrls: urls.urls };
+    return { uploader, urls, attachments };
+  }
+
+  it('inputText splits a message into text, image thumbnails and file chips', () => {
+    expect(
+      inputText([
+        { type: 'text', text: 'look' },
+        { type: 'image', url: '/v1/blob/blb_a?x=1' },
+        { type: 'image', url: 'data:image/png;base64,AA' },
+        { type: 'image', url: '/' },
+        { type: 'file', url: '/v1/blob/blb_b', name: 'log.txt', mediaType: 'text/plain' },
+      ]),
+    ).toEqual({
+      text: 'look',
+      images: [
+        { url: '/v1/blob/blb_a?x=1', name: 'blb_a' },
+        { url: 'data:image/png;base64,AA', name: 'image' },
+        { url: '/', name: 'image' },
+      ],
+      files: [{ url: '/v1/blob/blb_b', name: 'log.txt', mediaType: 'text/plain' }],
+    });
+  });
+
+  it('the attach button needs uploads, a host limit, an agent with attachments, and an open session', async () => {
+    const both = services();
+    expect((await setup({ agents: () => [codex({ images: true, files: true })], attachments: both.attachments })).model.attachRules).toEqual({
+      images: true,
+      files: true,
+      maxBytes: MAX,
+    });
+    expect((await setup({ agents: () => [codex({ images: true, files: true })] })).model.attachRules).toBeUndefined();
+    expect((await setup({ agents: () => [codex({ images: true, files: true })], attachments: services(null).attachments })).model.attachRules).toBeUndefined();
+    expect((await setup({ agents: () => [codex()], attachments: services().attachments })).model.attachRules).toBeUndefined();
+    expect((await setup({ agents: () => [codex({ images: false, files: false })], attachments: services().attachments })).model.attachRules).toBeUndefined();
+    expect((await setup({ attachments: services().attachments })).model.attachRules).toBeUndefined();
+    const closed = await setup({ agents: () => [codex({ images: true, files: true })], attachments: services().attachments });
+    closed.live(1, [['session/closed', { reason: 'archived' }]]);
+    expect(closed.model.attachRules).toBeUndefined();
+    // Images only: the picker asks for images; an agent without image input still takes photos (as files).
+    const imagesOnly = await setup({ agents: () => [codex({ images: true, files: false })], attachments: services().attachments });
+    expect(imagesOnly.model.attachAccept).toBe('image/*');
+    const filesOnly = await setup({ agents: () => [codex({ images: false, files: true })], attachments: services().attachments });
+    expect(filesOnly.model.attachRules).toEqual({ images: true, files: true, maxBytes: MAX });
+    expect(filesOnly.model.attachAccept).toBe('');
+  });
+
+  it('send waits for uploads, then sends text and attachments in one turn/start and empties the tray', async () => {
+    const { uploader, urls, attachments } = services();
+    const { client, model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    model.attach([picked('IMG@4000x3000.jpg', 'image/jpeg'), picked('log.txt', 'text/plain')]);
+    model.setDraft('  what broke?  ');
+    expect(model.canSend).toBe(false);
+    expect(model.attachmentsNote).toBe('Uploading attachments…');
+    await settle();
+    // The file uploads at once (blb_..1); the photo after it was downscaled (blb_..2).
+    const byName = (name: string) => uploader.uploads.find((u) => u.name === name)!;
+    byName('log.txt').reject('Upload failed: the host answered 500.');
+    await settle();
+    expect(model.attachmentsNote).toBe('Uploading attachments…');
+    byName('IMG@4000x3000.jpg').resolve();
+    await settle();
+    expect(model.attachmentsNote).toBe('An attachment did not upload: retry or remove it.');
+    expect(model.canSend).toBe(false);
+    model.retryAttachment(model.attachments!.entries[1]!.id);
+    uploader.last.resolve();
+    await settle();
+    expect(model.attachmentsNote).toBeUndefined();
+    expect(model.canSend).toBe(true);
+    model.send();
+    expect(client.last('turn/start').params.input).toEqual([
+      { type: 'text', text: 'what broke?' },
+      { type: 'image', url: `/v1/blob/blb_${'2'.padStart(22, '0')}` },
+      { type: 'file', url: `/v1/blob/blb_${'3'.padStart(22, '0')}`, name: 'log.txt', mediaType: 'text/plain' },
+    ]);
+    expect(model.attachments!.entries).toEqual([]);
+    expect(urls.revoked).toEqual(['blob:preview-1']);
+    expect(model.draft).toBe('');
+    // The optimistic message shows the thumbnail and the chip at once.
+    const user = model.turns.at(-1)!.items[0]!;
+    expect(user).toMatchObject({ kind: 'user', text: 'what broke?', images: [{ name: `blb_${'2'.padStart(22, '0')}` }], files: [{ name: 'log.txt' }] });
+  });
+
+  it('a message may be attachments only; removing the last one leaves an empty draft unsendable', async () => {
+    const { uploader, attachments } = services();
+    const { client, model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    model.attach([picked('a.txt', 'text/plain')]);
+    uploader.last.resolve();
+    await settle();
+    expect(model.canSend).toBe(true);
+    model.removeAttachment(model.attachments!.entries[0]!.id);
+    expect(model.canSend).toBe(false);
+    model.attach([picked('b.txt', 'text/plain')]);
+    uploader.last.resolve();
+    await settle();
+    model.send();
+    expect(client.last('turn/start').params.input).toEqual([{ type: 'file', url: `/v1/blob/blb_${'2'.padStart(22, '0')}`, name: 'b.txt', mediaType: 'text/plain' }]);
+  });
+
+  it('attach does nothing without rules or files; dispose aborts uploads in flight', async () => {
+    const { uploader, attachments } = services();
+    const none = await setup({ agents: () => [codex()], attachments });
+    none.model.attach([picked('a.txt', 'text/plain')]);
+    expect(uploader.uploads).toEqual([]);
+    none.model.retryAttachment('att-1');
+    const { model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    model.attach([]);
+    model.attach([picked('a.txt', 'text/plain')]);
+    model.dispose();
+    expect(uploader.last.aborted).toBe(true);
+    const without = await setup({});
+    without.model.attach([picked('a.txt', 'text/plain')]);
+    without.model.removeAttachment('x');
+    without.model.retryAttachment('x');
+    expect(without.model.attachmentsNote).toBeUndefined();
+  });
+
+  it('attachments steer into a running turn, and wait with a queued message for an agent that cannot steer', async () => {
+    const { uploader, attachments } = services();
+    const { client, model, live } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    live(1, [['turn/started', { turn: turn('t1') }]]);
+    model.attach([picked('a@10x10.png', 'image/png')]);
+    await settle();
+    uploader.last.resolve();
+    await settle();
+    model.send();
+    expect(client.last('turn/steer').params.input).toEqual([{ type: 'image', url: `/v1/blob/blb_${'1'.padStart(22, '0')}` }]);
+    expect(model.steerRows[0]).toMatchObject({ text: '', images: [{ url: `/v1/blob/blb_${'1'.padStart(22, '0')}` }], files: [] });
+
+    const noSteer = services();
+    const claude: Agent = { id: 'codex', name: 'Codex', status: 'ready', capabilities: { steer: false, diff: true, approvalModes: [], attachments: { images: true, files: true } } };
+    const q = await setup({ agents: () => [claude], attachments: noSteer.attachments });
+    q.live(1, [['turn/started', { turn: turn('t1') }]]);
+    q.model.attach([picked('n.txt', 'text/plain')]);
+    noSteer.uploader.last.resolve();
+    await settle();
+    q.model.setDraft('later');
+    q.model.send();
+    expect(q.model.steerRows[0]).toMatchObject({ state: 'queued', text: 'later', files: [{ name: 'n.txt' }] });
+    q.live(2, [['turn/completed', { turn: turn('t1', { status: 'completed' }) }]]);
+    expect(q.client.last('turn/start').params.input).toEqual([
+      { type: 'text', text: 'later' },
+      { type: 'file', url: `/v1/blob/blb_${'1'.padStart(22, '0')}`, name: 'n.txt', mediaType: 'text/plain' },
+    ]);
   });
 });

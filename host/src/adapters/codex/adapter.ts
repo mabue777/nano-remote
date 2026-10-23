@@ -12,11 +12,12 @@
 // Supervision: when the engine dies on its own the adapter emits `status/changed {error}` and
 // `agent/exited`; calls in flight reject with `agent_unavailable`. The next call starts a new engine and
 // resumes the thread. `kill()` ends the engine's process group and silences the adapter for good.
-import type { Decision, InputPart, Settings } from '../../generated/common.js';
+import type { Decision, Settings } from '../../generated/common.js';
 import type {
   Adapter,
   AdapterApprovalRequest,
   AdapterEvent,
+  AdapterInputPart,
   AdapterListener,
 } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
@@ -145,7 +146,7 @@ export class CodexAdapter implements Adapter {
     await this.connect();
   }
 
-  async turnStart(input: InputPart[], clientMessageId: string): Promise<void> {
+  async turnStart(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     const engine = await this.ready();
     this.running = true;
     this.turnId = undefined;
@@ -175,7 +176,7 @@ export class CodexAdapter implements Adapter {
     for (const handle of held) handle();
   }
 
-  async steer(input: InputPart[], clientMessageId: string): Promise<void> {
+  async steer(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     const engine = await this.ready();
     await this.turnStarting?.catch(() => {});
     if (!this.running || this.turnId === undefined) {

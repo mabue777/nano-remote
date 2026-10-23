@@ -24,11 +24,21 @@ _Avoid_: engine (the agent's own program, which the adapter starts), bot, provid
 
 **Agent capabilities**:
 What an agent supports, fixed per agent and sent with it in `initialize` and
-`agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes) and
-`approvalModes` (the approval modes it honours; Pi honours none). The phone
-shows only the controls an agent supports; without capabilities (an older
-host) it offers everything and learns from `not_supported`.
+`agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes),
+`approvalModes` (the approval modes it honours; Pi honours none) and
+`attachments` (whether it sees attached images and takes attached files). The
+phone shows only the controls an agent supports; without capabilities (an older
+host) it offers everything and learns from `not_supported` (attachments
+excepted: an older host takes no uploads, so the phone offers none).
 _Avoid_: features, flags
+
+**Attachment**:
+A photo or file the phone uploads to the host for one agent session
+(`POST /v1/blob`, protocol section 8.1) before sending the message that refers
+to it by URL. The host keeps it in the session's folder in its app folder until
+the session is deleted, and hands it to the agent as an image the agent can see
+or as a file path in the prompt.
+_Avoid_: upload (the act, not the thing), blob (the URL's word, not the domain's)
 
 **Model provider**:
 A service that serves models over an OpenAI-style or Ollama API (Ollama,

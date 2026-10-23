@@ -4,7 +4,7 @@
 //   session/start  -> pi --mode rpc --no-extensions -e <Nano's approval extension> --session-id <new id>,
 //                     then set_model {provider, modelId} when settings.model names `provider/id`
 //   resume         -> the same command with the stored --session-id (pi reloads its session file)
-//   turn/start     -> prompt {message, images}
+//   turn/start     -> prompt {message, images} (attachments: images read from their path, files as a path line)
 //   turn/steer     -> steer {message, images}
 //   turn/interrupt -> open dialogs declined, clear_queue, abort
 //   items          <- message_update text and thinking deltas, message_end, tool_execution_start/update/end
@@ -23,8 +23,8 @@
 // session. `kill()` ends the process group and silences the adapter for good.
 import { randomUUID } from 'node:crypto';
 
-import type { Decision, InputPart, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Decision, Settings } from '../../generated/common.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { piConfig, type PiConfig } from '../../config/pi.js';
 import { RpcError } from '../../errors.js';
@@ -133,7 +133,8 @@ export class PiAdapter implements Adapter {
     return this.model === undefined ? {} : { model: this.model };
   }
 
-  async turnStart(input: InputPart[], _clientMessageId: string): Promise<void> {
+  async turnStart(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
+    const prompt = await toPrompt(input);
     const engine = await this.ready();
     this.running = true;
     this.lastError = undefined;
@@ -142,7 +143,7 @@ export class PiAdapter implements Adapter {
     this.declined.clear();
     let result: Json;
     try {
-      result = obj(await engine.call('prompt', toPrompt(input)));
+      result = obj(await engine.call('prompt', prompt));
     } catch (error) {
       this.running = false;
       throw error;
@@ -151,10 +152,11 @@ export class PiAdapter implements Adapter {
     if (result.disposition === 'handled' && this.running) void this.finishTurn(false);
   }
 
-  async steer(input: InputPart[], _clientMessageId: string): Promise<void> {
+  async steer(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
+    const prompt = await toPrompt(input);
     const engine = await this.ready();
     if (!this.running) throw new RpcError('turn_mismatch', 'no pi turn is running to steer', { turnId: null });
-    await engine.call('steer', toPrompt(input));
+    await engine.call('steer', prompt);
   }
 
   async interrupt(): Promise<void> {

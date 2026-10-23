@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Settings } from '../../generated/common.js';
 import type { AdapterEvent } from '../../core/adapter.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
+import { attachmentFixture, PNG_BYTES } from '../shared/testing/attachments.js';
 import { bundledExecutable, ClaudeAdapter, executablePath, Inbox, loadQuery, type QueryFn } from './adapter.js';
 import { CANCEL_MESSAGE, DECLINE_MESSAGE } from './mapping.js';
 import { FakeClaude, until, type FakeClaudeOptions } from './testing/fake-query.js';
@@ -281,6 +282,32 @@ describe('ClaudeAdapter: a turn', () => {
     await turnEnd(events, from);
     expect(methods(events).filter((m) => m === 'engine/session')).toHaveLength(1);
     expect(fake.queries).toHaveLength(1);
+  });
+
+  it('attachments (spec 8.1): stored and data-URL images as base64 image blocks, the rest as path lines', async () => {
+    const files = attachmentFixture();
+    const { fake, adapter, events, cwd } = rig({}, { attachmentsDir: files.dir });
+    await adapter.start(cwd, {});
+    expect(fake.last.options.additionalDirectories).toEqual([files.dir]);
+    await adapter.turnStart([...files.input, { type: 'image', url: 'data:image/gif;base64,R0lG' }], 'c1');
+    await turnEnd(events);
+    expect(fake.last.userMessages[0]!.message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG_BYTES.toString('base64') } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/gif', data: 'R0lG' } },
+      { type: 'text', text: `What is wrong here?\n\nAttached file: ${files.heicPath}\n\nAttached file: ${files.logPath}` },
+    ]);
+  });
+
+  it('an image alone is image blocks only; without an attachments folder no additional directory', async () => {
+    const files = attachmentFixture();
+    const { fake, adapter, events, cwd } = rig();
+    await adapter.start(cwd, {});
+    expect(fake.last.options.additionalDirectories).toBeUndefined();
+    await adapter.turnStart([files.input[1]!], 'c1');
+    await turnEnd(events);
+    expect(fake.last.userMessages[0]!.message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG_BYTES.toString('base64') } },
+    ]);
   });
 
   it('images and mentions reach the engine as text', async () => {

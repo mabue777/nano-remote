@@ -33,14 +33,14 @@ describe('pi mapping', () => {
     expect(extension.READ_ONLY_TOOLS).toEqual(['read', 'grep', 'find', 'ls']);
   });
 
-  it('toPrompt: text joined, mentions as paths, data-URL images as ImageContent, other images dropped', () => {
-    expect(toPrompt([{ type: 'text', text: 'a' }])).toEqual({ message: 'a' });
+  it('toPrompt: text joined, mentions as paths, data-URL images as ImageContent, other images dropped', async () => {
+    expect(await toPrompt([{ type: 'text', text: 'a' }])).toEqual({ message: 'a' });
     expect(
-      toPrompt([
+      await toPrompt([
         { type: 'text', text: 'a' },
         { type: 'mention', name: 'x', path: '/p/x' },
         { type: 'image', url: 'data:image/jpeg;base64,/9j/' },
-        { type: 'image', url: '/v1/blob/1' },
+        { type: 'image', url: 'https://example.com/a.png' },
       ]),
     ).toEqual({ message: 'a\n/p/x', images: [{ type: 'image', mimeType: 'image/jpeg', data: '/9j/' }] });
   });

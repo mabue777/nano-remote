@@ -44,8 +44,8 @@ describe('discovery', () => {
     expect(status).toEqual({
       host: expect.objectContaining({ hostId: 'host_test' }),
       agents: [
-        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
-        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
+        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true } } },
+        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true } } },
       ],
       sessionsActive: 0,
       uptimeSeconds: 42,
@@ -83,7 +83,7 @@ describe('discovery', () => {
     h.agent.setState({ status: 'unavailable', reason: 'updating' });
     const changed = await phone.until(() => phone.messages.find((m) => m.method === 'host/status/changed'));
     expect((changed.params as { agents: unknown[] }).agents).toEqual([
-      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
+      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true } } },
     ]);
     await h.core.close();
     const before = phone.messages.length;

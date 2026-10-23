@@ -19,6 +19,11 @@
 // `POST /test/review-finish {sessionId, changes}` completes it with those file changes, and
 // `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session, and
 // `POST /test/turn-diff {sessionId, result | error}` makes it answer that (every turn of the session).
+// Attachments (spec 8.1): `POST /v1/blob?sessionId=&name=` stores an upload in memory for a paired cookie
+// (401 without, 404 for an unknown session, 413 past 20 MiB) and `GET /v1/blob/<id>` serves it back to a
+// paired cookie only. `POST /test/uploads` answers {uploads: [{blobId, sessionId, name, mediaType, size,
+// width?, height?}]} (the pixel size of PNG and JPEG uploads); `POST /test/upload-fail {status}` makes the
+// next upload answer that status ({} clears it).
 // `POST /test/new-build {version}` serves /sw.js under that build version, as after a redeploy (a reset
 // goes back to the built one).
 // `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
@@ -51,6 +56,34 @@ const TYPES: Record<string, string> = {
 
 export const SEEDED_TITLES = ['Create hello.txt and list files', 'Run the test suite', 'Sketch the README'];
 const PACE_MS = 80;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+interface Blob {
+  blobId: string;
+  sessionId: string;
+  name: string;
+  mediaType: string;
+  bytes: Buffer;
+}
+
+/** Width and height of a PNG or JPEG, read from its header; undefined for anything else. */
+export function imageSize(bytes: Buffer): { width: number; height: number } | undefined {
+  if (bytes.length > 24 && bytes.readUInt32BE(0) === 0x89504e47) return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let at = 2;
+    while (at + 9 < bytes.length) {
+      if (bytes[at] !== 0xff) return undefined;
+      const marker = bytes[at + 1]!;
+      const length = bytes.readUInt16BE(at + 2);
+      // SOF0..SOF15 except DHT (c4), JPG (c8) and DAC (cc) carry the frame size.
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+      }
+      at += 2 + length;
+    }
+  }
+  return undefined;
+}
 
 /** Three sessions: finished (ses_fake_1), waiting for an approval (ses_fake_2), and new (ses_fake_3). */
 function seed(host: FakeHost): void {
@@ -96,6 +129,15 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
 
   const host = new FakeHost({ pageSize: 2 });
   seed(host);
+  const blobs = new Map<string, Blob>();
+  let uploadFailure: number | undefined;
+  const paired = (request: http.IncomingMessage): boolean => {
+    for (const part of (request.headers.cookie ?? '').split(';')) {
+      const [name, value] = part.trim().split('=');
+      if (name === 'nano_device' && value !== undefined && tokens.has(value)) return true;
+    }
+    return false;
+  };
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
@@ -111,8 +153,17 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
         try {
           const body = text === '' ? {} : JSON.parse(text);
           switch (url.pathname) {
+            case '/test/uploads':
+              return json(200, {
+                uploads: [...blobs.values()].map((b) => ({ blobId: b.blobId, sessionId: b.sessionId, name: b.name, mediaType: b.mediaType, size: b.bytes.length, ...imageSize(b.bytes) })),
+              });
+            case '/test/upload-fail':
+              uploadFailure = typeof body.status === 'number' ? body.status : undefined;
+              return json(200, { ok: true });
             case '/test/reset':
               seed(host);
+              blobs.clear();
+              uploadFailure = undefined;
               swVersion = null;
               provider.chats.length = 0;
               return json(200, { ok: true });
@@ -206,6 +257,43 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
       });
       return;
     }
+    if (url.pathname === '/v1/blob' && request.method === 'POST') {
+      if (!paired(request)) return json(401, { error: { code: 'unauthorized', message: 'device token missing, unknown or revoked' } });
+      const sessionId = url.searchParams.get('sessionId') ?? '';
+      if (!host.hasSession(sessionId)) return json(404, { error: { code: 'not_found', message: `no session ${sessionId}` } });
+      const chunks: Buffer[] = [];
+      let size = 0;
+      request.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size <= MAX_ATTACHMENT_BYTES) chunks.push(chunk);
+      });
+      request.on('end', () => {
+        if (uploadFailure !== undefined) {
+          const status = uploadFailure;
+          uploadFailure = undefined;
+          return json(status, { error: { code: status === 413 ? 'invalid_params' : 'internal', message: 'scripted failure', data: { maxBytes: MAX_ATTACHMENT_BYTES } } });
+        }
+        if (size > MAX_ATTACHMENT_BYTES) return json(413, { error: { code: 'invalid_params', message: 'too large', data: { path: '', maxBytes: MAX_ATTACHMENT_BYTES } } });
+        const blobId = `blb_${randomBytes(16).toString('base64url')}`;
+        const blob: Blob = {
+          blobId,
+          sessionId,
+          name: url.searchParams.get('name') || 'attachment',
+          mediaType: (request.headers['content-type'] ?? 'application/octet-stream').split(';')[0]!.trim(),
+          bytes: Buffer.concat(chunks),
+        };
+        blobs.set(blobId, blob);
+        return json(201, { blobId, url: `/v1/blob/${blobId}`, name: blob.name, mediaType: blob.mediaType, size: blob.bytes.length });
+      });
+      return;
+    }
+    if (url.pathname.startsWith('/v1/blob/') && (request.method === 'GET' || request.method === 'HEAD')) {
+      if (!paired(request)) return json(401, { error: { code: 'unauthorized', message: 'device token missing, unknown or revoked' } });
+      const blob = blobs.get(url.pathname.slice('/v1/blob/'.length));
+      if (blob === undefined) return json(404, { error: { code: 'not_found', message: 'no such attachment' } });
+      response.writeHead(200, { 'content-type': blob.mediaType, 'content-length': String(blob.bytes.length), 'x-content-type-options': 'nosniff' });
+      return void response.end(request.method === 'HEAD' ? undefined : blob.bytes);
+    }
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: { code: 'method_not_found', message: 'GET only' } });
     const file = CLIENT_ROUTE.test(url.pathname) ? path.join(PUBLIC, 'index.html') : path.join(PUBLIC, path.posix.normalize(url.pathname));
     if (!file.startsWith(PUBLIC) || !existsSync(file) || !statSync(file).isFile()) {
@@ -222,13 +310,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
 
   await host.start({
     server,
-    authorize: (request) => {
-      for (const part of (request.headers.cookie ?? '').split(';')) {
-        const [name, value] = part.trim().split('=');
-        if (name === 'nano_device' && value !== undefined && tokens.has(value)) return true;
-      }
-      return false;
-    },
+    authorize: paired,
   });
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   return {

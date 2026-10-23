@@ -933,6 +933,171 @@ button.stop {
   border-color: var(--error);
 }
 
+/* ---- attachments (spec 8.1): the attach button, the tray above the field, sent thumbnails and chips ---- */
+.attach-button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.attach-input {
+  display: none;
+}
+
+.attach-tray .error {
+  margin: 0 0 6px;
+}
+
+.tray {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  /* Room for the remove buttons, which sit over each entry's top right corner. */
+  padding: 10px 10px 4px 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.tray-entry {
+  position: relative;
+  flex: none;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tray-thumb,
+.tray-file {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tray-thumb {
+  object-fit: cover;
+  display: block;
+}
+
+.tray-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+  box-sizing: border-box;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.tray-file .file-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-entry.failed .tray-thumb,
+.tray-entry.failed .tray-file {
+  border-color: var(--error);
+}
+
+.tray-progress {
+  width: 72px;
+  height: 4px;
+}
+
+.tray-entry.failed {
+  width: 120px;
+}
+
+.tray-remove {
+  position: absolute;
+  top: -10px;
+  left: 56px;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  line-height: 1;
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+}
+
+.tray-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--error);
+  font-size: 0.7rem;
+}
+
+.tray-error .small {
+  font-size: 0.7rem;
+}
+
+.attach-note {
+  margin: 0 0 6px;
+}
+
+.sent-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sent-attachments + p {
+  margin-top: 6px;
+}
+
+.thumbs,
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumbs img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.2);
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.file-chip .file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- approvals and questions (spec 5.3) ---- */
 .requests {
   display: flex;

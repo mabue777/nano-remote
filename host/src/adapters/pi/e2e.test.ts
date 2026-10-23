@@ -60,7 +60,7 @@ describe('session core end to end with the pi adapter', () => {
   it('pi honours no approvalMode: agent/list says so and session/start with never stores and reports none', async () => {
     const { h, phone } = await setup();
     const { agents } = await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list');
-    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: true, approvalModes: [] });
+    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true } });
     const { session } = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/start', {
       agentId: 'pi',
       cwd: h.cwd,

@@ -5,11 +5,12 @@
 //
 //   const agent = new FakeAgent({ script: [[{ reply: 'Hello' }], [{ approval: { command: 'rm x' } }, { reply: 'Done' }]] });
 //   new HostCore({ journal, agents: [agent], host });
-import type { Decision, InputPart, ModelInfo, Settings } from '../../generated/common.js';
+import type { Decision, ModelInfo, Settings } from '../../generated/common.js';
 import type {
   Adapter,
   AdapterApprovalRequest,
   AdapterEvent,
+  AdapterInputPart,
   AdapterInputRequest,
   AdapterListener,
   AgentCapabilities,
@@ -37,7 +38,7 @@ export type FakeStep =
 export type FakeTurn = FakeStep[];
 
 /** Picks the steps of a turn from its input and its number (0-based, counted per FakeAgent). */
-export type FakeScript = (input: InputPart[], turnIndex: number) => FakeTurn;
+export type FakeScript = (input: AdapterInputPart[], turnIndex: number) => FakeTurn;
 
 type Method = Exclude<keyof Adapter, 'onEvent'>;
 
@@ -130,7 +131,7 @@ export class FakeAdapter implements Adapter {
     this.engineId = engineSessionId;
   }
 
-  async turnStart(input: InputPart[], clientMessageId: string): Promise<void> {
+  async turnStart(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     this.record('turnStart', input, clientMessageId);
     if (this.reportEngineId) {
       this.reportEngineId = false;
@@ -141,7 +142,7 @@ export class FakeAdapter implements Adapter {
     this.run();
   }
 
-  async steer(input: InputPart[], clientMessageId: string): Promise<void> {
+  async steer(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     this.record('steer', input, clientMessageId);
   }
 
@@ -269,7 +270,7 @@ export interface FakeAgentOptions {
   state?: AgentState;
   /**
    * The agent's static capabilities. Default: steers, has turn diffs (the host computes them from git),
-   * and honours the Codex approval modes (`FAKE_APPROVAL_MODES`).
+   * honours the Codex approval modes (`FAKE_APPROVAL_MODES`) and takes image and file attachments.
    */
   capabilities?: Partial<AgentCapabilities>;
   /** Passed to every adapter this agent creates (the script comes from the agent). */
@@ -303,6 +304,7 @@ export class FakeAgent implements AgentProvider {
       steer: true,
       diff: true,
       approvalModes: FAKE_APPROVAL_MODES,
+      attachments: { images: true, files: true },
       ...options.capabilities,
     };
   }

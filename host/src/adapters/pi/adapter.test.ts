@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AdapterEvent } from '../../core/adapter.js';
 import { NANO_APPROVAL_EXTENSION } from '../../config/pi.js';
 import { RpcError } from '../../errors.js';
+import { attachmentFixture, PNG_BYTES } from '../shared/testing/attachments.js';
 import { PiAdapter } from './adapter.js';
 import { fakePi, until, type FakePi } from './testing/fake-pi-config.js';
 import type { FakePiFixture } from './testing/fixture.js';
@@ -138,6 +139,20 @@ describe('PiAdapter turns', () => {
     const [reasoning] = completedItems(r.events);
     expect(reasoning).toEqual({ itemId: expect.stringMatching(/^itm_/), status: 'completed', type: 'reasoning', summary: '', text: 'plan it' });
     expect(r.events).toContainEqual({ method: 'item/delta', params: { itemId: reasoning!.itemId, field: 'text', delta: 'plan it' } });
+  });
+
+  it('attachments (spec 8.1): stored images as ImageContent read from disk, files and other images as path lines', async () => {
+    const files = attachmentFixture();
+    const r = rig();
+    await r.adapter.start(r.fake.cwd, {});
+    await r.adapter.turnStart(files.input, 'cm');
+    await r.next('turn/completed');
+    expect(r.fake.sent('prompt')[0]).toEqual({
+      id: 'nano-2',
+      type: 'prompt',
+      message: `What is wrong here?\nAttached file: ${files.heicPath}\nAttached file: ${files.logPath}`,
+      images: [{ type: 'image', mimeType: 'image/png', data: PNG_BYTES.toString('base64') }],
+    });
   });
 
   it('images in data URLs and mentions reach the prompt', async () => {

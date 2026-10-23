@@ -20,6 +20,17 @@ export function hasDiff(agent: Agent | undefined): boolean {
   return agent?.capabilities?.diff ?? true;
 }
 
+/**
+ * Which attachments (spec 8.1) the composer offers for the agent: none unless the host takes uploads
+ * (`limits.maxAttachmentBytes`) and the agent declares `capabilities.attachments` with images or files.
+ * Unlike the other controls this one is never guessed for an older host: it would only upload into a 404.
+ */
+export function attachmentsFor(agent: Agent | undefined, maxBytes: number | undefined): { images: boolean; files: boolean } | undefined {
+  const attachments = agent?.capabilities?.attachments;
+  if (maxBytes === undefined || attachments === undefined || (!attachments.images && !attachments.files)) return undefined;
+  return { images: attachments.images, files: attachments.files };
+}
+
 /** The agents the screens consult; the stream client's `initialize` result fits (`() => client.host?.agents`). */
 export type AgentsSource = () => readonly Agent[] | undefined;
 

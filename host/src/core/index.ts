@@ -5,6 +5,7 @@ export type {
   Adapter,
   AdapterApprovalRequest,
   AdapterEvent,
+  AdapterInputPart,
   AdapterInputRequest,
   AdapterItem,
   AdapterListener,

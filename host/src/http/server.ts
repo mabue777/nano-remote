@@ -13,6 +13,8 @@ import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
+import { handleBlob, isBlobPath } from '../attachments/endpoint.js';
+import type { AttachmentStore } from '../attachments/store.js';
 import { PRIVATE_FILE_MODE } from '../config/private-files.js';
 import { registerDeviceMethods } from '../devices/methods.js';
 import type { DeviceStore } from '../devices/store.js';
@@ -69,6 +71,11 @@ export interface HostServerOptions {
   pairing?: PairingCodes;
   /** Sends `push/test` (the event pushes go through the PushNotifier); without it `push/test` answers `not_supported`. */
   pushSender?: PushSender;
+  /**
+   * Attachments (spec 8.1): the store and a check that a session exists and is not deleted. Without
+   * them `/v1/blob` answers 404 like any unknown endpoint.
+   */
+  attachments?: { store: AttachmentStore; sessionExists: (sessionId: string) => boolean };
   /** Passed to the StreamServer. */
   stream?: Pick<StreamServerOptions, 'presence' | 'status' | 'pingTimeoutMs'>;
   log?: (message: string, error?: unknown) => void;
@@ -199,6 +206,15 @@ export class HostServer {
         response.writeHead(426, { ...SECURITY_HEADERS, upgrade: 'websocket', 'content-type': 'text/plain; charset=utf-8' });
         response.end('upgrade required\n');
         return;
+      }
+      const attachments = this.options.attachments;
+      if (attachments !== undefined && isBlobPath(urlPath)) {
+        return await handleBlob(request, response, {
+          ...attachments,
+          authenticate: (token) => this.options.devices.authenticate(token),
+          origin: () => this.origin,
+          log: this.log,
+        });
       }
       if (urlPath.startsWith('/v1/')) {
         response.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' });

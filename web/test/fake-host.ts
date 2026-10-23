@@ -34,7 +34,12 @@ const SEND_SEGMENT_BYTES = SEGMENT_BYTES - (SEGMENT_BYTES % 3);
  * Pi as initialize and agent/list list it after example 08's agents. Its capabilities honour no
  * approvalMode (spec 4), so the new-session sheet offers no "Bypass approvals" for it.
  */
-export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: true, approvalModes: [] as string[] } };
+export const PI_AGENT = {
+  id: 'pi',
+  name: 'Pi',
+  status: 'ready',
+  capabilities: { steer: true, diff: true, approvalModes: [] as string[], attachments: { images: true, files: true } },
+};
 
 /**
  * The agents of initialize and agent/list: example 08's (Kimi there carries no capabilities, like an agent
@@ -450,6 +455,11 @@ export class FakeHost {
     if (this.keepAwake === null) return;
     this.keepAwake.onBattery = onBattery;
     this.broadcast('host/status/changed', this.hostStatus());
+  }
+
+  /** True for a session the host knows (the attachment endpoint, spec 8.1). */
+  hasSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
   }
 
   session(sessionId: string): FakeSession {

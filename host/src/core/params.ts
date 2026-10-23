@@ -51,7 +51,7 @@ export function optSettings(params: Params, key: string): Settings | undefined {
   return value as Settings;
 }
 
-/** A non-empty list of InputParts (spec 5.1): text, image or mention. */
+/** A non-empty list of InputParts (spec 5.1): text, image, mention or file. */
 export function input(params: Params, key: string): InputPart[] {
   const value = params[key];
   if (!Array.isArray(value) || value.length === 0) throw bad(key, `${key} must be a non-empty array of input parts`);
@@ -62,7 +62,11 @@ export function input(params: Params, key: string): InputPart[] {
     if (p.type === 'text' && typeof p.text === 'string') return;
     if (p.type === 'image' && typeof p.url === 'string') return;
     if (p.type === 'mention' && typeof p.name === 'string' && typeof p.path === 'string') return;
-    throw bad(at, 'input part must be {type:"text", text}, {type:"image", url} or {type:"mention", name, path}');
+    if (p.type === 'file' && typeof p.url === 'string' && typeof p.name === 'string' && typeof p.mediaType === 'string') return;
+    throw bad(
+      at,
+      'input part must be {type:"text", text}, {type:"image", url}, {type:"mention", name, path} or {type:"file", url, name, mediaType}',
+    );
   });
   return value as InputPart[];
 }

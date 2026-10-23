@@ -21,6 +21,11 @@ export interface ClaudeConfig {
   requestTimeoutMs: number;
   /** How long `kill()` waits after SIGTERM before it sends SIGKILL to the process group. */
   killGraceMs: number;
+  /**
+   * The host's attachments folder (spec 8.1), given to the SDK as an additional directory so that reading
+   * an attached file outside the session folder asks for no approval. Undefined: none.
+   */
+  attachmentsDir?: string;
 }
 
 /** NANO_CLAUDE_CONFIG_DIR or CLAUDE_CONFIG_DIR when absolute, else ~/.claude (Claude Code's own default). */

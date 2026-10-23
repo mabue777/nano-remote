@@ -6,6 +6,9 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { Readable } from 'node:stream';
+
+import { AttachmentStore, blobUrl } from '../attachments/store.js';
 import { Journal } from '../journal/journal.js';
 import type { JournalEvent } from '../journal/types.js';
 import type { Adapter } from './adapter.js';
@@ -29,7 +32,10 @@ afterEach(async () => {
   }
 });
 
-function make(options: FakeAgentOptions = {}, extra: { journal?: Journal; store?: SessionStore; log?: (m: string, e?: unknown) => void } = {}) {
+function make(
+  options: FakeAgentOptions = {},
+  extra: { journal?: Journal; store?: SessionStore; log?: (m: string, e?: unknown) => void; attachments?: AttachmentStore } = {},
+) {
   const journal = extra.journal ?? new Journal({ path: ':memory:' });
   const agent = new FakeAgent(options);
   const events: JournalEvent[] = [];
@@ -38,6 +44,7 @@ function make(options: FakeAgentOptions = {}, extra: { journal?: Journal; store?
     journal,
     agents: [agent],
     ...(extra.store ? { store: extra.store } : {}),
+    ...(extra.attachments ? { attachments: extra.attachments } : {}),
     onEvent: (event) => events.push(event),
     log,
   });
@@ -347,6 +354,78 @@ describe('adapter events', () => {
   });
 });
 
+describe('attachments (spec 8.1)', () => {
+  async function withUploads(options: FakeAgentOptions) {
+    const attachments = new AttachmentStore({ dir: mkdtempSync(path.join(tmpdir(), 'nano-sm-att-')) });
+    const rig = make({ script: [[{ hold: true }, { reply: 'ok' }]], ...options }, { attachments });
+    const { session } = await rig.manager.start({ agentId: 'fake', cwd });
+    const sessionId = session.sessionId;
+    const image = await attachments.save(sessionId, { name: 'a.png', mediaType: 'image/png' }, Readable.from([Buffer.from('png')]));
+    const file = await attachments.save(sessionId, { name: 'b.pdf', mediaType: 'application/pdf' }, Readable.from([Buffer.from('pdf')]));
+    return { ...rig, attachments, sessionId, image, file };
+  }
+
+  it('an agent without image input gets image attachments as file parts', async () => {
+    const { manager, agent, sessionId, image } = await withUploads({ capabilities: { attachments: { images: false, files: true } } });
+    await manager.turnStart(sessionId, [{ type: 'image', url: blobUrl(image.blobId) }], cmid());
+    expect(agent.last.calls.find((c) => c.method === 'turnStart')!.args[0]).toEqual([
+      { type: 'file', url: blobUrl(image.blobId), name: 'a.png', mediaType: 'image/png', path: image.path },
+    ]);
+  });
+
+  it('an agent that takes no files answers not_supported for a file part, and starts no turn', async () => {
+    const { manager, agent, sessionId, file, events } = await withUploads({ capabilities: { attachments: { images: true, files: false } } });
+    const before = events.length;
+    await expect(
+      manager.turnStart(sessionId, [{ type: 'file', url: blobUrl(file.blobId), name: 'b.pdf', mediaType: 'application/pdf' }], cmid()),
+    ).rejects.toMatchObject({ code: 'not_supported', data: { agentId: 'fake' } });
+    expect(events.length).toBe(before);
+    expect(agent.last.calls.map((c) => c.method)).toEqual(['start']);
+  });
+
+  it('steer resolves attachments the same way and refuses foreign ones before the adapter sees them', async () => {
+    const { manager, agent, sessionId, image } = await withUploads({});
+    const turn = await manager.turnStart(sessionId, text('first'), cmid());
+    await expect(manager.steer(sessionId, turn.turnId, [{ type: 'image', url: '/v1/blob/blb_AAAAAAAAAAAAAAAAAAAAAA' }], cmid())).rejects.toMatchObject({
+      code: 'invalid_params',
+      data: { path: 'params.input.0.url' },
+    });
+    await manager.steer(sessionId, turn.turnId, [{ type: 'image', url: blobUrl(image.blobId) }], cmid());
+    const steers = agent.last.calls.filter((c) => c.method === 'steer');
+    expect(steers).toHaveLength(1);
+    expect(steers[0]!.args[0]).toEqual([{ type: 'image', url: blobUrl(image.blobId), path: image.path, mediaType: 'image/png' }]);
+  });
+
+  it('a message that joins an engine-initiated turn has its attachments resolved; foreign ones are refused unjournaled', async () => {
+    const { manager, agent, sessionId, image, journal } = await withUploads({});
+    agent.last.emit({ method: 'turn/started', params: {} });
+    const engineTurnId = manager.runningTurnId(sessionId)!;
+    const head = journal.head(sessionId);
+    await expect(manager.turnStart(sessionId, [{ type: 'image', url: '/v1/blob/blb_AAAAAAAAAAAAAAAAAAAAAA' }], cmid())).rejects.toMatchObject({
+      code: 'invalid_params',
+      data: { path: 'params.input.0.url' },
+    });
+    expect(journal.head(sessionId)).toBe(head);
+    const joined = await manager.turnStart(sessionId, [{ type: 'image', url: blobUrl(image.blobId) }], cmid());
+    expect(joined.turnId).toBe(engineTurnId);
+    const starts = agent.last.calls.filter((c) => c.method === 'turnStart');
+    expect(starts).toHaveLength(1);
+    expect(starts[0]!.args[0]).toEqual([{ type: 'image', url: blobUrl(image.blobId), path: image.path, mediaType: 'image/png' }]);
+  });
+
+  it('without a store every blob URL is invalid_params; an image URL the engine fetches passes', async () => {
+    const { manager, agent } = make();
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    await expect(manager.turnStart(session.sessionId, [{ type: 'image', url: '/v1/blob/blb_AAAAAAAAAAAAAAAAAAAAAA' }], cmid())).rejects.toMatchObject({
+      code: 'invalid_params',
+    });
+    await manager.turnStart(session.sessionId, [{ type: 'image', url: 'https://example.com/a.png' }], cmid());
+    expect(agent.last.calls.find((c) => c.method === 'turnStart')!.args[0]).toEqual([{ type: 'image', url: 'https://example.com/a.png' }]);
+    expect(manager.exists(session.sessionId)).toBe(true);
+    expect(manager.exists('ses_0none')).toBe(false);
+  });
+});
+
 describe('agent capabilities', () => {
   it('turn/diff on a dormant session starts no engine: not_supported without the capability, the git answer with it', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nano-dormant-'));
@@ -457,7 +536,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES });
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true } });
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });
 

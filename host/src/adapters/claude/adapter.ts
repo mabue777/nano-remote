@@ -4,7 +4,8 @@
 //   session/start  -> query({prompt: <inbox>, options: {cwd, model, permissionMode, settingSources: [],
 //                     includePartialMessages: true, canUseTool, env, spawnClaudeCodeProcess, ...}})
 //   resume         -> the same with options.resume = <engine session id>
-//   turn/start     -> one SDKUserMessage pushed into the inbox (text parts joined, see mapping.ts)
+//   turn/start     -> one SDKUserMessage pushed into the inbox (text parts joined, attached images as
+//                     base64 image blocks, attached files as a path line, see mapping.ts)
 //   turn/steer     -> not_supported (capabilities.steer false)
 //   turn/interrupt -> Query.interrupt(); the next `result` ends the turn as interrupted
 //   approvals      <- canUseTool (Bash: command, Write/Edit/MultiEdit/NotebookEdit: fileChange, others: permission)
@@ -63,8 +64,8 @@ import type {
   SpawnedProcess,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Decision, InputPart, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Decision, Settings } from '../../generated/common.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
 import { RpcError } from '../../errors.js';
@@ -79,7 +80,7 @@ import {
   toRequest,
   toTurnEnd,
   toUsage,
-  toUserText,
+  toUserContent,
   toolItem,
   type PermissionAnswer,
 } from './mapping.js';
@@ -285,7 +286,8 @@ export class ClaudeAdapter implements Adapter {
   }
 
   /** Pushes the user message; on a fresh query resolves once system/init shows the engine took it. */
-  async turnStart(input: InputPart[], _clientMessageId: string): Promise<void> {
+  async turnStart(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
+    const content = await toUserContent(input);
     const run = await this.ready();
     // During an engine-initiated turn the message joins it: Claude Code delivers it mid-turn.
     if (!this.turn) {
@@ -293,7 +295,7 @@ export class ClaudeAdapter implements Adapter {
       this.notes = [];
     }
     this.emit({ method: 'status/changed', params: { status: 'running' } });
-    run.inbox.push({ type: 'user', message: { role: 'user', content: toUserText(input) }, parent_tool_use_id: null });
+    run.inbox.push({ type: 'user', message: { role: 'user', content: content as SDKUserMessage['message']['content'] }, parent_tool_use_id: null });
     if (!run.initialized) await this.initialized(run);
   }
 
@@ -397,6 +399,7 @@ export class ClaudeAdapter implements Adapter {
     if (permissionMode === 'bypassPermissions') options.allowDangerouslySkipPermissions = true;
     const executable = executablePath(this.config);
     if (executable !== undefined) options.pathToClaudeCodeExecutable = executable;
+    if (this.config.attachmentsDir !== undefined) options.additionalDirectories = [this.config.attachmentsDir];
     if (this.sessionId !== '') options.resume = this.sessionId;
     try {
       run.query = queryFn({ prompt: run.inbox, options });

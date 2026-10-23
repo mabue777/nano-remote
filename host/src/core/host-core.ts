@@ -13,6 +13,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
+import type { AttachmentStore } from '../attachments/store.js';
 import type { DirEntry, Host, HostStatus, KeepAwakeStatus, ProjectEntry } from '../generated/common.js';
 import { CursorExpired } from '../journal/errors.js';
 import { DEFAULT_SNAPSHOT_TURNS, MAX_SINCE_LIMIT, type Journal } from '../journal/journal.js';
@@ -47,6 +48,8 @@ export interface HostCoreOptions {
   startSnapshotWaitMs?: number;
   /** The keep-awake status `host/status` carries (spec 4); absent: the field is left out. */
   keepAwake?: () => KeepAwakeStatus;
+  /** Uploaded attachments (spec 8.1), resolved in turn input and deleted with their session. */
+  attachments?: AttachmentStore;
 }
 
 type Result<M extends keyof MethodMap> = MethodMap[M]['result'];
@@ -77,6 +80,7 @@ export class HostCore {
       ...(options.store ? { store: options.store } : {}),
       ...(options.now ? { now: options.now } : {}),
       ...(options.startSnapshotWaitMs !== undefined ? { startSnapshotWaitMs: options.startSnapshotWaitMs } : {}),
+      ...(options.attachments ? { attachments: options.attachments } : {}),
       onEvent: (event) => this.onJournalEvent(event),
       log: this.log,
     });

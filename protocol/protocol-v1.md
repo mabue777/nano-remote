@@ -167,12 +167,14 @@ Result:
              "capabilities":{"steer":false,"diff":true,"approvalModes":["default","acceptEdits","plan","never"]}},
             {"id":"kimi","name":"Kimi","status":"unavailable","reason":"CLI not found"}],
   "push":{"vapidPublicKey":"BOr…","subscribed":true},
-  "limits":{"maxMessageBytes":16777216,"snapshotTurns":5}
+  "limits":{"maxMessageBytes":16777216,"snapshotTurns":5,"maxAttachmentBytes":20971520}
 }}
 ```
 - `optOutNotifications` is the Codex relay's `optOutNotificationMethods` idea (capture item 12): the client
   names event methods it does not want on this stream to save mobile bandwidth. Opted-out events are still
   journaled and still returned by `events/since` when asked with `includeOptedOut: true`.
+- `limits.maxAttachmentBytes` (additive within v1) is the largest attachment `POST /v1/blob` accepts
+  (section 8.1); a host without it takes no attachments, and clients show no attach button.
 - Until `initialize` succeeds the host answers every other request with `not_initialized`.
 - The client then sends the `initialized` notification (mirrors Codex; the host uses it to start sending
   unsolicited notifications such as `session/updated`).
@@ -202,6 +204,11 @@ while a turn runs when `steer` is false, no Changes view when `diff` is false, "
 `approvalModes` contains `never`. The host answers `not_supported` for `turn/steer` and `turn/diff` without
 starting the agent. A host that sends no `capabilities` is older: clients then offer every control and learn
 from `not_supported`.
+`capabilities.attachments {images, files}` (additive within v1) says how the agent takes attachments
+(section 8.1): `images` true when image parts reach it as images it can see (its native image input),
+`files` true when it accepts file parts (it gets the file's path). An agent with `images` false still takes
+image parts: the host hands them over as files. Clients offer attaching only when `attachments` is present
+and at least one of the two is true.
 
 ### `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
@@ -263,7 +270,9 @@ Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through 
 | `other` | `raw` | everything else | shown collapsed by the client |
 
 **InputPart**: `{type:"text", text}` | `{type:"image", url}` (data URL or host-served `/v1/blob/<id>`) |
-`{type:"mention", name, path}`. Mirrors Codex `UserInput`; `localImage`, `audio`, `skill` are out of v1.
+`{type:"mention", name, path}` | `{type:"file", url, name, mediaType}` (additive within v1: an attachment
+uploaded with `POST /v1/blob`, section 8.1; `url` is `/v1/blob/<id>`, `name` and `mediaType` as the upload
+answered). Mirrors Codex `UserInput`; `localImage`, `audio`, `skill` are out of v1.
 
 ### 5.2 Journal events (host to client notifications)
 
@@ -379,6 +388,9 @@ previous page. Items are inlined in full. (Codex: `thread/turns/list` + `thread/
 
 ### `session/archive`, `session/delete`, `session/rename {sessionId, title}` → `{ok:true}`; each emits `session/changed` or `session/closed`.
 
+`session/delete` also deletes the session's attachments (section 8.1) from the host's disk; their
+`/v1/blob` URLs answer 404 from then on.
+
 Journal retention: the host keeps every event of a session on disk; `cursor_expired` happens only when the
 host has compacted old events into a snapshot (an implementation choice; v1 hosts may never compact).
 
@@ -393,6 +405,10 @@ host has compacted old events into a snapshot (an implementation choice; v1 host
 - If a turn is already running: error `session_busy {turnId}`; the client offers steer instead. Exception:
   while an engine-initiated turn runs (5.2), the message joins that turn. The host journals its
   `userMessage` item in it, hands it to the engine (which takes it mid-turn), and returns that turn.
+- An image or file part whose `url` is `/v1/blob/<id>` must name an attachment of this session (section
+  8.1), and a file part must use such a URL; otherwise `invalid_params` with `data.path` at the part's
+  `url` (`params.input.<n>.url`). An image part's blob must have an `image/*` media type. The same rules
+  hold for `turn/steer` and `session/start` (whose session has no attachments yet).
 - One writer per session is enforced by the host, not the client (local-link report 26, 32).
 
 ### `turn/steer {sessionId, turnId, input, clientMessageId}` → `{turn}`
@@ -459,6 +475,45 @@ Over the stream: `device/list` → `{devices:[{clientId, displayName, platform, 
 The host CLI can also list and revoke (for a lost phone). These are the Codex `remoteControl/client/*` calls.
 
 The security pass before Phase 1 (todo item 10) owns code lifetime, token storage and tailnet-only binding.
+
+### 8.1 Attachments (additive within v1)
+
+Photos and files from the phone reach an agent in two steps: the client uploads each one to the host,
+then sends a message whose input parts refer to it by URL. Like pairing, the upload is plain HTTPS, because
+a 20 MB file has no place in a 16 MiB stream message.
+
+**`POST /v1/blob?sessionId=<id>&name=<file name>`**, body the file's bytes, `Content-Type` its media type.
+- Authenticated exactly like the stream upgrade (section 1): the `nano_device` cookie, or `Authorization:
+  Bearer` from a client that sends no `Origin`. A request whose `Origin` is not the host's own origin is
+  refused.
+- Limit: `limits.maxAttachmentBytes` (20 MiB, 20 971 520 bytes) per file. Clients check it before
+  uploading; the host refuses a larger `Content-Length` before reading the body and stops storing a body
+  that grows past the limit.
+- Answer `201 {blobId, url, name, mediaType, size}`: `blobId` is `blb_` plus 22 base64url characters (128
+  random bits), `url` is `/v1/blob/<blobId>`; `name` is the file name made safe (last path segment, no
+  control characters, no leading dots, at most 120 characters; `attachment` when empty); `mediaType` is
+  the `Content-Type` without parameters (`application/octet-stream` when missing or malformed).
+- Failures answer `{error:{code, message, data?}}`: 401 `unauthorized` (no token, unknown or revoked), 403
+  `unauthorized` (foreign origin), 400 `invalid_params` (`data.path` `sessionId`), 404 `not_found` (no
+  such session, or a deleted one), 405 (another method), 413 `invalid_params` (`data.maxBytes`).
+- Clients downscale photos before uploading: at most 2048 px on the long edge, JPEG stays JPEG and PNG stays
+  PNG; other image types are converted to JPEG.
+
+**`GET /v1/blob/<blobId>`** (and `HEAD`) returns the bytes with their media type, to the same
+authenticated devices only (any paired device, as every paired device sees every session): 401 or 403 as
+above, 404 for an unknown id or a deleted session. Responses carry `X-Content-Type-Options: nosniff`, a
+`Content-Security-Policy` of `default-src 'none'; sandbox`, and `Content-Disposition: attachment` for
+anything but raster images (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF), so an uploaded file never runs as a
+page of the host's origin. `Cache-Control: private`.
+
+**Storage.** The host keeps attachments in its app folder, one folder per session
+(`<app folder>/attachments/<sessionId>/<blobId>/<name>`, folders 0700, files 0600, next to a small
+`meta.json`). They live as long as the session: `session/delete` removes the folder; archiving keeps it.
+
+**Handing them to the agent** (section 11). An image part goes to the agent's native image input when
+`capabilities.attachments.images` is true. A file part, and an image part for an agent without image input,
+becomes one line `Attached file: <absolute path>` in the prompt text; the agent reads the file itself.
+Data-URL image parts keep working as before and are never stored.
 
 ## 9. Web Push (ADR 0005)
 
@@ -530,6 +585,15 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 | `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) | other dialogs (`select`, `input`, `editor`) become one question (not probed) |
 | `status/changed` | `thread/status/changed` | derived from stream state (running on a user message or on output while no turn runs, idle on `result`) | derived (active while `session/prompt` is pending) | derived (running from `turn/start` to `agent_settled`, `error` when pi exits) |
 | `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` | `get_session_stats` after every turn (`tokens`, `contextUsage.percent`) |
+
+Attachments (section 8.1), the same for `turn/start` and `turn/steer`:
+
+| Part | Codex | Claude Code | Pi |
+|---|---|---|---|
+| image (blob) | `localImage {path}` | an `image` content block, base64 (JPEG, PNG, GIF, WebP; other types as a file) | `images: [{type: "image", data, mimeType}]` |
+| file | text part `Attached file: <path>` | text `Attached file: <path>`; the attachments folder is an `additionalDirectories` entry so reading it asks nothing | text `Attached file: <path>` |
+
+All three declare `attachments: {images: true, files: true}`.
 
 The Claude Code approvals and questions reach `canUseTool` only when the adapter passes
 `permissionMode: "default"` and `settingSources: []`. With the user's own settings loaded, auto mode

@@ -24,6 +24,9 @@ import { HomeScreen } from './screens/HomeScreen';
 import type { FetchLike } from './screens/pair-model';
 import { PairScreen } from './screens/PairScreen';
 import { DeviceNames } from './screens/session/approvals/devices';
+import { browserResize } from './screens/session/attachments/resize';
+import { xhrUploader } from './screens/session/attachments/upload';
+import type { AttachmentServices } from './screens/session/session-model';
 import { SessionScreen } from './screens/session/SessionScreen';
 import { StreamClient } from './stream/client';
 
@@ -115,6 +118,12 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
       deviceName: (clientId: string) => devices.nameOf(clientId),
       // The agents and their capabilities as the current stream's initialize reported them (spec 4).
       agents: () => client.host?.agents,
+      // Photos and files for the composer (spec 8.1), uploaded to this host with the device cookie.
+      attachments: {
+        maxBytes: () => client.host?.limits.maxAttachmentBytes,
+        uploader: xhrUploader(),
+        resize: browserResize,
+      } satisfies AttachmentServices,
     };
   }, [device.clientId, storage, push]);
 
@@ -178,6 +187,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           deviceName={services.deviceName}
           onOpened={services.opened}
           agents={services.agents}
+          attachments={services.attachments}
           onBack={() => router.navigate('/')}
         />
       );

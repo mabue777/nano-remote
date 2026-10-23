@@ -12,6 +12,7 @@ import path from 'node:path';
 import { ClaudeAgent } from '../adapters/claude/provider.js';
 import { CodexAgent } from '../adapters/codex/provider.js';
 import { PiAgent, piInstalled } from '../adapters/pi/provider.js';
+import { AttachmentStore, deletedSessionDirs } from '../attachments/store.js';
 import { claudeConfig } from '../config/claude.js';
 import { codexConfig } from '../config/codex.js';
 import { piConfig } from '../config/pi.js';
@@ -62,6 +63,11 @@ export interface ServiceOptions {
   keepAwake?: Pick<KeepAwakeOptions, 'spawn' | 'readPower' | 'supported' | 'pollMs' | 'restartMs'>;
 }
 
+/** The host's attachments folder (spec 8.1): `attachments` in the app folder that holds the Journal. */
+export function attachmentsDir(config: Pick<HostConfig, 'journalPath'>): string {
+  return path.join(path.dirname(config.journalPath), 'attachments');
+}
+
 /** This Mac's short name: `mabue-mbp` from `mabue-mbp.local`. */
 export function shortHostname(name = hostname()): string {
   return name.replace(/\.local$/i, '').split('.')[0] || 'mac';
@@ -84,6 +90,7 @@ export function buildAgents(config: HostConfig, logger: Logger): AgentProvider[]
             config: claudeConfig({
               ...(config.claudeConfigDir !== undefined ? { configDir: config.claudeConfigDir } : {}),
               ...(config.claudeExecutable !== undefined ? { executable: config.claudeExecutable } : {}),
+              attachmentsDir: attachmentsDir(config),
             }),
             log: logger.forModule('claude'),
           }),
@@ -166,6 +173,11 @@ export class HostService {
     // The engine's session ids (to resume a thread after a restart), archive flags and turn/start
     // idempotency live beside the Journal in the same file, so they survive a restart too.
     const store = new SessionStore(config.journalPath);
+    // Attachments (spec 8.1) live in the app folder beside the Journal, one 0700 folder per session.
+    const attachments = new AttachmentStore({
+      dir: attachmentsDir(config),
+      log: (message, error) => logger.error('attachments.load_failed', { message, error }),
+    });
     const agents = options.agents ?? buildAgents(config, logger);
     // Who has an open stream: the stream server fills it, the push rules (spec 9) read it.
     const presence = new PresenceRegistry();
@@ -193,7 +205,11 @@ export class HostService {
       store,
       log: logger.forModule('core'),
       onJournalEvent: (event) => notifier.handle(event),
+      attachments,
     });
+    // Folders of sessions deleted while the host was down (the delete removes them, a crash may not).
+    const orphans = deletedSessionDirs(attachments, (sessionId) => core!.sessions.exists(sessionId));
+    if (orphans.length > 0) logger.info('attachments.orphans_removed', { count: orphans.length });
     const registry = core.register(
       new MethodRegistry().register('initialize', (_params, context) => ({
         protocolVersion: 1,
@@ -202,7 +218,7 @@ export class HostService {
         agents: agents.map(describeAgent),
         // The key exists from the first start; `subscribed` says whether this device has a stored subscription (spec 9).
         push: { vapidPublicKey: vapid.publicKey, subscribed: devices.push.isSubscribed(context.clientId) },
-        limits: { maxMessageBytes: MAX_MESSAGE_BYTES, snapshotTurns: DEFAULT_SNAPSHOT_TURNS },
+        limits: { maxMessageBytes: MAX_MESSAGE_BYTES, snapshotTurns: DEFAULT_SNAPSHOT_TURNS, maxAttachmentBytes: attachments.maxBytes },
       })),
     );
 
@@ -235,6 +251,7 @@ export class HostService {
         registry,
         devices,
         pushSender,
+        attachments: { store: attachments, sessionExists: (sessionId) => hostCore.sessions.exists(sessionId) },
         host: () => ({ hostId: host.hostId, name: host.name }),
         port: config.port,
         resolve: listenPlan(config, insecureDev, options.resolve ?? (() => resolveTailnet())),

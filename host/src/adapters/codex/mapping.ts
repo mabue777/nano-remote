@@ -1,9 +1,10 @@
 // Pure translations between Codex app-server shapes (docs/research/rea/codex-app-server-schema/v2) and
 // the protocol vocabulary of protocol-v1.md section 5. This file and adapter.ts are the only places that
 // know Codex's names.
-import type { Decision, FileChange, InputPart, ItemStatus, ModelInfo, SessionStatus, TurnError, Usage } from '../../generated/common.js';
+import type { AdapterInputPart, AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
+import type { Decision, FileChange, ItemStatus, ModelInfo, SessionStatus, TurnError, Usage } from '../../generated/common.js';
 import type { DeltaField } from '../../journal/types.js';
-import type { AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
+import { fileLine } from '../shared/attachments.js';
 
 type Json = Record<string, unknown>;
 
@@ -34,11 +35,15 @@ const str = (value: unknown, fallback = ''): string => (typeof value === 'string
 const obj = (value: unknown): Json => (value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {});
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-/** Protocol InputPart -> Codex UserInput. */
-export function toUserInput(input: readonly InputPart[]): Json[] {
+/**
+ * Protocol InputPart -> Codex UserInput. A stored image attachment (spec 8.1) is a `localImage` the engine
+ * reads from its path; a data URL stays an `image`; a file is a text input `Attached file: <path>`.
+ */
+export function toUserInput(input: readonly AdapterInputPart[]): Json[] {
   return input.map((part) => {
     if (part.type === 'text') return { type: 'text', text: part.text, text_elements: [] };
-    if (part.type === 'image') return { type: 'image', url: part.url };
+    if (part.type === 'image') return part.path !== undefined ? { type: 'localImage', path: part.path } : { type: 'image', url: part.url };
+    if (part.type === 'file') return { type: 'text', text: fileLine(part), text_elements: [] };
     return { type: 'mention', name: part.name, path: part.path };
   });
 }

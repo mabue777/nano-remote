@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AdapterEvent } from '../../core/adapter.js';
 import { codexConfig } from '../../config/codex.js';
 import { CodexAdapter, RESUME_TURNS, sessionPolicy } from './adapter.js';
+import { attachmentFixture } from '../shared/testing/attachments.js';
 import { fakeCodex, until, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
 import { FIELD_CHECK_MAPPED, FIELD_CHECK_USAGE } from './testing/token-usage-field-check.js';
@@ -354,6 +355,22 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
     await r.next('turn/completed');
     // serverRequest/resolved after the host's own reply is not a withdrawal.
     expect(r.events.filter((e) => e.method === 'request/withdrawn')).toHaveLength(1);
+  });
+
+  it('attachments (spec 8.1): a stored image is a localImage, a file a text line, also when steering', async () => {
+    const files = attachmentFixture();
+    const r = rig({ turns: [[{ hold: true }, { reply: 'seen' }]] });
+    await r.adapter.start(cwd(), {});
+    await r.adapter.turnStart(files.input, 'cm-1');
+    expect(r.fake.sent('turn/start')[0]!.input).toEqual([
+      { type: 'text', text: 'What is wrong here?', text_elements: [] },
+      { type: 'localImage', path: files.pngPath },
+      { type: 'localImage', path: files.heicPath },
+      { type: 'text', text: `Attached file: ${files.logPath}`, text_elements: [] },
+    ]);
+    await r.adapter.steer([files.input[3]!], 'cm-2');
+    expect(r.fake.sent('turn/steer')[0]!.input).toEqual([{ type: 'text', text: `Attached file: ${files.logPath}`, text_elements: [] }]);
+    await r.next('turn/completed');
   });
 
   it('steer: turn/steer with expectedTurnId and clientUserMessageId', async () => {

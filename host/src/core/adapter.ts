@@ -18,6 +18,8 @@ import type {
   Agent,
   ApprovalRequest,
   Decision,
+  InputFile,
+  InputImage,
   InputPart,
   InputRequest,
   Item,
@@ -73,6 +75,18 @@ export type AdapterEvent =
 export type AdapterListener = (event: AdapterEvent) => void;
 
 /**
+ * Input as an adapter receives it (spec 8.1): the protocol's InputParts, with attachments resolved by the
+ * core. An image or file part that names a `/v1/blob` attachment carries the absolute `path` of its bytes
+ * on this Mac and its `mediaType`; an image part without `path` is a data URL (or a URL the engine fetches
+ * itself). Image parts reach an adapter only when its agent declares `attachments.images`; otherwise the
+ * core turns them into file parts first.
+ */
+export type AdapterInputPart =
+  | Exclude<InputPart, InputImage | InputFile>
+  | (InputImage & { path?: string; mediaType?: string })
+  | (InputFile & { path?: string });
+
+/**
  * What an agent supports, fixed per agent (spec 4 `Agent.capabilities`): `steer` and `diff` say whether
  * `turn/steer` and `turn/diff` work (otherwise they answer `not_supported` without starting the agent).
  * The host computes turn diffs itself from git snapshots (core/turn-changes.ts), so real agents declare
@@ -83,6 +97,8 @@ export interface AgentCapabilities {
   readonly steer: boolean;
   readonly diff: boolean;
   readonly approvalModes: readonly string[];
+  /** Attachments (spec 8.1): images in the engine's native image input, files as a path in the prompt. */
+  readonly attachments: { readonly images: boolean; readonly files: boolean };
 }
 
 /**
@@ -95,9 +111,9 @@ export interface Adapter {
   start(cwd: string, settings: Settings): Promise<string>;
   /** Reattaches to an existing engine session after the engine or the host restarted. */
   resume(engineSessionId: string, cwd: string, settings: Settings): Promise<void>;
-  turnStart(input: InputPart[], clientMessageId: string): Promise<void>;
+  turnStart(input: AdapterInputPart[], clientMessageId: string): Promise<void>;
   /** Adds input to the running turn. Only called when the agent's `capabilities.steer`. */
-  steer(input: InputPart[], clientMessageId: string): Promise<void>;
+  steer(input: AdapterInputPart[], clientMessageId: string): Promise<void>;
   /** Stops the running turn; the adapter then emits `turn/completed {status: "interrupted"}`. */
   interrupt(): Promise<void>;
   resolveApproval(requestId: string, decision: Decision): Promise<void>;
@@ -141,7 +157,7 @@ export function describeAgent(provider: AgentProvider): Agent {
   const agent: Agent = { id: provider.id, name: provider.name, status: state.status };
   if (state.version !== undefined) agent.version = state.version;
   if (state.reason !== undefined) agent.reason = state.reason;
-  const { steer, diff, approvalModes } = provider.capabilities;
-  agent.capabilities = { steer, diff, approvalModes: [...approvalModes] };
+  const { steer, diff, approvalModes, attachments } = provider.capabilities;
+  agent.capabilities = { steer, diff, approvalModes: [...approvalModes], attachments: { ...attachments } };
   return agent;
 }

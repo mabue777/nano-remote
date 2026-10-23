@@ -21,10 +21,13 @@ import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
-import { canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
+import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
 import { folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { modelLabel } from '../new-session-model';
+import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
+import type { ResizeDeps } from './attachments/resize';
+import type { Uploader } from './attachments/upload';
 import { filesChangedText } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
@@ -46,8 +49,15 @@ export interface SessionReplica {
 
 export type Tone = SessionRow['tone'];
 
+/** An image or file a message carries (spec 5.1 InputPart), for thumbnails and file chips. */
+export interface AttachmentView {
+  url: string;
+  name: string;
+  mediaType?: string;
+}
+
 export type ItemRow =
-  | { kind: 'user'; itemId: string; text: string; attachments: number }
+  | { kind: 'user'; itemId: string; text: string; images: AttachmentView[]; files: AttachmentView[] }
   | { kind: 'agent'; itemId: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; itemId: string; summary: string; text: string; expanded: boolean; streaming: boolean }
   | { kind: 'command'; itemId: string; summary: string; state: string; tone: Tone; output: string }
@@ -74,6 +84,8 @@ export interface TurnRow {
 export interface SteerRow {
   clientMessageId: string;
   text: string;
+  images: AttachmentView[];
+  files: AttachmentView[];
   state: 'sending' | 'sent' | 'queued' | 'failed';
   label: string;
   error?: string;
@@ -81,7 +93,7 @@ export interface SteerRow {
 
 interface Steer {
   clientMessageId: string;
-  text: string;
+  input: InputPart[];
   turnId: string;
   state: SteerRow['state'];
   error?: string;
@@ -154,15 +166,24 @@ export function commandSummary(item: Extract<Item, { type: 'command' }>): string
   return parts.join(' · ');
 }
 
-function inputText(content: readonly InputPart[]): { text: string; attachments: number } {
+/** The last segment of an image URL as a name: `/v1/blob/blb_x` -> `blb_x`; data URLs are "image". */
+function imageName(url: string): string {
+  if (url.startsWith('data:')) return 'image';
+  return url.split(/[?#]/)[0]!.split('/').pop() || 'image';
+}
+
+/** A message's text (mentions as `@name`), its images (thumbnails) and its files (chips). */
+export function inputText(content: readonly InputPart[]): { text: string; images: AttachmentView[]; files: AttachmentView[] } {
   const texts: string[] = [];
-  let attachments = 0;
+  const images: AttachmentView[] = [];
+  const files: AttachmentView[] = [];
   for (const part of content) {
     if (part.type === 'text') texts.push(part.text);
     else if (part.type === 'mention') texts.push(`@${part.name}`);
-    else attachments += 1;
+    else if (part.type === 'image') images.push({ url: part.url, name: imageName(part.url) });
+    else if (part.type === 'file') files.push({ url: part.url, name: part.name, mediaType: part.mediaType });
   }
-  return { text: texts.join('\n'), attachments };
+  return { text: texts.join('\n'), images, files };
 }
 
 function stringOf(value: unknown): string {
@@ -294,11 +315,22 @@ export function taskStateOf(summary: Pick<SessionSummary, 'status' | 'lastTurnSt
 
 const OLDER_PAGE = 5;
 
+/** What the composer needs to attach photos and files (spec 8.1). */
+export interface AttachmentServices {
+  /** `limits.maxAttachmentBytes` of the current stream's initialize; undefined: the host takes none. */
+  maxBytes: () => number | undefined;
+  uploader: Uploader;
+  resize: ResizeDeps;
+  objectUrls?: { create: (blob: Blob) => string; revoke: (url: string) => void };
+}
+
 export interface SessionModelOptions {
   sessionId: string;
   replica: SessionReplica;
   /** The host's agents with their capabilities (the stream client's initialize result). */
   agents?: AgentsSource;
+  /** Uploads for the composer; without them the composer offers no attach button. */
+  attachments?: AttachmentServices;
 }
 
 /** The composer's note while a turn runs and the agent cannot steer. */
@@ -330,12 +362,25 @@ export class SessionModel extends Model {
   private readonly steers = new Map<string, Steer>();
   private readonly unsubscribe: (() => void)[] = [];
   private started = false;
+  private readonly attachmentServices: AttachmentServices | undefined;
+  /** The photos and files picked for the next message. */
+  readonly attachments: ComposerAttachments | undefined;
 
   constructor(options: SessionModelOptions) {
     super();
     this.sessionId = options.sessionId;
     this.replica = options.replica;
     this.agents = options.agents;
+    this.attachmentServices = options.attachments;
+    if (options.attachments !== undefined) {
+      this.attachments = new ComposerAttachments({
+        sessionId: options.sessionId,
+        uploader: options.attachments.uploader,
+        resize: options.attachments.resize,
+        ...(options.attachments.objectUrls !== undefined ? { objectUrls: options.attachments.objectUrls } : {}),
+        onChange: () => this.changed(),
+      });
+    }
     this.unsubscribe.push(
       this.replica.subscribe(() => {
         this.reconcileSteers();
@@ -365,6 +410,7 @@ export class SessionModel extends Model {
   /** Stops listening and unsubscribes the stream from the session (session/close). */
   dispose(): void {
     for (const fn of this.unsubscribe.splice(0)) fn();
+    if (this.attachments !== undefined && this.attachments.entries.length > 0) this.attachments.clear();
     if (this.started) void this.replica.close().catch(() => undefined);
   }
 
@@ -501,7 +547,7 @@ export class SessionModel extends Model {
   get steerRows(): SteerRow[] {
     return [...this.steers.values()].map((steer) => ({
       clientMessageId: steer.clientMessageId,
-      text: steer.text,
+      ...inputText(steer.input),
       state: steer.state,
       label: { sending: 'Sending…', sent: 'Sent', queued: 'Queued until the turn ends', failed: 'Not sent' }[steer.state],
       ...(steer.error !== undefined ? { error: steer.error } : {}),
@@ -537,8 +583,37 @@ export class SessionModel extends Model {
     return this.mode === 'queue' ? NO_STEER_NOTE : undefined;
   }
 
+  /**
+   * What the attach button offers (spec 8.1): undefined when the host takes no uploads, the agent declares
+   * no attachments, or the session is closed. Images are offered whenever files are (the host hands an agent
+   * without image input its photos as files).
+   */
+  get attachRules(): AttachmentRules | undefined {
+    const maxBytes = this.attachmentServices?.maxBytes();
+    const accepts = attachmentsFor(this.agent, maxBytes);
+    if (accepts === undefined || maxBytes === undefined || this.closed) return undefined;
+    return { images: accepts.images || accepts.files, files: accepts.files, maxBytes };
+  }
+
+  /** The file picker's `accept`: images only when the agent takes no files, else anything. */
+  get attachAccept(): string {
+    return this.attachRules?.files === false ? 'image/*' : '';
+  }
+
+  /** Why Send waits: attachments still uploading, or one failed. */
+  get attachmentsNote(): string | undefined {
+    const attachments = this.attachments;
+    if (attachments === undefined) return undefined;
+    if (attachments.busy) return 'Uploading attachments…';
+    if (attachments.failed) return 'An attachment did not upload: retry or remove it.';
+    return undefined;
+  }
+
   get canSend(): boolean {
-    return this.draft.trim() !== '' && !this.closed;
+    if (this.closed) return false;
+    const attachments = this.attachments;
+    if (attachments !== undefined && attachments.entries.length > 0) return attachments.ready;
+    return this.draft.trim() !== '';
   }
 
   get canInterrupt(): boolean {
@@ -565,24 +640,42 @@ export class SessionModel extends Model {
     this.changed();
   }
 
-  /** Sends the draft: a new turn, or a steer into the running one. */
+  /** Picks photos or files for the next message; each starts uploading at once. */
+  attach(files: readonly (Blob & PickedFile)[]): void {
+    const rules = this.attachRules;
+    if (this.attachments === undefined || rules === undefined || files.length === 0) return;
+    this.attachments.add(files, rules);
+  }
+
+  removeAttachment(id: string): void {
+    this.attachments?.remove(id);
+  }
+
+  retryAttachment(id: string): void {
+    const rules = this.attachRules;
+    if (rules !== undefined) this.attachments?.retry(id, rules);
+  }
+
+  /** Sends the draft and the ready attachments: a new turn, or a steer into the running one. */
   send(): void {
     if (!this.canSend) return;
     const text = this.draft.trim();
+    const input: InputPart[] = [...(text === '' ? [] : [{ type: 'text' as const, text }]), ...(this.attachments?.parts() ?? [])];
     this.draft = '';
+    if (this.attachments !== undefined && this.attachments.entries.length > 0) this.attachments.clear();
     this.atBottom = true;
     this.scrollRequest += 1;
     const running = this.runningTurnId;
-    if (running === undefined) this.replica.sendMessage(this.sessionId, [{ type: 'text', text }]);
-    else if (this.steerable) void this.steer(text, running, this.replica.newClientMessageId());
-    else this.queue(text, running);
+    if (running === undefined) this.replica.sendMessage(this.sessionId, input);
+    else if (this.steerable) void this.steer(input, running, this.replica.newClientMessageId());
+    else this.queue(input, running);
     this.changed();
   }
 
   /** Holds a message for an agent that cannot steer; it goes out as a new turn once the turn ends. */
-  private queue(text: string, turnId: string): void {
+  private queue(input: InputPart[], turnId: string): void {
     const clientMessageId = this.replica.newClientMessageId();
-    this.steers.set(clientMessageId, { clientMessageId, text, turnId, state: 'queued' });
+    this.steers.set(clientMessageId, { clientMessageId, input, turnId, state: 'queued' });
   }
 
   /** Sends a refused message again (same clientMessageId). */
@@ -610,10 +703,10 @@ export class SessionModel extends Model {
       return;
     }
     this.replica.discardSend(this.sessionId, clientMessageId);
-    const text = inputText(item.content).text;
-    if (this.steerable) void this.steer(text, target, this.replica.newClientMessageId());
+    const input = [...item.content];
+    if (this.steerable) void this.steer(input, target, this.replica.newClientMessageId());
     else {
-      this.queue(text, target);
+      this.queue(input, target);
       this.reconcileSteers();
       this.changed();
     }
@@ -626,11 +719,11 @@ export class SessionModel extends Model {
     const running = this.runningTurnId;
     if (running === undefined) {
       this.steers.delete(clientMessageId);
-      this.replica.sendMessage(this.sessionId, [{ type: 'text', text: steer.text }]);
+      this.replica.sendMessage(this.sessionId, steer.input);
       this.changed();
       return;
     }
-    void this.steer(steer.text, running, clientMessageId);
+    void this.steer(steer.input, running, clientMessageId);
   }
 
   discardSteer(clientMessageId: string): void {
@@ -718,19 +811,19 @@ export class SessionModel extends Model {
 
   // ---- steering ---------------------------------------------------------------------------------
 
-  private async steer(text: string, turnId: string, clientMessageId: string): Promise<void> {
-    const steer: Steer = { clientMessageId, text, turnId, state: 'sending' };
+  private async steer(input: InputPart[], turnId: string, clientMessageId: string): Promise<void> {
+    const steer: Steer = { clientMessageId, input, turnId, state: 'sending' };
     this.steers.set(clientMessageId, steer);
     this.changed();
     try {
-      await this.replica.steer(this.sessionId, turnId, [{ type: 'text', text }], clientMessageId);
+      await this.replica.steer(this.sessionId, turnId, input, clientMessageId);
       steer.state = 'sent';
     } catch (error) {
       const code = (error as Partial<RequestError>).code ?? 'internal';
       if (code === 'turn_mismatch') {
         // The turn ended before the steer landed: the message becomes a new turn.
         this.steers.delete(clientMessageId);
-        this.replica.sendMessage(this.sessionId, [{ type: 'text', text }]);
+        this.replica.sendMessage(this.sessionId, input);
       } else if (code === 'not_supported') {
         steer.state = 'queued';
       } else {
@@ -759,7 +852,7 @@ export class SessionModel extends Model {
         this.steers.delete(steer.clientMessageId);
       } else if (steer.state === 'queued' && running === undefined) {
         this.steers.delete(steer.clientMessageId);
-        this.replica.sendMessage(this.sessionId, [{ type: 'text', text: steer.text }]);
+        this.replica.sendMessage(this.sessionId, steer.input);
       }
     }
   }

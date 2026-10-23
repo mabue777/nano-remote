@@ -552,6 +552,9 @@
         },
         {
           "$ref": "#/$defs/InputMention"
+        },
+        {
+          "$ref": "#/$defs/InputFile"
         }
       ]
     },
@@ -572,6 +575,7 @@
     },
     "InputImage": {
       "type": "object",
+      "description": "An image: a data URL, or /v1/blob/<blobId> for an attachment uploaded to the host (spec 8.1).",
       "required": [
         "type",
         "url"
@@ -583,6 +587,36 @@
         "url": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "InputFile": {
+      "type": "object",
+      "description": "A file attachment uploaded to the host (spec 8.1). The host hands the agent the file's path. Additive within v1.",
+      "required": [
+        "type",
+        "url",
+        "name",
+        "mediaType"
+      ],
+      "properties": {
+        "type": {
+          "const": "file"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^/v1/blob/blb_[A-Za-z0-9_-]{22}$",
+          "description": "/v1/blob/<blobId>, as POST /v1/blob answered."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The file name as the host stored it."
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 3,
+          "description": "The media type as the host stored it, for example application/pdf."
         }
       }
     },
@@ -965,6 +999,27 @@
           "items": {
             "type": "string"
           }
+        },
+        "attachments": {
+          "$ref": "#/$defs/AttachmentCapabilities"
+        }
+      }
+    },
+    "AttachmentCapabilities": {
+      "type": "object",
+      "description": "Which attachments (spec 8.1) the agent takes: images in its native image input, files as a path in the prompt. Absent: an older host without attachments. Additive within v1.",
+      "required": [
+        "images",
+        "files"
+      ],
+      "properties": {
+        "images": {
+          "type": "boolean",
+          "description": "Image parts reach the agent as images it can see. False: the host sends them as file paths instead."
+        },
+        "files": {
+          "type": "boolean",
+          "description": "File parts are accepted; the agent gets the file's path on the host."
         }
       }
     },

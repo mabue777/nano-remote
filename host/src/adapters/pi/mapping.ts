@@ -4,8 +4,9 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Decision, FileChange, InputPart, InputQuestion, ItemStatus, ModelInfo, Usage } from '../../generated/common.js';
-import type { AdapterApprovalRequest, AdapterItem } from '../../core/adapter.js';
+import type { AdapterApprovalRequest, AdapterInputPart, AdapterItem } from '../../core/adapter.js';
+import type { Decision, FileChange, InputQuestion, ItemStatus, ModelInfo, Usage } from '../../generated/common.js';
+import { fileLine, inlineImage, parseDataUrl } from '../shared/attachments.js';
 
 type Json = Record<string, unknown>;
 
@@ -30,16 +31,26 @@ const num = (value: unknown): number => (typeof value === 'number' && Number.isF
 
 // ---- input ---------------------------------------------------------------------------------------
 
-/** A pi prompt: the text parts joined, mentions as their path, data-URL images as pi `ImageContent`. */
-export function toPrompt(input: readonly InputPart[]): { message: string; images?: Json[] } {
+/**
+ * A pi prompt (pi docs rpc-commands.md `prompt`, `steer`): the text parts joined, mentions as their path,
+ * images as pi `ImageContent {type: "image", data, mimeType}` (a stored attachment is read from its path,
+ * spec 8.1), and a file, or an image of a type the model input does not take, as `Attached file: <path>`.
+ */
+export async function toPrompt(input: readonly AdapterInputPart[]): Promise<{ message: string; images?: Json[] }> {
   const text: string[] = [];
   const images: Json[] = [];
   for (const part of input) {
     if (part.type === 'text') text.push(part.text);
     else if (part.type === 'mention') text.push(part.path);
-    else {
-      const match = /^data:([^;,]+);base64,(.*)$/s.exec(part.url);
-      if (match) images.push({ type: 'image', mimeType: match[1], data: match[2] });
+    else if (part.type === 'file') text.push(fileLine(part));
+    else if (part.path === undefined) {
+      // A data URL passes as it is; any other URL pi cannot fetch.
+      const parsed = parseDataUrl(part.url);
+      if (parsed !== undefined) images.push({ type: 'image', mimeType: parsed.mediaType, data: parsed.data });
+    } else {
+      const image = await inlineImage(part);
+      if (image !== undefined) images.push({ type: 'image', mimeType: image.mediaType, data: image.data });
+      else text.push(fileLine(part));
     }
   }
   const out: { message: string; images?: Json[] } = { message: text.join('\n') };

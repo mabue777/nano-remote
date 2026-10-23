@@ -34,7 +34,8 @@
           "required": ["maxMessageBytes", "snapshotTurns"],
           "properties": {
             "maxMessageBytes": {"type": "integer", "minimum": 1},
-            "snapshotTurns": {"type": "integer", "minimum": 1}
+            "snapshotTurns": {"type": "integer", "minimum": 1},
+            "maxAttachmentBytes": {"type": "integer", "minimum": 1, "description": "Largest attachment POST /v1/blob accepts (spec 8.1). Absent: the host takes no attachments. Additive within v1."}
           }
         }
       }

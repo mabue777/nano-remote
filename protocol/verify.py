@@ -239,6 +239,13 @@ NEGATIVE = [
      {"host": {"hostId": "host_1", "name": "m", "version": "0.1.0", "os": "darwin", "arch": "arm64"},
       "agents": [], "sessionsActive": 0, "uptimeSeconds": 1,
       "keepAwake": {"setting": "pluggedIn", "onBattery": False}}),
+    ("file input part without a name is rejected", "common.json#/$defs/InputPart",
+     {"type": "file", "url": "/v1/blob/blb_TG9naW5FcnJvckxvZzAwMQ", "mediaType": "text/plain"}),
+    ("file input part with a URL that is not a blob is rejected", "common.json#/$defs/InputPart",
+     {"type": "file", "url": "https://example.com/a.pdf", "name": "a.pdf", "mediaType": "application/pdf"}),
+    ("attachment capabilities without files are rejected", "common.json#/$defs/Agent",
+     {"id": "pi", "name": "Pi", "status": "ready",
+      "capabilities": {"steer": True, "diff": True, "approvalModes": [], "attachments": {"images": True}}}),
 ]
 
 

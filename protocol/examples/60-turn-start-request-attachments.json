@@ -1,0 +1,20 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/turn~1start.params", "at": "params"},
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 9,
+  "message": {
+    "id": "c-44",
+    "method": "turn/start",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "input": [
+        {"type": "text", "text": "Why does the login screen look like this? The log is attached."},
+        {"type": "image", "url": "/v1/blob/blb_Qm9vdHN0cmFwSW1hZ2UwMQ"},
+        {"type": "file", "url": "/v1/blob/blb_TG9naW5FcnJvckxvZzAwMQ", "name": "login-error.log", "mediaType": "text/plain"}
+      ],
+      "clientMessageId": "4b1f2c3d-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
+    }
+  }
+}

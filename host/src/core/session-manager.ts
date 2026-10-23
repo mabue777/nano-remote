@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
+import { BLOB_PATH, type AttachmentStore } from '../attachments/store.js';
 import type { Decision, InputPart, Settings, TurnError } from '../generated/common.js';
 import type { TurnDiffResult } from '../generated/methods.js';
 import type { Journal } from '../journal/journal.js';
@@ -28,7 +29,7 @@ import type {
   Turn,
 } from '../journal/types.js';
 import { RpcError } from '../errors.js';
-import type { Adapter, AdapterEvent, AgentProvider, FinalTurnStatus } from './adapter.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AgentProvider, FinalTurnStatus } from './adapter.js';
 import { newId } from './ids.js';
 import { SessionStore } from './store.js';
 import { TurnChanges } from './turn-changes.js';
@@ -61,6 +62,8 @@ export interface SessionManagerOptions {
   log?: (message: string, error?: unknown) => void;
   /** Longest a turn start waits for its git snapshot (turn/diff, spec 7). Default START_SNAPSHOT_WAIT_MS. */
   startSnapshotWaitMs?: number;
+  /** Uploaded attachments (spec 8.1). Without a store every `/v1/blob` URL in input is `invalid_params`. */
+  attachments?: AttachmentStore;
 }
 
 export interface StartParams {
@@ -103,6 +106,7 @@ export class SessionManager {
   private readonly now: () => number;
   private readonly onEvent: (event: JournalEvent) => void;
   private readonly log: (message: string, error?: unknown) => void;
+  private readonly attachments: AttachmentStore | undefined;
 
   constructor(options: SessionManagerOptions) {
     this.journal = options.journal;
@@ -110,6 +114,7 @@ export class SessionManager {
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
     this.onEvent = options.onEvent ?? (() => {});
     this.log = options.log ?? (() => {});
+    this.attachments = options.attachments;
     this.changes = new TurnChanges({
       store: this.store,
       log: this.log,
@@ -144,6 +149,33 @@ export class SessionManager {
     }
   }
 
+  /**
+   * The input as the session's adapter gets it (spec 8.1): every `/v1/blob` URL must name an attachment of
+   * this session (`invalid_params` at the part's url otherwise), image blobs must be images, file parts
+   * must be blobs. Blob parts gain the attachment's path and media type; an agent without image input
+   * gets its image blobs as file parts. Data-URL images pass through unchanged.
+   */
+  private resolveInput(sessionId: string, agentId: string, input: readonly InputPart[]): AdapterInputPart[] {
+    const accepts = this.providers.get(agentId)?.capabilities.attachments ?? { images: true, files: true };
+    return input.map((part, n): AdapterInputPart => {
+      if (part.type !== 'image' && part.type !== 'file') return part;
+      const at = `params.input.${n}.url`;
+      const isBlob = part.url.startsWith(`${BLOB_PATH}/`);
+      if (part.type === 'image' && !isBlob) return part;
+      const attachment = isBlob ? this.attachments?.resolve(sessionId, part.url) : undefined;
+      if (attachment === undefined) {
+        throw RpcError.invalidParams(at, `${part.url} is not an attachment of this session (upload it with POST ${BLOB_PATH})`);
+      }
+      if (part.type === 'image' && !attachment.mediaType.startsWith('image/')) {
+        throw RpcError.invalidParams(at, `${part.url} is ${attachment.mediaType}, not an image; send it as a file part`);
+      }
+      const asFile = part.type === 'file' || !accepts.images;
+      if (asFile && !accepts.files) throw new RpcError('not_supported', `agent ${agentId} takes no file attachments`, { agentId });
+      if (asFile) return { type: 'file', url: part.url, name: attachment.name, mediaType: attachment.mediaType, path: attachment.path };
+      return { ...part, path: attachment.path, mediaType: attachment.mediaType };
+    });
+  }
+
   private requireReady(provider: AgentProvider): void {
     const state = provider.state();
     if (state.status !== 'ready') {
@@ -163,6 +195,11 @@ export class SessionManager {
       throw new RpcError('not_found', `no session ${sessionId}`, { sessionId });
     }
     return session;
+  }
+
+  /** True when the session exists and is not deleted (the attachment endpoint, spec 8.1). */
+  exists(sessionId: string): boolean {
+    return this.journal.session(sessionId) !== undefined && !this.store.get(sessionId).deleted;
   }
 
   /** The running turn's id, if any. */
@@ -229,6 +266,8 @@ export class SessionManager {
     if (!path.isAbsolute(params.cwd) || !isDirectory(params.cwd)) {
       throw RpcError.invalidParams('params.cwd', `cwd must be an absolute path to a directory: ${params.cwd}`);
     }
+    // A new session has no attachments yet: an attachment URL in its first input can only be refused.
+    if (params.input) this.resolveInput('', provider.id, params.input);
     const sessionId = newId('ses');
     const now = this.now();
     const title = params.title ?? (params.input ? titleFrom(params.input) : '');
@@ -281,6 +320,7 @@ export class SessionManager {
     await this.shutdown(sessionId);
     this.append(sessionId, { method: 'session/closed', params: { reason: 'deleted' } });
     this.live.delete(sessionId);
+    await this.attachments?.deleteSession(sessionId);
   }
 
   /** Host shutdown: stops every engine without journaling; the next start recovers running turns. */
@@ -308,6 +348,7 @@ export class SessionManager {
     if (live.turn) {
       throw new RpcError('session_busy', `a turn is running in ${sessionId}`, { turnId: live.turn.turnId });
     }
+    const resolved = this.resolveInput(sessionId, summary.agentId, input);
     if (this.store.get(sessionId).archived) this.store.setArchived(sessionId, false);
     if (summary.title === '') this.changeSession(sessionId, { title: titleFrom(input) });
 
@@ -321,7 +362,7 @@ export class SessionManager {
     running.delivered = (async () => {
       const adapter = await this.ensureAdapter(live);
       await snapshot.seal();
-      await adapter.turnStart(input, clientMessageId);
+      await adapter.turnStart(resolved, clientMessageId);
       return adapter;
     })();
     try {
@@ -338,6 +379,7 @@ export class SessionManager {
   private async joinEngineTurn(live: Live, agentId: string, input: InputPart[], clientMessageId: string): Promise<Turn> {
     const running = live.turn!;
     const sessionId = live.sessionId;
+    const resolved = this.resolveInput(sessionId, agentId, input);
     const ready = running.delivered ?? Promise.reject(new Error('the engine is not attached'));
     const adapter = await ready.catch((error: unknown) => {
       throw this.unavailable(agentId, error);
@@ -349,7 +391,7 @@ export class SessionManager {
     this.store.rememberClientMessage(sessionId, clientMessageId, running.turnId);
     this.appendUserMessage(live, input, clientMessageId);
     try {
-      await adapter.turnStart(input, clientMessageId);
+      await adapter.turnStart(resolved, clientMessageId);
     } catch (error) {
       throw this.unavailable(agentId, error);
     }
@@ -369,6 +411,7 @@ export class SessionManager {
       });
     }
     this.requireCapability(summary.agentId, 'steer', 'cannot steer a running turn');
+    const resolved = this.resolveInput(sessionId, summary.agentId, input);
     // A running turn has its input on the way to the engine (turnStart), unless the boot just failed and
     // the turn is about to be failed. Steer waits for that delivery, so it never reaches the engine first.
     const ready = running.delivered ?? Promise.reject(new Error('the engine is not attached'));
@@ -381,7 +424,7 @@ export class SessionManager {
     this.store.rememberClientMessage(sessionId, clientMessageId, turnId);
     this.appendUserMessage(live, input, clientMessageId);
     try {
-      await adapter.steer(input, clientMessageId);
+      await adapter.steer(resolved, clientMessageId);
     } catch (error) {
       throw this.unavailable(summary.agentId, error);
     }

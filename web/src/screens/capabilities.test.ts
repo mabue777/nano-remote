@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canBypass, canSteer, findAgent, hasDiff } from './capabilities';
+import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff } from './capabilities';
 
 const agent = (capabilities?: { steer: boolean; diff: boolean; approvalModes: string[] }) => ({
   id: 'a',
@@ -31,5 +31,19 @@ describe('agent capabilities', () => {
     expect(findAgent(() => undefined, 'a')).toBeUndefined();
     expect(findAgent(undefined, 'a')).toBeUndefined();
     expect(findAgent(() => list, undefined)).toBeUndefined();
+  });
+
+  it('attachmentsFor needs a host limit and an agent that declares images or files; older hosts get none', () => {
+    const agent = (attachments?: { images: boolean; files: boolean }): Agent => ({
+      id: 'a',
+      name: 'A',
+      status: 'ready',
+      capabilities: { steer: true, diff: true, approvalModes: [], ...(attachments ? { attachments } : {}) },
+    });
+    expect(attachmentsFor(agent({ images: true, files: false }), 10)).toEqual({ images: true, files: false });
+    expect(attachmentsFor(agent({ images: true, files: true }), undefined)).toBeUndefined();
+    expect(attachmentsFor(agent(), 10)).toBeUndefined();
+    expect(attachmentsFor(agent({ images: false, files: false }), 10)).toBeUndefined();
+    expect(attachmentsFor(undefined, 10)).toBeUndefined();
   });
 });

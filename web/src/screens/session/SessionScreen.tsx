@@ -9,7 +9,8 @@ import type { AgentsSource } from '../capabilities';
 import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
-import { SessionModel, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import type { AttachmentEntry } from './attachments/composer';
+import { SessionModel, type AttachmentServices, type AttachmentView, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
@@ -30,10 +31,23 @@ export interface SessionScreenProps {
   onOpened?: (sessionId: string) => void;
   /** The host's agents with their capabilities (the stream client's initialize result). */
   agents?: AgentsSource;
+  /** Photo and file uploads for the composer (spec 8.1); without them there is no attach button. */
+  attachments?: AttachmentServices;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents }: SessionScreenProps) {
-  const model = useModel(useMemo(() => new SessionModel({ sessionId, replica, ...(agents !== undefined ? { agents } : {}) }), [sessionId, replica, agents]));
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments }: SessionScreenProps) {
+  const model = useModel(
+    useMemo(
+      () =>
+        new SessionModel({
+          sessionId,
+          replica,
+          ...(agents !== undefined ? { agents } : {}),
+          ...(attachments !== undefined ? { attachments } : {}),
+        }),
+      [sessionId, replica, agents, attachments],
+    ),
+  );
   const requests = useModel(
     useMemo(
       () => new ApprovalsModel({ sessionId, replica, ...(clientId !== undefined ? { clientId } : {}), ...(deviceName !== undefined ? { deviceName } : {}) }),
@@ -308,8 +322,8 @@ function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
     case 'user':
       return (
         <div class="msg user" data-item={item.kind}>
-          <p>{item.text}</p>
-          {item.attachments > 0 && <p class="muted small">{item.attachments} attachment{item.attachments === 1 ? '' : 's'}</p>}
+          <SentAttachments images={item.images} files={item.files} />
+          {item.text !== '' && <p>{item.text}</p>}
         </div>
       );
     case 'agent':
@@ -377,7 +391,8 @@ function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
 function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
   return (
     <li class={`msg user steer ${steer.state}`} data-steer-state={steer.state}>
-      <p>{steer.text}</p>
+      <SentAttachments images={steer.images} files={steer.files} />
+      {steer.text !== '' && <p>{steer.text}</p>}
       <p class="muted small">{steer.label}</p>
       {steer.state === 'failed' && (
         <div class="send-failure" role="alert">
@@ -396,9 +411,100 @@ function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
   );
 }
 
+/** A sent message's images (thumbnails that open the full image) and files (chips that download them). */
+function SentAttachments({ images, files }: { images: AttachmentView[]; files: AttachmentView[] }) {
+  if (images.length === 0 && files.length === 0) return null;
+  return (
+    <div class="sent-attachments">
+      {images.length > 0 && (
+        <ul class="thumbs" aria-label="Attached images">
+          {images.map((image, index) => (
+            <li key={`${image.url}-${index}`}>
+              <a href={image.url} target="_blank" rel="noopener">
+                <img src={image.url} alt={`Attached image ${index + 1}`} loading="lazy" decoding="async" />
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {files.length > 0 && (
+        <ul class="file-chips" aria-label="Attached files">
+          {files.map((file, index) => (
+            <li key={`${file.url}-${index}`}>
+              <a class="file-chip" href={file.url} download={file.name} title={file.mediaType}>
+                <span class="file-icon" aria-hidden="true">
+                  ▤
+                </span>
+                <span class="file-name">{file.name}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The picked photos and files above the message field: thumbnail or name, progress, error, remove. */
+function AttachTray({ model }: { model: SessionModel }) {
+  const entries = model.attachments?.entries ?? [];
+  const notice = model.attachments?.notice;
+  if (entries.length === 0 && notice === undefined) return null;
+  return (
+    <div class="attach-tray">
+      {notice !== undefined && (
+        <p class="error small" role="alert">
+          {notice}
+        </p>
+      )}
+      {entries.length > 0 && (
+        <ul class="tray" aria-label="Attachments to send">
+          {entries.map((entry) => (
+            <TrayEntry key={entry.id} entry={entry} model={model} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TrayEntry({ entry, model }: { entry: AttachmentEntry; model: SessionModel }) {
+  const label = entry.state === 'preparing' ? 'Preparing…' : entry.state === 'uploading' ? `Uploading ${Math.round(entry.progress * 100)}%` : entry.state === 'ready' ? 'Ready' : 'Failed';
+  return (
+    <li class={`tray-entry ${entry.kind} ${entry.state}`} data-state={entry.state} aria-label={`${entry.name}: ${label}`}>
+      {entry.kind === 'image' && entry.previewUrl !== undefined ? (
+        <img class="tray-thumb" src={entry.previewUrl} alt={entry.name} />
+      ) : (
+        <span class="tray-file">
+          <span class="file-icon" aria-hidden="true">
+            ▤
+          </span>
+          <span class="file-name">{entry.name}</span>
+        </span>
+      )}
+      {(entry.state === 'preparing' || entry.state === 'uploading') && (
+        <progress class="tray-progress" max={1} value={entry.state === 'preparing' ? undefined : entry.progress} aria-label={label} />
+      )}
+      <button type="button" class="tray-remove" aria-label={`Remove ${entry.name}`} onClick={() => model.removeAttachment(entry.id)}>
+        ×
+      </button>
+      {entry.state === 'failed' && (
+        <div class="tray-error" role="alert">
+          <span class="small">{entry.error}</span>
+          <button type="button" class="small" onClick={() => model.retryAttachment(entry.id)}>
+            Retry
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function Composer({ model, running }: { model: SessionModel; running: boolean }) {
   const steering = model.mode === 'steer';
   const queueing = model.mode === 'queue';
+  const picker = useRef<HTMLInputElement>(null);
+  const rules = model.attachRules;
   return (
     <footer class="composer">
       {model.usage !== undefined && (
@@ -417,6 +523,12 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
           {model.composerNote}
         </p>
       )}
+      <AttachTray model={model} />
+      {model.attachmentsNote !== undefined && (
+        <p class="muted small attach-note" role="status">
+          {model.attachmentsNote}
+        </p>
+      )}
       <form
         class="composer-form"
         onSubmit={(event) => {
@@ -424,6 +536,27 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
           model.send();
         }}
       >
+        {rules !== undefined && (
+          <>
+            <button type="button" class="attach-button" aria-label="Attach photos or files" title="Attach photos or files" onClick={() => picker.current?.click()}>
+              +
+            </button>
+            <input
+              ref={picker}
+              class="attach-input"
+              type="file"
+              multiple
+              accept={model.attachAccept === '' ? undefined : model.attachAccept}
+              aria-hidden="true"
+              tabIndex={-1}
+              onChange={(event) => {
+                const input = event.currentTarget as HTMLInputElement;
+                model.attach([...(input.files ?? [])]);
+                input.value = ''; // the same file can be picked again
+              }}
+            />
+          </>
+        )}
         <textarea
           aria-label="Message"
           rows={Math.min(6, Math.max(1, model.draft.split('\n').length))}
