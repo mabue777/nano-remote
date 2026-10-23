@@ -4,10 +4,11 @@
 // A snapshot must never touch the user's index, stash, refs or files: it copies the index to a temporary
 // file, stages everything with `GIT_INDEX_FILE` pointing at the copy (`git add -A -- .`, so .gitignore
 // holds and ignored files stay out), writes the tree, and deletes the copy. Starting from a copy of the
-// real index (instead of an empty one) keeps git's stat cache, so unchanged files are not hashed again.
+// real index (instead of an empty one) keeps git's stat cache, so unchanged files are not hashed again; the
+// copy keeps the index's mtime so git's "racily clean" check still catches same-second, same-size edits.
 // Only the object store gains objects; nothing references them.
 import { execFile, spawn } from 'node:child_process';
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -82,7 +83,14 @@ export async function snapshotTree(cwd: string): Promise<string> {
   const scratch = path.join(dir, 'index');
   try {
     try {
+      // "Racy git": git re-hashes an entry whose mtime is not older than the index file's own mtime, because
+      // a same-size edit in the same timestamp tick leaves its stat data unchanged. The copy's fresh mtime
+      // would switch that check off, so give it the source's mtime, rounded down to the whole second: never
+      // newer than the source, at the cost of re-hashing only files touched in the second of the index write.
+      // Stat before copying: an index rewritten in between then only makes the copy look older, which is safe.
+      const second = Math.floor((await stat(index)).mtimeMs / 1000);
       await copyFile(index, scratch);
+      await utimes(scratch, second, second);
     } catch (error) {
       // A repository without a single `git add` has no index yet: start from an empty one.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;

@@ -1,7 +1,7 @@
 // The git plumbing of turn/diff (spec 7) on a real temporary repository: what a snapshot records, what the
 // diff between two snapshots lists, the caps, and that the user's index and stash are never touched.
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -114,6 +114,34 @@ describe('snapshots and the diff between them', () => {
     expect(before.stash).toMatch(/user stash/);
     // The snapshot recorded the work tree, not the staged version.
     expect(r.git(['show', `${end}:a.txt`])).toBe('staged, then edited again\n');
+  });
+
+  it('sees a same-size edit made in the same second the index was written ("racy git")', async () => {
+    // git trusts an index entry's cached stat data unless the entry is "racily clean": its mtime is not
+    // older than the index file's own mtime. Here the index and the file share one whole-second mtime, the
+    // file is then rewritten to the same size with that mtime kept, so its stat data still matches the
+    // entry and only the racy rule makes git look at the content. Fixed timestamps and trustctime=false
+    // (ctime cannot be set from user space) make this independent of the clock.
+    const r = repo({ 'src/app.ts': 'export const a = 1;\n' });
+    r.git(['config', 'core.trustctime', 'false']);
+    r.commit('initial');
+    const file = path.join(r.root, 'src', 'app.ts');
+    const index = path.join(r.root, '.git', 'index');
+    const second = Math.floor(Date.now() / 1000) - 60;
+    utimesSync(file, second, second);
+    r.git(['update-index', '--refresh']); // the entry now caches mtime `second`
+    utimesSync(index, second, second); // as if the index was written in that same second
+    const before = await snapshotTree(r.root);
+
+    r.write('src/app.ts', 'export const b = 2;\n'); // same size
+    utimesSync(file, second, second);
+    // git itself sees it (read-only: a status that rewrote the index would smudge the entry and hide the race)
+    expect(r.git(['--no-optional-locks', 'status', '--porcelain=v1'])).toBe(' M src/app.ts\n');
+    const after = await snapshotTree(r.root);
+
+    const { files } = await diffTrees(r.root, before, after);
+    expect(files.map((f) => [f.path, f.kind])).toEqual([['src/app.ts', 'modify']]);
+    expect(r.git(['show', `${after}:src/app.ts`])).toBe('export const b = 2;\n');
   });
 
   it('a session folder below the root sees only its own files, with paths relative to it', async () => {
