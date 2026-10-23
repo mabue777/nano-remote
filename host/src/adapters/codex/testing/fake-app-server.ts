@@ -51,8 +51,13 @@ function saveState(): void {
 }
 const state = loadState();
 
+/** Lines held back to go out in one stdout write (`fixture.oneChunkTurnStart`). */
+let held: string[] | undefined;
+
 function send(message: Json): void {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  const line = `${JSON.stringify(message)}\n`;
+  if (held) held.push(line);
+  else process.stdout.write(line);
 }
 function notify(method: string, params: Json): void {
   send({ method, params });
@@ -403,6 +408,15 @@ function onMessage(message: FakeLogEntry['message']): void {
   if (fixture.ignore?.includes(method)) return;
   const failure = fixture.fail?.[method];
   if (failure !== undefined) return send({ id, error: { code: -32000, message: failure } });
+  if (fixture.oneChunkTurnStart && method === 'turn/start' && !held) {
+    // The reply and the notifications its microtask plays go out together once that microtask has run.
+    held = [];
+    setImmediate(() => {
+      const lines = held!.join('');
+      held = undefined;
+      process.stdout.write(lines);
+    });
+  }
   try {
     const result = handle(method, message.params ?? {});
     send({ id, result: fixture.results && method in fixture.results ? fixture.results[method] : result });

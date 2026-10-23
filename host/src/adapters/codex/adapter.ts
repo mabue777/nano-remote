@@ -101,6 +101,12 @@ export class CodexAdapter implements Adapter {
   private turnId: string | undefined;
   private running = false;
   private turnStarting: Promise<unknown> | undefined;
+  /**
+   * Engine messages read while turn/start awaits its reply's turn id. The lines after the reply in one
+   * stdout chunk are handled before `turnStart` resumes, so they wait here and replay, in order, once the
+   * turn id is known (or turn/start failed): a turn/completed of another turn is then told apart.
+   */
+  private held: (() => void)[] | undefined;
   private readonly requests = new Map<string, PendingRequest>();
   /** Items of the running turn by id, for approvals that refer to them (file changes, command cwd). */
   private readonly items = new Map<string, Json>();
@@ -150,6 +156,7 @@ export class CodexAdapter implements Adapter {
       clientUserMessageId: clientMessageId,
     });
     this.turnStarting = call;
+    this.held = [];
     try {
       const result = (await call) as { turn?: { id?: unknown } };
       this.turnId = str(result?.turn?.id) || undefined;
@@ -158,7 +165,14 @@ export class CodexAdapter implements Adapter {
       throw error;
     } finally {
       this.turnStarting = undefined;
+      this.replayHeld();
     }
+  }
+
+  private replayHeld(): void {
+    const held = this.held ?? [];
+    this.held = undefined;
+    for (const handle of held) handle();
   }
 
   async steer(input: InputPart[], clientMessageId: string): Promise<void> {
@@ -239,8 +253,8 @@ export class CodexAdapter implements Adapter {
     // messages always belong to the current engine. A death during the boot rejects the boot instead.
     let attached = false;
     const engine = new Engine(this.config, {
-      onNotification: (method, params) => this.onNotification(method, params),
-      onRequest: (id, method, params) => this.onRequest(id, method, params),
+      onNotification: (method, params) => this.hold(() => this.onNotification(method, params)),
+      onRequest: (id, method, params) => this.hold(() => this.onRequest(id, method, params)),
       onExit: (reason) => {
         if (attached) this.onExit(reason);
       },
@@ -291,6 +305,7 @@ export class CodexAdapter implements Adapter {
 
   private onExit(reason: string): void {
     this.engine = undefined;
+    this.held = undefined;
     this.requests.clear();
     this.items.clear();
     this.running = false;
@@ -300,6 +315,12 @@ export class CodexAdapter implements Adapter {
   }
 
   // ---- engine messages -------------------------------------------------------------------------
+
+  /** Handles an engine message now, or after the pending turn/start reply was processed. */
+  private hold(handle: () => void): void {
+    if (this.held) this.held.push(handle);
+    else handle();
+  }
 
   private onNotification(method: string, params: Json): void {
     if (typeof params.threadId === 'string' && params.threadId !== this.threadId) return;

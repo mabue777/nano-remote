@@ -52,6 +52,8 @@ export interface FakeFixture {
   ignore?: string[];
   /** The fake exits (code 3) as soon as it receives this method. */
   exitOn?: string;
+  /** Write the turn/start reply and the notifications that follow it in one stdout write (one chunk). */
+  oneChunkTurnStart?: boolean;
   /** Write junk to stdout and stderr on boot (the engine must survive it). */
   noise?: boolean;
 }

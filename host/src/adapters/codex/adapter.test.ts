@@ -623,6 +623,28 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
     expect(r.events.filter((e) => e.method === 'status/changed').map((e) => e.params.status)).toEqual(['running', 'idle']);
   });
 
+  it('a turn/completed of another turn in the same chunk as the turn/start reply is ignored', async () => {
+    // The reply resolves turn/start, but the lines after it in the chunk are read before turnStart learns
+    // the turn id: the adapter holds them until it does.
+    const r = rig({
+      oneChunkTurnStart: true,
+      turns: [
+        [
+          { notify: { method: 'turn/completed', params: { turn: { id: 'another-turn', status: 'failed' } } } },
+          { reply: 'still running' },
+        ],
+      ],
+    });
+    await r.adapter.start(cwd(), {});
+    await r.adapter.turnStart(text('go'), 'cm');
+    const done = await r.next('turn/completed');
+    expect(done.params).toEqual({ status: 'completed' });
+    expect(r.events.filter((e) => e.method === 'turn/completed')).toHaveLength(1);
+    const texts = r.events.flatMap((e) => (e.method === 'item/completed' && e.params.item.type === 'agentMessage' ? [e.params.item.text] : []));
+    expect(texts).toEqual(['still running']);
+    expect(r.events.filter((e) => e.method === 'status/changed').map((e) => e.params.status)).toEqual(['running', 'idle']);
+  });
+
   it('several pending requests: the engine withdraws one, the others stay answerable', async () => {
     const r = rig({
       turns: [
