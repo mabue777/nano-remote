@@ -10,6 +10,7 @@ import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import { SessionModel, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
 /** How far (px) the list must be pulled down at the top before letting go loads older turns. */
@@ -214,6 +215,9 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       {model.detailItemId !== undefined && (
         <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} diffs={model.diffs} onClose={() => model.closeItem()} />
       )}
+      {model.changesTurnId !== undefined && (
+        <ChangesSheet sessionId={sessionId} turnId={model.changesTurnId} replica={replica} onClose={() => model.closeChanges()} />
+      )}
     </main>
   );
 }
@@ -224,6 +228,11 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
       {turn.items.map((item) => (
         <OpenableItem key={item.itemId} item={item} model={model} />
       ))}
+      {turn.changes !== undefined && (
+        <button type="button" class="link small turn-changes" onClick={() => model.openChanges(turn.turnId)}>
+          {turn.changes} ›
+        </button>
+      )}
       {turn.label !== '' && <p class={`turn-state small ${turn.tone}`}>{turn.label}</p>}
       {turn.error !== undefined && (
         <p class="error small" role="alert">

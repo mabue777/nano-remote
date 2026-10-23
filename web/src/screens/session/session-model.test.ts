@@ -602,3 +602,48 @@ describe('task state line', () => {
     expect(model.taskState.label).toBe('Waiting for your approval');
   });
 });
+
+describe('SessionModel: "N files changed" per finished turn (turn/diff, spec 7)', () => {
+  const diffCalls = (client: Awaited<ReturnType<typeof setup>>['client']) => client.calls.filter((c) => c.method === 'turn/diff');
+
+  it('asks turn/diff once per finished turn and shows the count of turns that changed files', async () => {
+    const turns = [turn('t1', { status: 'completed' }), turn('t2', { status: 'interrupted' }), turn('t3')];
+    const { client, model, live } = await setup({ turns, agents: FULL });
+    expect(diffCalls(client).map((c) => c.params)).toEqual([
+      { sessionId: SID, turnId: 't1' },
+      { sessionId: SID, turnId: 't2' },
+    ]);
+    diffCalls(client)[0]!.resolve({ files: [{ path: 'a', kind: 'add', diff: '' }, { path: 'b', kind: 'modify', diff: '' }], omittedFiles: 1 });
+    diffCalls(client)[1]!.reject(rpcError('not_a_repository'));
+    await settle();
+    expect(model.turns.map((t) => [t.turnId, t.changes ?? null])).toEqual([
+      ['t1', '3 files changed'],
+      ['t2', null],
+      ['t3', null],
+    ]);
+
+    live(11, [['turn/completed', { turn: turn('t3', { status: 'completed', completedAt: 20 }) }]]);
+    await settle();
+    expect(diffCalls(client)).toHaveLength(3);
+    diffCalls(client)[2]!.resolve({ files: [] });
+    await settle();
+    expect(model.turns.find((t) => t.turnId === 't3')?.changes).toBeUndefined();
+    live(12, [['usage/updated', { usage: { inputTokens: 1, outputTokens: 1 } }]]);
+    await settle();
+    expect(diffCalls(client)).toHaveLength(3);
+
+    model.openChanges('t1');
+    model.openChanges('t1');
+    expect(model.changesTurnId).toBe('t1');
+    model.closeChanges();
+    model.closeChanges();
+    expect(model.changesTurnId).toBeUndefined();
+  });
+
+  it('an agent without diffs asks nothing and opens no Changes sheet', async () => {
+    const { client, model } = await setup({ turns: [turn('t1', { status: 'completed' })], agents: PI_LIKE });
+    expect(diffCalls(client)).toHaveLength(0);
+    model.openChanges('t1');
+    expect(model.changesTurnId).toBeUndefined();
+  });
+});

@@ -227,6 +227,8 @@ NEGATIVE = [
     ("agent capabilities with a non-boolean steer is rejected", "common.json#/$defs/Agent",
      {"id": "pi", "name": "Pi", "status": "ready",
       "capabilities": {"steer": "yes", "diff": False, "approvalModes": []}}),
+    ("turn/diff file with an unknown kind is rejected", "methods.json#/$defs/turn~1diff.result",
+     {"files": [{"path": "a.txt", "kind": "renamed", "diff": ""}]}),
     ("provider/list entry carrying no hasKey is rejected", "common.json#/$defs/ProviderInfo",
      {"id": "p1", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "kind": "ollama"}),
 ]

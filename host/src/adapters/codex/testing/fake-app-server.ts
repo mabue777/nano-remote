@@ -7,7 +7,8 @@
 //
 // Self-contained on purpose (Node runs it with type stripping, no build): it imports types only.
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { createInterface } from 'node:readline';
 
 import type { FakeFixture, FakeLogEntry, FakeStep } from './fixture.js';
@@ -183,6 +184,14 @@ function playStep(step: FakeStep): 'stop' | void {
     const id = itemId();
     const item = { type: 'commandExecution', id, command: step.run.command, cwd: running!.thread.cwd, commandActions: [] };
     itemStarted({ ...item, status: 'inProgress' });
+    for (const [file, content] of Object.entries(step.run.files ?? {})) {
+      const full = path.resolve(running!.thread.cwd, file);
+      if (content === null) rmSync(full, { force: true });
+      else {
+        mkdirSync(path.dirname(full), { recursive: true });
+        writeFileSync(full, content);
+      }
+    }
     notify('item/commandExecution/outputDelta', { ...base(), itemId: id, delta: step.run.output });
     itemCompleted({ ...item, status: 'completed', aggregatedOutput: step.run.output, exitCode: step.run.exitCode ?? 0, durationMs: 5 });
   } else if ('command' in step) {

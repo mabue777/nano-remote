@@ -531,7 +531,6 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
   it('a call before any thread is attached is agent_unavailable', async () => {
     const r = rig();
     await expect(r.adapter.turnStart(text('go'), 'cm')).rejects.toMatchObject({ code: 'agent_unavailable' });
-    await expect(r.adapter.diff()).rejects.toMatchObject({ code: 'not_supported' });
   });
 
   it('a missing binary or a failing initialize rejects start', async () => {

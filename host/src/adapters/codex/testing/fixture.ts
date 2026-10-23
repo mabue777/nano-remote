@@ -12,8 +12,11 @@ export type FakeStep =
   | { reasoning: string }
   /** A commandExecution item that asks `item/commandExecution/requestApproval` first. */
   | { command: { command?: string; cwd?: string; reason?: string; output?: string; availableDecisions?: unknown[] | null; bare?: boolean } }
-  /** A commandExecution item that runs without asking. */
-  | { run: { command: string; output: string; exitCode?: number } }
+  /**
+   * A commandExecution item that runs without asking. `files` really changes the session folder while it
+   * runs: each path (relative to the thread's cwd) is written with its content, or deleted when null.
+   */
+  | { run: { command: string; output: string; exitCode?: number; files?: Record<string, string | null> } }
   /** A fileChange item that asks `item/fileChange/requestApproval` first. */
   | { fileChange: { path: string; diff: string; kind?: 'add' | 'update' | 'delete'; grantRoot?: string; reason?: string } }
   /** `item/permissions/requestApproval`. */

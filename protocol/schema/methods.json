@@ -285,7 +285,10 @@
       "type": "object",
       "required": ["files"],
       "properties": {
-        "files": {"type": "array", "items": {"$ref": "common.json#/$defs/FileChange"}}
+        "files": {"type": "array", "items": {"$ref": "common.json#/$defs/TurnDiffFile"}},
+        "truncated": {"type": "boolean", "description": "Some diff text or some files were cut at the caps of spec 7. Additive within v1."},
+        "omittedFiles": {"type": "integer", "minimum": 1, "description": "Files changed beyond the file cap, not listed. Additive within v1."},
+        "note": {"type": "string", "description": "One sentence for the user when the diff is not exactly the turn's own change (spec 7 fallbacks). Additive within v1."}
       }
     },
 

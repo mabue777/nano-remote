@@ -12,7 +12,6 @@ import type {
   Agent,
   ApprovalRequest,
   Decision,
-  FileChange,
   InputPart,
   InputRequest,
   Item,
@@ -64,7 +63,9 @@ export type AdapterListener = (event: AdapterEvent) => void;
 
 /**
  * What an agent supports, fixed per agent (spec 4 `Agent.capabilities`): `steer` and `diff` say whether
- * `turn/steer` and `turn/diff` work (otherwise they answer `not_supported` without starting the agent),
+ * `turn/steer` and `turn/diff` work (otherwise they answer `not_supported` without starting the agent).
+ * The host computes turn diffs itself from git snapshots (core/turn-changes.ts), so real agents declare
+ * `diff: true` and adapters have no part in it;
  * `approvalModes` lists the `settings.approvalMode` values the agent honours (empty: none).
  */
 export interface AgentCapabilities {
@@ -91,8 +92,6 @@ export interface Adapter {
   resolveApproval(requestId: string, decision: Decision): Promise<void>;
   /** Answers keyed by question id (spec 5.3); the adapter maps them onto what its engine expects. */
   answerInput(requestId: string, answers: Record<string, string[]>): Promise<void>;
-  /** The net change of one turn. Only called when the agent's `capabilities.diff`. */
-  diff(turnId: string): Promise<FileChange[]>;
   /** Ends the engine process. The adapter emits nothing afterwards. */
   kill(): Promise<void>;
   /** Subscribes to the adapter's events; returns the unsubscribe function. */

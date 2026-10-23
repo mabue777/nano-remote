@@ -1,0 +1,22 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/turn~1diff.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 33,
+  "message": {
+    "id": "c-43",
+    "result": {
+      "files": [
+        {"path": "hello.txt", "kind": "add",
+         "diff": "diff --git a/hello.txt b/hello.txt\nnew file mode 100644\nindex 0000000..ce01362\n--- /dev/null\n+++ b/hello.txt\n@@ -0,0 +1 @@\n+hello\n"},
+        {"path": "docs/guide.md", "kind": "rename", "oldPath": "guide.md",
+         "diff": "diff --git a/guide.md b/docs/guide.md\nsimilarity index 100%\nrename from guide.md\nrename to docs/guide.md\n"},
+        {"path": "logo.png", "kind": "modify", "binary": true, "diff": ""},
+        {"path": "data.csv", "kind": "modify", "truncated": true,
+         "diff": "diff --git a/data.csv b/data.csv\nindex 3b18e51..a1f9c07 100644\n--- a/data.csv\n+++ b/data.csv\n@@ -1,2 +1,2 @@\n-a,b\n+a,b,c\n"}
+      ],
+      "truncated": true
+    }
+  }
+}

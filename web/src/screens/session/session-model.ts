@@ -14,14 +14,18 @@
 // The agent's capabilities (spec 4) decide up front where they are known: an agent that cannot steer gets
 // no steer attempt (the composer says the message waits, and it is queued at once), an agent without
 // diffs offers no Changes view, and the "Bypass" tag needs an agent that honours approvalMode "never".
+// With diffs, every finished turn asks turn/diff once and shows "N files changed" when it changed any;
+// the line opens the turn's Changes sheet.
 // Without capabilities (an older host) the rules above apply unchanged.
 import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
+import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
 import { canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
 import { folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { modelLabel } from '../new-session-model';
+import { filesChangedText } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
 export interface SessionReplica {
@@ -37,6 +41,7 @@ export interface SessionReplica {
   steer(sessionId: string, turnId: string, input: InputPart[], clientMessageId: string): Promise<unknown>;
   newClientMessageId(): string;
   loadOlderTurns(sessionId: string, limit?: number): Promise<boolean>;
+  turnDiff(sessionId: string, turnId: string): Promise<TurnDiffResult>;
 }
 
 export type Tone = SessionRow['tone'];
@@ -62,6 +67,8 @@ export interface TurnRow {
   error?: string;
   /** Optimistic turns (spec 7): the clientMessageId and, when refused, why and what to offer. */
   send?: { clientMessageId: string; failure?: string; busy: boolean };
+  /** "3 files changed" for a finished turn that changed files (turn/diff); opens its Changes sheet. */
+  changes?: string;
 }
 
 export interface SteerRow {
@@ -311,6 +318,11 @@ export class SessionModel extends Model {
   scrollRequest = 0;
   /** The item whose detail sheet (views/ItemDetailSheet) is open. */
   detailItemId: string | undefined;
+  /** The turn whose Changes sheet (views/ChangesSheet) is open. */
+  changesTurnId: string | undefined;
+  /** Files changed per finished turn, once turn/diff answered (spec 7). */
+  private readonly fileCounts = new Map<string, number>();
+  private readonly counted = new Set<string>();
   private interruptingTurn: string | undefined;
   private readonly replica: SessionReplica;
   private readonly agents: AgentsSource | undefined;
@@ -328,6 +340,7 @@ export class SessionModel extends Model {
       this.replica.subscribe(() => {
         this.reconcileSteers();
         if (this.interruptingTurn !== undefined && this.runningTurnId !== this.interruptingTurn) this.interruptingTurn = undefined;
+        this.countChanges();
         this.changed();
       }),
     );
@@ -458,7 +471,30 @@ export class SessionModel extends Model {
   get turns(): TurnRow[] {
     const view = this.view;
     if (view === undefined) return [];
-    return view.turns.map((turn) => turnRow(turn, view.items, this.expanded));
+    return view.turns.map((turn) => {
+      const row = turnRow(turn, view.items, this.expanded);
+      const count = this.fileCounts.get(turn.turnId) ?? 0;
+      if (count > 0) row.changes = filesChangedText(count);
+      return row;
+    });
+  }
+
+  /** Asks turn/diff once for every finished turn, for its "N files changed" line. Failures show no line. */
+  private countChanges(): void {
+    const view = this.view;
+    if (view === undefined || !this.diffs) return;
+    for (const turn of view.turns) {
+      const final = turn.status === 'completed' || turn.status === 'interrupted' || turn.status === 'failed';
+      if (!final || turn.optimistic !== undefined || this.counted.has(turn.turnId)) continue;
+      this.counted.add(turn.turnId);
+      this.replica.turnDiff(this.sessionId, turn.turnId).then(
+        (result) => {
+          this.fileCounts.set(turn.turnId, result.files.length + (result.omittedFiles ?? 0));
+          this.changed();
+        },
+        () => undefined,
+      );
+    }
   }
 
   /** Steers not yet shown in their turn: sending, sent but not echoed, queued, or failed. */
@@ -650,6 +686,19 @@ export class SessionModel extends Model {
   closeItem(): void {
     if (this.detailItemId === undefined) return;
     this.detailItemId = undefined;
+    this.changed();
+  }
+
+  /** Opens the Changes sheet of a turn (its "N files changed" line). */
+  openChanges(turnId: string): void {
+    if (this.changesTurnId === turnId || !this.diffs) return;
+    this.changesTurnId = turnId;
+    this.changed();
+  }
+
+  closeChanges(): void {
+    if (this.changesTurnId === undefined) return;
+    this.changesTurnId = undefined;
     this.changed();
   }
 

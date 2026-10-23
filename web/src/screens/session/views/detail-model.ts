@@ -3,26 +3,20 @@
 // - Output (command items only): the command's output as plain text (cleanOutput: ANSI codes stripped,
 //   carriage-return redraws settled). It grows as `item/delta` events reach the Replica; while the command
 //   runs the view follows the end unless the user scrolled up. A copy button puts the text on the clipboard.
-// - Changes (every item): turn/diff for the item's turn, one collapsible section per file with its kind and
-//   +/- counts. `not_supported` means the agent does not provide diffs. The diff is fetched again when the
-//   turn's status changes (a running turn's diff is not final).
+// - Changes (every item): the Changes view of the item's turn (ChangesModel): the files the turn changed,
+//   then one file's diff at a time.
 //
 // Command items open on Output, every other item on Changes. When the agent's capabilities say it provides
 // no diffs (spec 4), there is no Changes view: a command shows only its output, and other items have no
 // detail sheet (the session view does not offer one).
-import type { TurnDiffResult } from '../../../generated/methods';
-import type { Item, SessionView } from '../../../replica/types';
+import type { Item } from '../../../replica/types';
 import { errorText, Model } from '../../model';
 import { commandSummary, oneLine, unwrapShell } from '../session-model';
 import { cleanOutput } from './ansi';
-import { FILE_KIND_LABEL, fileKind, parseUnifiedDiff, type DiffLine, type FileKind } from './diff';
+import { ChangesModel, type ChangesReplica } from './changes-model';
 
 /** What the detail sheet needs from the Replica; Replica fits. */
-export interface DetailReplica {
-  session(sessionId: string): SessionView | undefined;
-  subscribe(listener: () => void): () => void;
-  turnDiff(sessionId: string, turnId: string): Promise<TurnDiffResult>;
-}
+export type DetailReplica = ChangesReplica;
 
 /** The clipboard as the copy button needs it; navigator.clipboard fits. */
 export interface Clipboard {
@@ -30,27 +24,6 @@ export interface Clipboard {
 }
 
 export type DetailTab = 'output' | 'changes';
-
-export interface DiffFileRow {
-  path: string;
-  kind: FileKind;
-  label: string;
-  renamedFrom?: string;
-  added: number;
-  removed: number;
-  binary: boolean;
-  lines: DiffLine[];
-  expanded: boolean;
-}
-
-export type DiffState =
-  | { state: 'idle' }
-  | { state: 'loading' }
-  | { state: 'ready'; files: DiffFileRow[] }
-  | { state: 'unsupported' }
-  | { state: 'error'; message: string };
-
-export const NOT_SUPPORTED_TEXT = 'This agent does not provide diffs.';
 
 /** How long the copy button says "Copied". */
 const COPIED_MS = 2000;
@@ -82,18 +55,13 @@ export class ItemDetailModel extends Model {
   following = true;
   copied = false;
   copyError: string | undefined;
-  private diffState: DiffState = { state: 'idle' };
-  private files: { path: string; kind: FileKind; renamedFrom?: string; added: number; removed: number; binary: boolean; lines: DiffLine[] }[] = [];
-  private readonly expanded = new Set<string>();
-  /** The turn status the shown diff was fetched for. */
-  private diffFor: string | undefined;
-  private diffRequest = 0;
+  /** The Changes view of the item's turn. */
+  readonly changes: ChangesModel;
   private copiedTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly replica: DetailReplica;
   private readonly clipboard: Clipboard | undefined;
   private readonly diffs: boolean;
-  private readonly unsubscribe: () => void;
-  private disposed = false;
+  private readonly unsubscribe: (() => void)[];
 
   constructor(options: ItemDetailModelOptions) {
     super();
@@ -103,20 +71,18 @@ export class ItemDetailModel extends Model {
     this.clipboard = options.clipboard;
     this.diffs = options.diffs ?? true;
     this.tab = this.item?.type === 'command' || !this.diffs ? 'output' : 'changes';
-    this.unsubscribe = this.replica.subscribe(() => {
-      if (this.tab === 'changes' && this.diffFor !== undefined && this.diffFor !== this.turnStatus) void this.loadDiff();
-      this.changed();
-    });
+    this.changes = new ChangesModel({ sessionId: this.sessionId, turnId: this.item?.turnId, replica: this.replica });
+    this.unsubscribe = [this.replica.subscribe(() => this.changed()), this.changes.subscribe(() => this.changed())];
   }
 
   /** Fetches the diff when the sheet opens on Changes. */
   start(): void {
-    if (this.tab === 'changes') void this.loadDiff();
+    if (this.tab === 'changes') this.changes.start();
   }
 
   dispose(): void {
-    this.disposed = true;
-    this.unsubscribe();
+    for (const off of this.unsubscribe) off();
+    this.changes.dispose();
     clearTimeout(this.copiedTimer);
   }
 
@@ -128,11 +94,6 @@ export class ItemDetailModel extends Model {
 
   get turnId(): string | undefined {
     return this.item?.turnId;
-  }
-
-  private get turnStatus(): string | undefined {
-    const turnId = this.turnId;
-    return this.replica.session(this.sessionId)?.turns.find((t) => t.turnId === turnId)?.status;
   }
 
   get title(): string {
@@ -183,63 +144,13 @@ export class ItemDetailModel extends Model {
     return this.item?.status === 'inProgress';
   }
 
-  get diff(): DiffState {
-    if (this.diffState.state !== 'ready') return this.diffState;
-    return {
-      state: 'ready',
-      files: this.files.map((file) => ({ ...file, label: FILE_KIND_LABEL[file.kind], expanded: this.expanded.has(file.path) })),
-    };
-  }
-
   // ---- actions ----------------------------------------------------------------------------------
 
   selectTab(tab: DetailTab): void {
     if (tab === this.tab || !this.tabs.includes(tab)) return;
     this.tab = tab;
     this.changed();
-    if (tab === 'changes' && this.diffState.state === 'idle') void this.loadDiff();
-  }
-
-  /** turn/diff for the item's turn. A newer fetch wins over one still in flight. */
-  async loadDiff(): Promise<void> {
-    const turnId = this.turnId;
-    if (turnId === undefined) return;
-    const request = ++this.diffRequest;
-    this.diffFor = this.turnStatus;
-    if (this.diffState.state !== 'ready') this.diffState = { state: 'loading' };
-    this.changed();
-    let next: DiffState;
-    let files: typeof this.files = [];
-    try {
-      const result = await this.replica.turnDiff(this.sessionId, turnId);
-      files = result.files.map((file) => {
-        const parsed = parseUnifiedDiff(file.diff);
-        return {
-          path: file.path,
-          kind: fileKind(file.kind, parsed),
-          ...(parsed.renamedFrom !== undefined ? { renamedFrom: parsed.renamedFrom } : {}),
-          added: parsed.added,
-          removed: parsed.removed,
-          binary: parsed.binary,
-          lines: parsed.lines,
-        };
-      });
-      next = { state: 'ready', files: [] };
-    } catch (error) {
-      const code = (error as { code?: unknown }).code;
-      next = code === 'not_supported' ? { state: 'unsupported' } : { state: 'error', message: `Could not load the changes: ${errorText(error)}` };
-    }
-    if (request !== this.diffRequest || this.disposed) return;
-    // A single file opens expanded the first time; with more, the list of files comes first.
-    if (next.state === 'ready' && this.diffState.state !== 'ready' && files.length === 1) this.expanded.add(files[0]!.path);
-    this.files = files;
-    this.diffState = next;
-    this.changed();
-  }
-
-  toggleFile(path: string): void {
-    if (!this.expanded.delete(path)) this.expanded.add(path);
-    this.changed();
+    if (tab === 'changes') this.changes.start();
   }
 
   /** The output view reports whether it is scrolled to the end. */

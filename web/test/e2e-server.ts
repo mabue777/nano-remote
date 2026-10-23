@@ -17,7 +17,8 @@
 // device; `POST /test/last {method}` returns the params of the last request of that method;
 // `POST /test/review {sessionId, chunks}` starts a turn whose command streams `chunks` (answers {itemId}),
 // `POST /test/review-finish {sessionId, changes}` completes it with those file changes, and
-// `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session.
+// `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session, and
+// `POST /test/turn-diff {sessionId, result | error}` makes it answer that (every turn of the session).
 // `POST /test/new-build {version}` serves /sw.js under that build version, as after a redeploy (a reset
 // goes back to the built one).
 // `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
@@ -140,6 +141,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/no-diffs':
               host.noDiffs.add(body.sessionId);
+              return json(200, { ok: true });
+            case '/test/turn-diff':
+              host.turnDiffs.set(body.sessionId, { ...(body.result ? { result: body.result } : {}), ...(body.error ? { error: body.error } : {}) });
               return json(200, { ok: true });
             case '/test/new-build':
               swVersion = String(body.version);

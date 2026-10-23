@@ -58,7 +58,7 @@ import type {
   SpawnedProcess,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Decision, FileChange, InputPart, Settings } from '../../generated/common.js';
+import type { Decision, InputPart, Settings } from '../../generated/common.js';
 import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
@@ -309,10 +309,6 @@ export class ClaudeAdapter implements Adapter {
     const request = this.take(requestId, 'input');
     if (!request) return;
     request.resolve(questionAnswer(request.input, request.questions, answers));
-  }
-
-  async diff(): Promise<FileChange[]> {
-    throw new RpcError('not_supported', 'the Claude adapter does not compute turn diffs', { agentId: 'claude' });
   }
 
   async kill(): Promise<void> {

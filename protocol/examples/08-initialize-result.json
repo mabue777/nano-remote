@@ -12,9 +12,9 @@
       "device": {"clientId": "dev_8f3a9c21", "displayName": "iPhone (Safari)"},
       "agents": [
         {"id": "codex", "name": "Codex", "status": "ready", "version": "0.163.0",
-         "capabilities": {"steer": true, "diff": false, "approvalModes": ["untrusted", "on-failure", "on-request", "never"]}},
+         "capabilities": {"steer": true, "diff": true, "approvalModes": ["untrusted", "on-failure", "on-request", "never"]}},
         {"id": "claude", "name": "Claude Code", "status": "ready",
-         "capabilities": {"steer": false, "diff": false, "approvalModes": ["default", "acceptEdits", "plan", "never"]}},
+         "capabilities": {"steer": false, "diff": true, "approvalModes": ["default", "acceptEdits", "plan", "never"]}},
         {"id": "kimi", "name": "Kimi", "status": "unavailable", "reason": "CLI not found"}
       ],
       "push": {"vapidPublicKey": "BOrExampleVapidPublicKeyForDocumentation", "subscribed": true},

@@ -23,7 +23,7 @@
 // session. `kill()` ends the process group and silences the adapter for good.
 import { randomUUID } from 'node:crypto';
 
-import type { Decision, FileChange, InputPart, Settings } from '../../generated/common.js';
+import type { Decision, InputPart, Settings } from '../../generated/common.js';
 import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { piConfig, type PiConfig } from '../../config/pi.js';
@@ -191,10 +191,6 @@ export class PiAdapter implements Adapter {
     const dialog = this.take(requestId);
     if (!dialog || dialog.toolCallId !== undefined) return;
     this.engine!.respondUi(dialog.uiId, dialogAnswer(dialog.method, answers));
-  }
-
-  async diff(): Promise<FileChange[]> {
-    throw new RpcError('not_supported', 'the pi adapter does not compute turn diffs', { agentId: 'pi' });
   }
 
   async kill(): Promise<void> {

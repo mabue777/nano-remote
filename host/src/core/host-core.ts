@@ -43,6 +43,8 @@ export interface HostCoreOptions {
   log?: (message: string, error?: unknown) => void;
   /** Sees every appended Journal event, right after the append (the push notifier). Must not block. */
   onJournalEvent?: (event: JournalEvent) => void;
+  /** Longest a turn start waits for its git snapshot (turn/diff, spec 7); tests on a busy machine raise it. */
+  startSnapshotWaitMs?: number;
 }
 
 type Result<M extends keyof MethodMap> = MethodMap[M]['result'];
@@ -70,6 +72,7 @@ export class HostCore {
       agents: options.agents,
       ...(options.store ? { store: options.store } : {}),
       ...(options.now ? { now: options.now } : {}),
+      ...(options.startSnapshotWaitMs !== undefined ? { startSnapshotWaitMs: options.startSnapshotWaitMs } : {}),
       onEvent: (event) => this.onJournalEvent(event),
       log: this.log,
     });
@@ -277,9 +280,7 @@ export class HostCore {
         await s.interrupt(p.str(params, 'sessionId'), p.str(params, 'turnId'));
         return ok;
       })
-      .register('turn/diff', async (params) => ({
-        files: await s.diff(p.str(params, 'sessionId'), p.str(params, 'turnId')),
-      }))
+      .register('turn/diff', (params) => s.diff(p.str(params, 'sessionId'), p.str(params, 'turnId')))
       .register('approval/resolve', async (params, context) => {
         await s.resolveApproval(
           p.str(params, 'sessionId'),

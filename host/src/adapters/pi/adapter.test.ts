@@ -492,10 +492,9 @@ describe('PiAdapter supervision', () => {
     expect(r.fake.argvs().map((a) => a.at(-1))).toEqual([id, id]);
   });
 
-  it('after kill() the adapter is silent and refuses calls; diff is not supported', async () => {
+  it('after kill() the adapter is silent and refuses calls', async () => {
     const r = rig();
     await r.adapter.start(r.fake.cwd, {});
-    await expect(r.adapter.diff()).rejects.toMatchObject({ code: 'not_supported' });
     await r.adapter.kill();
     expect(existsSync(r.fake.cwd)).toBe(true);
     await expect(r.adapter.turnStart(text('x'), 'cm')).rejects.toMatchObject({ code: 'agent_unavailable' });

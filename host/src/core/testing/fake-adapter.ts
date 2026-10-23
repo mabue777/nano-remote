@@ -5,7 +5,7 @@
 //
 //   const agent = new FakeAgent({ script: [[{ reply: 'Hello' }], [{ approval: { command: 'rm x' } }, { reply: 'Done' }]] });
 //   new HostCore({ journal, agents: [agent], host });
-import type { Decision, FileChange, InputPart, ModelInfo, Settings } from '../../generated/common.js';
+import type { Decision, InputPart, ModelInfo, Settings } from '../../generated/common.js';
 import type {
   Adapter,
   AdapterApprovalRequest,
@@ -45,8 +45,6 @@ export interface FakeAdapterOptions {
   script?: FakeScript;
   /** What `start` returns; '' makes the adapter report it with the first turn (`engine/session`), like Claude. */
   engineSessionId?: string;
-  /** Files `diff` returns. */
-  diff?: FileChange[];
   /** What `effectiveSettings` reports after start and resume. Default: nothing. */
   effectiveSettings?: Settings;
   /** Methods that reject with this message instead of doing their work. */
@@ -169,11 +167,6 @@ export class FakeAdapter implements Adapter {
     this.run();
   }
 
-  async diff(turnId: string): Promise<FileChange[]> {
-    this.record('diff', turnId);
-    return this.options.diff ?? [];
-  }
-
   async kill(): Promise<void> {
     this.record('kill');
     this.killed = true;
@@ -275,8 +268,8 @@ export interface FakeAgentOptions {
   models?: ModelInfo[];
   state?: AgentState;
   /**
-   * The agent's static capabilities. Default: steers, has a diff when `adapter.diff` is set, and honours
-   * the Codex approval modes (`FAKE_APPROVAL_MODES`).
+   * The agent's static capabilities. Default: steers, has turn diffs (the host computes them from git),
+   * and honours the Codex approval modes (`FAKE_APPROVAL_MODES`).
    */
   capabilities?: Partial<AgentCapabilities>;
   /** Passed to every adapter this agent creates (the script comes from the agent). */
@@ -308,7 +301,7 @@ export class FakeAgent implements AgentProvider {
     this.adapterOptions = options.adapter ?? {};
     this.capabilities = {
       steer: true,
-      diff: this.adapterOptions.diff !== undefined,
+      diff: true,
       approvalModes: FAKE_APPROVAL_MODES,
       ...options.capabilities,
     };

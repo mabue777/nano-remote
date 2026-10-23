@@ -15,7 +15,8 @@
 // For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
 // and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
 // and pages session/list by cursor. turn/diff is computed from the turn's fileChange items (the last
-// change per path), or refused `not_supported` for sessions in `noDiffs`. runReviewTurn() plays a turn
+// change per path), answered from `turnDiffs` when a test set one, or refused `not_supported` for sessions
+// in `noDiffs`. runReviewTurn() plays a turn
 // whose command streams colored output until finishReviewTurn() ends it with file edits.
 import type { IncomingMessage, Server } from 'node:http';
 
@@ -33,18 +34,14 @@ const SEND_SEGMENT_BYTES = SEGMENT_BYTES - (SEGMENT_BYTES % 3);
  * Pi as initialize and agent/list list it after example 08's agents. Its capabilities honour no
  * approvalMode (spec 4), so the new-session sheet offers no "Bypass approvals" for it.
  */
-export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: false, approvalModes: [] as string[] } };
+export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: true, approvalModes: [] as string[] } };
 
 /**
  * The agents of initialize and agent/list: example 08's (Kimi there carries no capabilities, like an agent
- * from an older host) and pi. This fake computes turn/diff for every session, so its Codex and Claude
- * declare `diff: true`; the real adapters do not provide diffs yet.
+ * from an older host) and pi. Like the real host (spec 7), every agent declares `diff: true`.
  */
 function fakeAgents(): Json[] {
-  const agents = exampleMessage('08').result.agents.map((agent: Json) =>
-    agent.capabilities === undefined ? agent : { ...agent, capabilities: { ...agent.capabilities, diff: true } },
-  );
-  return [...agents, PI_AGENT];
+  return [...exampleMessage('08').result.agents, PI_AGENT];
 }
 
 /** pi's model/list: provider/model ids from two providers, each with `provider` (spec 4, example 54). */
@@ -313,6 +310,12 @@ export class FakeHost {
   paceMs = 0;
   /** Sessions whose agent "does not provide diffs": turn/diff answers not_supported. */
   readonly noDiffs = new Set<string>();
+  /**
+   * turn/diff answers for a session, as the real host computes them from git (spec 7): a result (files,
+   * note, truncated, omittedFiles) or an error such as not_a_repository. Without one, the fake lists the
+   * turn's fileChange items.
+   */
+  readonly turnDiffs = new Map<string, { result?: Json; error?: { code: string; message: string; data?: Json } }>();
   private readonly delays = new Map<string, number>();
   private server: WebSocketServer | undefined;
   private refusal: { code: number; reason: string } | undefined;
@@ -413,6 +416,7 @@ export class FakeHost {
     this.sessions.clear();
     this.delays.clear();
     this.noDiffs.clear();
+    this.turnDiffs.clear();
     this.nextSession = 0;
     this.pushSubscriptions.clear();
     this.pushTests.length = 0;
@@ -679,6 +683,9 @@ export class FakeHost {
         if (this.noDiffs.has(params.sessionId)) throw new HostError({ code: 'not_supported', message: 'this adapter has no diffs' });
         const turn = session.turns.find((t) => t.turnId === params.turnId);
         if (turn === undefined) throw new HostError({ code: 'not_found', message: `no turn ${params.turnId}` });
+        const set = this.turnDiffs.get(params.sessionId);
+        if (set?.error !== undefined) throw new HostError(set.error);
+        if (set?.result !== undefined) return { result: set.result };
         const files = new Map<string, Json>();
         for (const id of turn.items) {
           const item = session.items.get(id);

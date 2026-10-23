@@ -78,6 +78,15 @@
         "delete"
       ]
     },
+    "TurnDiffKind": {
+      "description": "Kind of a file in turn/diff: FileChangeKind plus rename (oldPath names the old path). Additive within v1.",
+      "enum": [
+        "add",
+        "modify",
+        "delete",
+        "rename"
+      ]
+    },
     "PendingCounts": {
       "type": "object",
       "required": [
@@ -615,6 +624,39 @@
         }
       }
     },
+    "TurnDiffFile": {
+      "type": "object",
+      "description": "One file of a turn's net change (turn/diff, spec 7). diff is git's unified diff text for the file, empty for a binary file; truncated means diff was cut at the per-file or total cap (spec 7). Additive within v1.",
+      "required": [
+        "path",
+        "kind",
+        "diff"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative to the session folder."
+        },
+        "kind": {
+          "$ref": "#/$defs/TurnDiffKind"
+        },
+        "diff": {
+          "type": "string"
+        },
+        "oldPath": {
+          "type": "string",
+          "description": "The path before a rename (kind rename only)."
+        },
+        "binary": {
+          "type": "boolean",
+          "description": "A binary file: listed without diff text."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "diff holds only the first part of the file's diff, or none of it."
+        }
+      }
+    },
     "ApprovalBase": {
       "type": "object",
       "required": [
@@ -915,7 +957,7 @@
         },
         "diff": {
           "type": "boolean",
-          "description": "turn/diff works."
+          "description": "turn/diff works. Hosts that compute diffs from git snapshots of the session folder (spec 7) declare it for every agent."
         },
         "approvalModes": {
           "type": "array",

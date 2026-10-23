@@ -158,10 +158,9 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
     await expect(adapter.start(cwd, {})).rejects.toMatchObject({ code: 'agent_unavailable', message: expect.stringContaining('no executable') });
   });
 
-  it('steer and diff answer not_supported', async () => {
+  it('steer answers not_supported', async () => {
     const { adapter } = rig();
     await expect(adapter.steer()).rejects.toMatchObject({ code: 'not_supported' });
-    await expect(adapter.diff()).rejects.toMatchObject({ code: 'not_supported' });
   });
 
   it('loadQuery imports the SDK query function', async () => {

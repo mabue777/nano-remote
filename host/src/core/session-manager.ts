@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Decision, FileChange, InputPart, Settings, TurnError } from '../generated/common.js';
+import type { Decision, InputPart, Settings, TurnError } from '../generated/common.js';
+import type { TurnDiffResult } from '../generated/methods.js';
 import type { Journal } from '../journal/journal.js';
 import { CursorExpired } from '../journal/errors.js';
 import { MAX_LIST_LIMIT, MAX_SINCE_LIMIT } from '../journal/journal.js';
@@ -30,6 +31,7 @@ import { RpcError } from '../errors.js';
 import type { Adapter, AdapterEvent, AgentProvider, FinalTurnStatus } from './adapter.js';
 import { newId } from './ids.js';
 import { SessionStore } from './store.js';
+import { TurnChanges } from './turn-changes.js';
 
 /** Longest generated title (spec 6: the host may generate a title from the first input). */
 export const TITLE_MAX = 60;
@@ -57,6 +59,8 @@ export interface SessionManagerOptions {
   /** Called after every Journal append, in seq order (the host broadcasts `session/updated` from it). */
   onEvent?: (event: JournalEvent) => void;
   log?: (message: string, error?: unknown) => void;
+  /** Longest a turn start waits for its git snapshot (turn/diff, spec 7). Default START_SNAPSHOT_WAIT_MS. */
+  startSnapshotWaitMs?: number;
 }
 
 export interface StartParams {
@@ -71,6 +75,8 @@ interface RunningTurn {
   readonly turnId: string;
   readonly startedAt: number;
   readonly items: string[];
+  /** Resolves once the engine accepted the turn's input; steer waits for it so it never overtakes the input. */
+  delivered?: Promise<Adapter>;
 }
 
 /** In-memory state of a session the host has touched since it started. */
@@ -89,6 +95,7 @@ function errorMessage(error: unknown): string {
 export class SessionManager {
   readonly journal: Journal;
   readonly store: SessionStore;
+  readonly changes: TurnChanges;
   private readonly providers = new Map<string, AgentProvider>();
   private readonly live = new Map<string, Live>();
   private readonly now: () => number;
@@ -101,6 +108,11 @@ export class SessionManager {
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
     this.onEvent = options.onEvent ?? (() => {});
     this.log = options.log ?? (() => {});
+    this.changes = new TurnChanges({
+      store: this.store,
+      log: this.log,
+      ...(options.startSnapshotWaitMs !== undefined ? { startWaitMs: options.startSnapshotWaitMs } : {}),
+    });
     for (const provider of options.agents) this.providers.set(provider.id, provider);
     this.recover();
   }
@@ -305,9 +317,16 @@ export class SessionManager {
     });
     this.appendUserMessage(live, input, clientMessageId);
     this.setStatus(sessionId, 'running');
-    try {
+    // The start snapshot (turn/diff) runs alongside the engine start and is sealed before the input goes out.
+    const snapshot = this.changes.begin(sessionId, turnId, summary.cwd);
+    running.delivered = (async () => {
       const adapter = await this.ensureAdapter(live);
+      await snapshot.seal();
       await adapter.turnStart(input, clientMessageId);
+      return adapter;
+    })();
+    try {
+      await running.delivered;
     } catch (error) {
       const failure = this.unavailable(summary.agentId, error);
       if (live.turn === running) this.finishTurn(live, 'failed', { code: 'agent_unavailable', message: failure.message });
@@ -329,9 +348,9 @@ export class SessionManager {
       });
     }
     this.requireCapability(summary.agentId, 'steer', 'cannot steer a running turn');
-    // A running turn has an adapter booting or booted (turnStart called ensureAdapter), unless the boot
-    // just failed and the turn is about to be failed.
-    const ready = live.ready ?? Promise.reject(new Error('the engine is not attached'));
+    // A running turn has its input on the way to the engine (turnStart), unless the boot just failed and
+    // the turn is about to be failed. Steer waits for that delivery, so it never reaches the engine first.
+    const ready = running.delivered ?? Promise.reject(new Error('the engine is not attached'));
     const adapter = await ready.catch((error: unknown) => {
       throw this.unavailable(summary.agentId, error);
     });
@@ -372,20 +391,17 @@ export class SessionManager {
     }
   }
 
-  /** `turn/diff` (spec 7). */
-  async diff(sessionId: string, turnId: string): Promise<FileChange[]> {
+  /**
+   * `turn/diff` (spec 7): the host's git snapshots of the session folder, the same for every agent. No
+   * engine is involved, so a dormant session stays dormant.
+   */
+  async diff(sessionId: string, turnId: string): Promise<TurnDiffResult> {
     const summary = this.session(sessionId);
     if (!this.journal.turn(sessionId, turnId)) {
       throw new RpcError('not_found', `no turn ${turnId} in ${sessionId}`, { sessionId, turnId });
     }
-    // Checked before ensureAdapter: answering not_supported must never boot or resume an engine.
     this.requireCapability(summary.agentId, 'diff', 'cannot compute a turn diff');
-    const adapter = await this.ensureAdapter(this.liveOf(sessionId));
-    try {
-      return await adapter.diff(turnId);
-    } catch (error) {
-      throw this.unavailable(summary.agentId, error);
-    }
+    return this.changes.diff(sessionId, turnId, summary.cwd, this.runningTurnId(sessionId) === turnId);
   }
 
   // ---- pending requests ------------------------------------------------------------------------
@@ -629,6 +645,8 @@ export class SessionManager {
     const running = live.turn;
     if (!running) return;
     live.turn = undefined;
+    const cwd = this.journal.session(live.sessionId)?.cwd;
+    if (cwd !== undefined) this.changes.end(live.sessionId, running.turnId, cwd);
     this.withdrawPending(live.sessionId);
     this.append(live.sessionId, {
       method: 'turn/completed',

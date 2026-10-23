@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { JournalEvent } from '../../journal/types.js';
 import type { TestClient } from '../../stream/testing/client.js';
 import { eventsOf, rpc, startHarness, text, waitEvent, type Harness } from '../../core/testing/harness.js';
+import { makeRepo } from '../../core/testing/git-repo.js';
 import { PiAgent } from './provider.js';
 import { fakePi, until, type FakePi } from './testing/fake-pi-config.js';
 import type { FakePiFixture } from './testing/fixture.js';
@@ -59,7 +60,7 @@ describe('session core end to end with the pi adapter', () => {
   it('pi honours no approvalMode: agent/list says so and session/start with never stores and reports none', async () => {
     const { h, phone } = await setup();
     const { agents } = await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list');
-    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: false, approvalModes: [] });
+    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: true, approvalModes: [] });
     const { session } = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/start', {
       agentId: 'pi',
       cwd: h.cwd,
@@ -140,5 +141,46 @@ describe('session core end to end with the pi adapter', () => {
       .map((e) => (e.params as { item: { type: string; text?: string } }).item)
       .find((i) => i.type === 'agentMessage');
     expect(message?.text).toBe(reply);
+  });
+});
+
+describe('the Changes view with the pi adapter', () => {
+  it('turn/diff lists exactly the files pi wrote during the turn', async () => {
+    const repo = makeRepo({ 'notes.md': '# Notes\n' });
+    repo.commit('initial');
+    const writeNew = { tool: { name: 'write', args: { path: 'hello.txt', content: 'hello\n' }, output: 'ok' } };
+    const rewrite = { tool: { name: 'write', args: { path: 'notes.md', content: '# Notes\n\n- pi was here\n' }, output: 'ok' } };
+    const fake = fakePi({ turns: [[writeNew, rewrite, { reply: 'done' }]] });
+    harness = await startHarness({ extraAgents: [new PiAgent({ config: fake.config })], core: { startSnapshotWaitMs: 30_000 } });
+    try {
+      const phone = await harness.connect();
+      const { sessionId } = await newSession(phone, repo.root);
+      const turnId = await startTurn(phone, sessionId, 'write two files');
+      const resolved = new Set<string>();
+      for (let answered = 0; answered < 2; answered += 1) {
+        const approval = await waitEvent(phone, 'approval/request', (p) => !resolved.has((p.request as { requestId: string }).requestId));
+        resolved.add(request(approval).requestId);
+        await rpc(phone, 'approval/resolve', { sessionId, requestId: request(approval).requestId, decision: 'accept' });
+      }
+      await turnEnd(phone, sessionId, turnId);
+
+      // Blob ids are git's (git hash-object) for the contents above.
+      expect(await rpc(phone, 'turn/diff', { sessionId, turnId })).toEqual({
+        files: [
+          {
+            path: 'hello.txt',
+            kind: 'add',
+            diff: 'diff --git a/hello.txt b/hello.txt\nnew file mode 100644\nindex 0000000..ce01362\n--- /dev/null\n+++ b/hello.txt\n@@ -0,0 +1 @@\n+hello\n',
+          },
+          {
+            path: 'notes.md',
+            kind: 'modify',
+            diff: 'diff --git a/notes.md b/notes.md\nindex 17e0f0d..528c087 100644\n--- a/notes.md\n+++ b/notes.md\n@@ -1 +1,3 @@\n # Notes\n+\n+- pi was here\n',
+          },
+        ],
+      });
+    } finally {
+      repo.remove();
+    }
   });
 });

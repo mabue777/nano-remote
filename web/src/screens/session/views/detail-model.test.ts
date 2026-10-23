@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TurnDiffResult } from '../../../generated/methods';
 import type { Item, SessionView } from '../../../replica/types';
 import { RequestError } from '../../../stream/client';
-import { ItemDetailModel, NOT_SUPPORTED_TEXT, type DetailReplica } from './detail-model';
+import { ItemDetailModel, type DetailReplica } from './detail-model';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -89,9 +89,9 @@ describe('ItemDetailModel: titles and tabs', () => {
   it('a missing item has no turn to diff', async () => {
     const { model, calls } = setup('missing');
     model.start();
-    await model.loadDiff();
+    await model.changes.load();
     expect(calls).toHaveLength(0);
-    expect(model.diff).toEqual({ state: 'idle' });
+    expect(model.changes.state).toEqual({ state: 'idle' });
   });
 
   it('selectTab ignores the current tab and tabs the item does not have', () => {
@@ -161,66 +161,18 @@ describe('ItemDetailModel: output view', () => {
   });
 });
 
-describe('ItemDetailModel: diff view', () => {
-  const MODIFY = '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-a\n+b\n';
-
-  it('fetches turn/diff on open and parses one section per file; one file opens expanded', async () => {
+describe('ItemDetailModel: the Changes tab', () => {
+  it("fetches the item's turn on open, and reports the Changes view's changes", async () => {
     const { model, calls } = setup('f1');
+    const seen = vi.fn();
+    model.subscribe(seen);
     model.start();
-    expect(model.diff).toEqual({ state: 'loading' });
-    expect(calls[0]!.turnId).toBe('t1');
-    calls[0]!.resolve({ files: [{ path: 'src/app.ts', kind: 'modify', diff: MODIFY }] });
+    expect(model.changes.turnId).toBe('t1');
+    expect(model.changes.state).toEqual({ state: 'loading' });
+    calls[0]!.resolve({ files: [{ path: 'a.txt', kind: 'add', diff: '@@ -0,0 +1 @@\n+a\n' }] });
     await settle();
-    const diff = model.diff;
-    expect(diff.state).toBe('ready');
-    if (diff.state !== 'ready') return;
-    expect(diff.files).toHaveLength(1);
-    expect(diff.files[0]).toMatchObject({ path: 'src/app.ts', kind: 'modified', label: 'Modified', added: 1, removed: 1, binary: false, expanded: true });
-    expect(diff.files[0]!.lines.map((l) => l.kind)).toEqual(['hunk', 'remove', 'add']);
-    model.toggleFile('src/app.ts');
-    expect((model.diff as any).files[0].expanded).toBe(false);
-    model.toggleFile('src/app.ts');
-    expect((model.diff as any).files[0].expanded).toBe(true);
-  });
-
-  it('shows each kind, renames included, collapsed when there are several files', async () => {
-    const { model, calls } = setup('a1');
-    model.start();
-    calls[0]!.resolve({
-      files: [
-        { path: 'new.txt', kind: 'add', diff: '--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hi\n' },
-        { path: 'gone.txt', kind: 'delete', diff: '--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n' },
-        { path: 'to.ts', kind: 'modify', diff: 'rename from from.ts\nrename to to.ts\n' },
-        { path: 'img.png', kind: 'modify', diff: 'Binary files a/img.png and b/img.png differ\n' },
-      ],
-    });
-    await settle();
-    const files = (model.diff as any).files;
-    expect(files.map((f: any) => [f.path, f.kind, f.expanded])).toEqual([
-      ['new.txt', 'added', false],
-      ['gone.txt', 'deleted', false],
-      ['to.ts', 'renamed', false],
-      ['img.png', 'modified', false],
-    ]);
-    expect(files[2].renamedFrom).toBe('from.ts');
-    expect(files[3].binary).toBe(true);
-  });
-
-  it('says the agent does not provide diffs on not_supported', async () => {
-    const { model, calls } = setup('a1');
-    model.start();
-    calls[0]!.reject(new RequestError('not_supported', 'no diffs'));
-    await settle();
-    expect(model.diff).toEqual({ state: 'unsupported' });
-    expect(NOT_SUPPORTED_TEXT).toBe('This agent does not provide diffs.');
-  });
-
-  it('shows other failures as an error', async () => {
-    const { model, calls } = setup('a1');
-    model.start();
-    calls[0]!.reject(new RequestError('timeout', 'The host did not answer.'));
-    await settle();
-    expect(model.diff).toEqual({ state: 'error', message: 'Could not load the changes: The host did not answer.' });
+    expect(model.changes.summary).toBe('1 file changed');
+    expect(seen).toHaveBeenCalled();
   });
 
   it('switching a command item to Changes fetches the diff once', async () => {
@@ -234,29 +186,7 @@ describe('ItemDetailModel: diff view', () => {
     model.selectTab('output');
     model.selectTab('changes');
     expect(calls).toHaveLength(1);
-    expect(model.diff).toEqual({ state: 'ready', files: [] });
-  });
-
-  it('fetches again when the turn status changes, keeps the old diff meanwhile, and the newest answer wins', async () => {
-    const { model, view, calls, changed } = setup('f1');
-    model.start();
-    calls[0]!.resolve({ files: [{ path: 'a.txt', kind: 'add', diff: '@@ -0,0 +1 @@\n+a\n' }] });
-    await settle();
-    changed(); // same status: nothing new to fetch
-    expect(calls).toHaveLength(1);
-
-    (view.turns[0] as any).status = 'completed';
-    changed();
-    expect(calls).toHaveLength(2);
-    expect(model.diff.state).toBe('ready'); // the old diff stays while the new one loads
-    void model.loadDiff(); // a third fetch overtakes the second
-    calls[2]!.resolve({ files: [{ path: 'b.txt', kind: 'add', diff: '' }] });
-    await settle();
-    calls[1]!.resolve({ files: [{ path: 'stale.txt', kind: 'add', diff: '' }] });
-    await settle();
-    expect((model.diff as any).files.map((f: any) => f.path)).toEqual(['b.txt']);
-    // The single file of the first answer stays open; the new file is not forced open.
-    expect((model.diff as any).files[0].expanded).toBe(false);
+    expect(model.changes.state).toEqual({ state: 'ready', files: [], omittedFiles: 0, truncated: false });
   });
 
   it('ignores answers after dispose and stops listening', async () => {
@@ -266,7 +196,7 @@ describe('ItemDetailModel: diff view', () => {
     expect(listeners.size).toBe(0);
     calls[0]!.resolve({ files: [] });
     await settle();
-    expect(model.diff).toEqual({ state: 'loading' });
+    expect(model.changes.state).toEqual({ state: 'loading' });
   });
 });
 

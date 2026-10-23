@@ -1197,7 +1197,6 @@ button.danger {
 
 .mono,
 .output-text,
-.diff-lines,
 .output-command {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8rem;
@@ -1240,28 +1239,40 @@ button.danger {
   padding: 8px 0;
 }
 
+/* ---- the Changes view (views/DiffView.tsx): file list, then one file's diff ---- */
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.changes-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.changes-summary,
+.changes-omitted {
+  margin: 0;
+}
+
 .diff-files {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.diff-file {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.diff-file-head {
+.diff-file-row {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 0;
-  border-radius: 0;
+  min-height: 44px;
   text-align: left;
 }
 
@@ -1272,9 +1283,12 @@ button.danger {
 }
 
 .file-kind {
-  font-weight: 600;
-  font-size: 0.8rem;
   flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
 }
 
 .file-kind.added {
@@ -1305,58 +1319,116 @@ button.danger {
   color: var(--error);
 }
 
-.diff-body {
-  border-top: 1px solid var(--line);
+.diff-file-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.diff-body > p {
+.diff-back {
+  align-self: flex-start;
+}
+
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-file-view > p {
   margin: 0;
-  padding: 8px 10px;
 }
 
-.diff-lines {
-  margin: 0;
-  padding: 4px 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* Code never wraps: the table scrolls sideways while the line numbers stay pinned at the left. */
+.diff-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
 }
 
-.diff-line {
-  display: block;
-  padding: 0 10px 0 0;
+.diff-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
-.diff-line .gutter {
+.diff-table .diff-line {
+  display: table-row; /* not the approval cards' block lines */
+  padding: 0;
+}
+
+.diff-table td {
+  padding: 0;
+  vertical-align: top;
+  white-space: pre;
+}
+
+.diff-table .ln {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 6px 0 2px;
+  color: var(--muted);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-table .ln span {
   display: inline-block;
-  width: 1.6em;
+  min-width: 2.4em;
+  text-align: right;
+}
+
+.diff-table .sign {
+  width: 1.4em;
   text-align: center;
   user-select: none;
   color: var(--muted);
 }
 
-.diff-line.add {
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
+.diff-table .code {
+  padding-right: 12px;
+  width: 100%;
 }
 
-.diff-line.add .gutter {
+.diff-table .diff-line.add td {
+  background: color-mix(in srgb, var(--ok) 16%, var(--surface));
+}
+
+.diff-table .diff-line.add .sign,
+.diff-table .diff-line.add .ln {
   color: var(--ok);
 }
 
-.diff-line.remove {
-  background: color-mix(in srgb, var(--error) 14%, transparent);
+.diff-table .diff-line.remove td {
+  background: color-mix(in srgb, var(--error) 14%, var(--surface));
 }
 
-.diff-line.remove .gutter {
+.diff-table .diff-line.remove .sign,
+.diff-table .diff-line.remove .ln {
   color: var(--error);
 }
 
-.diff-line.hunk {
+.diff-table .diff-line.hunk td {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
-.diff-line.meta {
+.diff-table .diff-line.meta td {
   color: var(--muted);
+}
+
+.turn-changes {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 4px 0;
 }
 
 /* ---- new version prompt (src/pwa/UpdatePrompt.tsx) ---- */

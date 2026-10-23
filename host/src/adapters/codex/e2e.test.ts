@@ -13,6 +13,7 @@ import type { JournalEvent } from '../../journal/types.js';
 import type { TestClient } from '../../stream/testing/client.js';
 import { SessionStore } from '../../core/store.js';
 import { eventsOf, openAfterTurn, rpc, rpcError, startHarness, text, waitEvent, type Harness } from '../../core/testing/harness.js';
+import { makeRepo } from '../../core/testing/git-repo.js';
 import { CodexAgent } from './provider.js';
 import { fakeCodex, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
@@ -411,7 +412,7 @@ describe('session core end to end with the Codex adapter', { timeout: 30_000 }, 
       name: 'Codex',
       status: 'ready',
       version: '0.163.0-alpha.10.2',
-      capabilities: { steer: true, diff: false, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
+      capabilities: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
     });
     expect(changes).toEqual([1]);
     // Cached: no second engine for the list, and new sessions get the default without asking again.
@@ -457,5 +458,48 @@ describe('session core end to end with the Codex adapter', { timeout: 30_000 }, 
       .map((e) => (e.params as { item: { type: string; text?: string } }).item)
       .find((i) => i.type === 'agentMessage');
     expect(message?.text).toBe(reply);
+  });
+});
+
+describe('the Changes view with the Codex adapter', { timeout: 30_000 }, () => {
+  it('turn/diff lists exactly what the engine wrote, edited and deleted during the turn', async () => {
+    const repo = makeRepo({ '.gitignore': 'dist/\n', 'src/app.ts': 'export const a = 1;\n', 'stale.txt': 'stale\n' });
+    repo.commit('initial');
+    const files = { 'src/app.ts': 'export const a = 2;\n', 'hello.txt': 'hello\n', 'stale.txt': null, 'dist/bundle.js': 'ignored\n' };
+    const fake = fakeCodex({ turns: [[{ run: { command: 'node build.js', output: 'built\n', files } }, { reply: 'Done.' }]] });
+    harness = await startHarness({ extraAgents: [new CodexAgent({ config: fake.config })], core: { startSnapshotWaitMs: 30_000 } });
+    try {
+      const phone = await harness.connect();
+      const { agents } = await rpc<{ agents: { id: string; capabilities?: { diff: boolean } }[] }>(phone, 'agent/list');
+      expect(agents.find((a) => a.id === 'codex')?.capabilities?.diff).toBe(true);
+      const { session } = await rpc<{ session: { sessionId: string } }>(phone, 'session/start', { agentId: 'codex', cwd: repo.root });
+      const sessionId = session.sessionId;
+      await rpc(phone, 'session/open', { sessionId });
+      const { turn } = await rpc<{ turn: { turnId: string } }>(phone, 'turn/start', { sessionId, input: text('Build it'), clientMessageId: randomUUID() });
+      await waitEvent(phone, 'turn/completed');
+
+      // Blob ids are git's (git hash-object) for the contents above.
+      expect(await rpc(phone, 'turn/diff', { sessionId, turnId: turn.turnId })).toEqual({
+        files: [
+          {
+            path: 'hello.txt',
+            kind: 'add',
+            diff: 'diff --git a/hello.txt b/hello.txt\nnew file mode 100644\nindex 0000000..ce01362\n--- /dev/null\n+++ b/hello.txt\n@@ -0,0 +1 @@\n+hello\n',
+          },
+          {
+            path: 'src/app.ts',
+            kind: 'modify',
+            diff: 'diff --git a/src/app.ts b/src/app.ts\nindex cc798ff..66d48fc 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-export const a = 1;\n+export const a = 2;\n',
+          },
+          {
+            path: 'stale.txt',
+            kind: 'delete',
+            diff: 'diff --git a/stale.txt b/stale.txt\ndeleted file mode 100644\nindex 8427fc2..0000000\n--- a/stale.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-stale\n',
+          },
+        ],
+      });
+    } finally {
+      repo.remove();
+    }
   });
 });

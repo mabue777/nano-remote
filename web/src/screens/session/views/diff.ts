@@ -1,9 +1,9 @@
 // Unified diff parsing for the diff view (turn/diff, spec 7). Adapters hand over `diff` as text: a git
 // style patch (`diff --git`, `---`/`+++` headers, `@@` hunks) or just the hunks. The view needs lines it
-// can color, a +/- count per file, and the file's kind. The protocol's kinds are add, modify and delete;
-// a rename shows only in the patch headers (`rename from`/`rename to`, or `---`/`+++` naming different
-// paths), so it is read from there.
-import type { FileChangeKind } from '../../../generated/common';
+// can color, a +/- count per file, and the file's kind. turn/diff's kinds are add, modify, delete and
+// rename; a host that sends only the first three still shows renames in the patch headers (`rename
+// from`/`rename to`, or `---`/`+++` naming different paths), so they are read from there too.
+import type { TurnDiffKind } from '../../../generated/common';
 
 export type DiffLineKind = 'add' | 'remove' | 'context' | 'hunk' | 'meta';
 
@@ -87,9 +87,10 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
 }
 
 /** The file's kind for the header: a patch that renames wins over the protocol's `modify`. */
-export function fileKind(kind: FileChangeKind, parsed: Pick<ParsedDiff, 'renamedFrom'>): FileKind {
+export function fileKind(kind: TurnDiffKind, parsed: Pick<ParsedDiff, 'renamedFrom'>): FileKind {
   if (kind === 'add') return 'added';
   if (kind === 'delete') return 'deleted';
+  if (kind === 'rename') return 'renamed';
   return parsed.renamedFrom !== undefined ? 'renamed' : 'modified';
 }
 

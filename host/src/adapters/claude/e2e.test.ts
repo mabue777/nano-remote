@@ -410,7 +410,7 @@ describe('session core end to end with the Claude adapter', () => {
       name: 'Claude Code',
       status: 'ready',
       version: '0.3.308',
-      capabilities: { steer: false, diff: false, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
+      capabilities: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
     });
     const sessionId = await newSession(h, phone);
     await rpc(phone, 'session/open', { sessionId });

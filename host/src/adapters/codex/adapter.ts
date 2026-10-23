@@ -12,7 +12,7 @@
 // Supervision: when the engine dies on its own the adapter emits `status/changed {error}` and
 // `agent/exited`; calls in flight reject with `agent_unavailable`. The next call starts a new engine and
 // resumes the thread. `kill()` ends the engine's process group and silences the adapter for good.
-import type { Decision, FileChange, InputPart, Settings } from '../../generated/common.js';
+import type { Decision, InputPart, Settings } from '../../generated/common.js';
 import type {
   Adapter,
   AdapterApprovalRequest,
@@ -209,10 +209,6 @@ export class CodexAdapter implements Adapter {
     const request = this.take(requestId);
     if (!request || request.method !== INPUT_METHOD) return;
     this.engine!.respond(request.rpcId, inputResponse(answers));
-  }
-
-  async diff(): Promise<FileChange[]> {
-    throw new RpcError('not_supported', 'the Codex adapter does not compute turn diffs', { agentId: 'codex' });
   }
 
   async kill(): Promise<void> {

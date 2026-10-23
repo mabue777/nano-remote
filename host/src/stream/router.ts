@@ -59,6 +59,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'cursor_expired',
   'agent_unavailable',
   'not_supported',
+  'not_a_repository',
   'rate_limited',
   'provider_unavailable',
   'internal',

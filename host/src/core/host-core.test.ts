@@ -44,8 +44,8 @@ describe('discovery', () => {
     expect(status).toEqual({
       host: expect.objectContaining({ hostId: 'host_test' }),
       agents: [
-        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
-        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
+        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
+        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
       ],
       sessionsActive: 0,
       uptimeSeconds: 42,
@@ -83,7 +83,7 @@ describe('discovery', () => {
     h.agent.setState({ status: 'unavailable', reason: 'updating' });
     const changed = await phone.until(() => phone.messages.find((m) => m.method === 'host/status/changed'));
     expect((changed.params as { agents: unknown[] }).agents).toEqual([
-      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
+      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES] } },
     ]);
     await h.core.close();
     const before = phone.messages.length;
@@ -454,8 +454,8 @@ describe('turns and requests', () => {
     expect(await rpcError(phone, 'turn/interrupt', { sessionId, turnId: 'trn_nope' })).toMatchObject({ code: 'not_found' });
   });
 
-  it('turn/diff answers not_supported without adapter support and the files with it', async () => {
-    const h = await setup();
+  it('turn/diff answers not_supported without the capability, not_found for an unknown turn, not_a_repository outside git', async () => {
+    const h = await setup({ agent: { capabilities: { diff: false } } });
     const phone = await h.connect();
     const sessionId = await newSession(h, phone);
     const { turn } = await rpc<{ turn: { turnId: string } }>(phone, 'turn/start', {
@@ -466,7 +466,7 @@ describe('turns and requests', () => {
     expect(await rpcError(phone, 'turn/diff', { sessionId, turnId: turn.turnId })).toMatchObject({ code: 'not_supported' });
     expect(await rpcError(phone, 'turn/diff', { sessionId, turnId: 'trn_nope' })).toMatchObject({ code: 'not_found' });
 
-    const withDiff = await setup({ agent: { adapter: { diff: [{ path: 'a.txt', kind: 'add', diff: '+a' }] } } });
+    const withDiff = await setup();
     const client = await withDiff.connect();
     const sid = await newSession(withDiff, client);
     const started = await rpc<{ turn: { turnId: string } }>(client, 'turn/start', {
@@ -474,8 +474,10 @@ describe('turns and requests', () => {
       input: text('a'),
       clientMessageId: randomUUID(),
     });
-    expect(await rpc(client, 'turn/diff', { sessionId: sid, turnId: started.turn.turnId })).toEqual({
-      files: [{ path: 'a.txt', kind: 'add', diff: '+a' }],
+    expect(await rpcError(client, 'turn/diff', { sessionId: sid, turnId: started.turn.turnId })).toEqual({
+      code: 'not_a_repository',
+      message: 'Changes need a git repository in the session folder.',
+      data: { cwd: withDiff.cwd },
     });
     await h.close();
   });

@@ -162,9 +162,9 @@ Result:
   "host":{"hostId":"host_2b…","name":"mabue-mbp","version":"0.1.0","os":"darwin","arch":"arm64"},
   "device":{"clientId":"dev_8f3a…","displayName":"iPhone (Safari)"},
   "agents":[{"id":"codex","name":"Codex","status":"ready","version":"0.163.0",
-             "capabilities":{"steer":true,"diff":false,"approvalModes":["untrusted","on-failure","on-request","never"]}},
+             "capabilities":{"steer":true,"diff":true,"approvalModes":["untrusted","on-failure","on-request","never"]}},
             {"id":"claude","name":"Claude Code","status":"ready",
-             "capabilities":{"steer":false,"diff":false,"approvalModes":["default","acceptEdits","plan","never"]}},
+             "capabilities":{"steer":false,"diff":true,"approvalModes":["default","acceptEdits","plan","never"]}},
             {"id":"kimi","name":"Kimi","status":"unavailable","reason":"CLI not found"}],
   "push":{"vapidPublicKey":"BOr…","subscribed":true},
   "limits":{"maxMessageBytes":16777216,"snapshotTurns":5}
@@ -182,7 +182,7 @@ with the same shape whenever an agent's status changes.
 
 ### `agent/list` → `{agents}` (same objects as in `initialize`).
 `capabilities` (additive within v1) is what the agent supports, fixed per agent: `steer` (`turn/steer` works),
-`diff` (`turn/diff` works) and `approvalModes` (the `settings.approvalMode` values it honours, section 5.1;
+`diff` (`turn/diff` works; a host that computes diffs from git, section 7, declares it for every agent) and `approvalModes` (the `settings.approvalMode` values it honours, section 5.1;
 empty when it honours none). Clients show only the controls an agent supports: say up front that input waits
 while a turn runs when `steer` is false, no Changes view when `diff` is false, "Bypass approvals" only when
 `approvalModes` contains `never`. The host answers `not_supported` for `turn/steer` and `turn/diff` without
@@ -379,8 +379,38 @@ steer (Kimi, possibly) answer `not_supported`; the client then queues the messag
 ### `turn/interrupt {sessionId, turnId}` → `{ok:true}`
 The turn ends with `turn/completed {status:"interrupted"}`. Idempotent: interrupting a finished turn is `ok`.
 
-### `turn/diff {sessionId, turnId}` → `{files:[{path, kind, diff}]}`
-The net change of a turn, for the diff view. Adapters may compute it from `fileChange` items.
+### `turn/diff {sessionId, turnId}` → `{files:[{path, kind, diff, oldPath?, binary?, truncated?}], truncated?, omittedFiles?, note?}`
+The net change of a turn, for the Changes view. The host computes it the same way for every agent, from
+git, not from the adapter or its `fileChange` items (additive within v1):
+
+- **Snapshots.** When a turn starts, the host records the session folder's working tree as a git tree
+  object; when the turn ends, it records it again and stores both tree ids with the turn. A snapshot never
+  touches the user's index, stash, refs or files: it copies the index to a temporary file, runs
+  `git add -A -- .` with `GIT_INDEX_FILE` pointing at the copy (so `.gitignore` is respected and ignored
+  files are left out), then `git write-tree`, and deletes the copy. Only the git object store gains objects.
+- **The diff** is `git diff -M` between the two trees, limited to the session folder (`--relative`).
+  `path` (and `oldPath`) are relative to the session folder. `kind`: `add`, `modify`, `delete`, or
+  `rename` (with `oldPath`; a file whose type changed, for example to a symlink, is a `modify`). `diff` is
+  git's unified diff text of that file (`diff --git` header, `@@` hunks). A binary file is listed with
+  `binary: true` and an empty `diff`.
+- **Caps.** At most 64 KiB (65 536 bytes) of diff text per file and 512 KiB (524 288 bytes) in total,
+  cut at a line end; a cut file has `truncated: true` (an empty `diff` when the total was already spent). At
+  most 500 files are listed; `omittedFiles` counts the rest. The result has `truncated: true` when anything
+  was cut or omitted.
+- **Start snapshot not ready.** The start snapshot runs alongside the engine start and never delays the turn
+  by more than 250 ms: if it is not done by the time the input goes to the engine, the turn starts anyway,
+  that snapshot is discarded (the agent may already be writing), and the diff compares the turn-end tree
+  with `HEAD` (the empty tree before the first commit). `note` then says so in one sentence the client
+  shows. A finished turn without an end tree (the host stopped during the snapshot) is compared with the
+  folder as it is now, also with a `note`.
+- **While a turn runs**, the diff compares the start tree with the folder as it is now; it is final once
+  the turn has ended (clients fetch it again on `turn/completed`).
+- **Not a repository.** When the session folder is not inside a git work tree (or git is not installed),
+  `turn/diff` answers `not_a_repository` and the client says "Changes need a git repository in the session
+  folder". Turns that ran outside a repository have no snapshots.
+- The Codex engine's own `turn/diff/updated` notification is not used.
+- Snapshot trees are not referenced by any ref, so `git gc` may prune them after its grace period (two weeks
+  by default); the diff of such an old turn then answers `internal`.
 
 ## 8. Pairing and devices (HTTPS, before a stream exists)
 
@@ -444,6 +474,7 @@ The security pass before Phase 1 (todo item 10) owns code lifetime, token storag
 | `cursor_expired` | Journal no longer holds the cursor | re-open in snapshot mode |
 | `agent_unavailable` | adapter down (`data.agentId`, `data.reason`) | show agent state |
 | `not_supported` | adapter lacks the operation (steer, diff) | hide the control |
+| `not_a_repository` | `turn/diff`: the session folder is not inside a git work tree (`data.cwd`; additive within v1) | say "Changes need a git repository in the session folder" |
 | `rate_limited` | too many requests (`data.retryAfterMs`) | back off |
 | `provider_unavailable` | a relayed provider failed (`data.reason`, `data.status?`, `data.retryAfterMs?`; section 15) | show the reason's sentence |
 | `internal` | host bug | retry once, then report |

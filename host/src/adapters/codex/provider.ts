@@ -9,8 +9,8 @@ import { CodexAdapter } from './adapter.js';
 import { Engine } from './engine.js';
 import { defaultModel, toModels, versionFrom } from './mapping.js';
 
-/** Codex steers a running turn (`turn/steer`), has no turn diff, and honours its four approval policies. */
-export const CODEX_CAPABILITIES: AgentCapabilities = { steer: true, diff: false, approvalModes: CODEX_APPROVAL_POLICIES };
+/** Codex steers a running turn (`turn/steer`), has turn diffs (the host's), and honours its four approval policies. */
+export const CODEX_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: CODEX_APPROVAL_POLICIES };
 
 export interface CodexAgentOptions {
   config?: CodexConfig;

@@ -29,8 +29,8 @@ export function resolveSdkVersion(): string {
   return typeof manifest.version === 'string' ? manifest.version : 'unknown';
 }
 
-/** Claude Code cannot steer a running turn (the SDK has no such call), has no turn diff, and honours four approval modes. */
-export const CLAUDE_CAPABILITIES: AgentCapabilities = { steer: false, diff: false, approvalModes: CLAUDE_APPROVAL_MODES };
+/** Claude Code cannot steer a running turn (the SDK has no such call), has turn diffs (the host's), and honours four approval modes. */
+export const CLAUDE_CAPABILITIES: AgentCapabilities = { steer: false, diff: true, approvalModes: CLAUDE_APPROVAL_MODES };
 
 export interface ClaudeAgentOptions {
   config?: ClaudeConfig;

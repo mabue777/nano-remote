@@ -138,9 +138,9 @@ describe('agents from enabledAgents', () => {
       const phone = await h.connect();
       const listed = (await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list')).agents;
       expect(Object.fromEntries(listed.filter((a) => a.id !== 'fake').map((a) => [a.id, a.capabilities]))).toEqual({
-        codex: { steer: true, diff: false, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
-        claude: { steer: false, diff: false, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
-        pi: { steer: true, diff: false, approvalModes: [] },
+        codex: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
+        claude: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
+        pi: { steer: true, diff: true, approvalModes: [] },
       });
     } finally {
       await h.close();

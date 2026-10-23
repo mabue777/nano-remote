@@ -138,10 +138,10 @@ describe('engine lifecycle', () => {
     });
   });
 
-  it('steer, diff and interrupt report engine failures', async () => {
+  it('steer and interrupt report engine failures', async () => {
     const { manager, journal, log } = make({
       script: [[{ hold: true }]],
-      adapter: { failOn: { steer: 'steer broke', interrupt: 'interrupt broke', diff: 'diff broke' }, diff: [] },
+      adapter: { failOn: { steer: 'steer broke', interrupt: 'interrupt broke' } },
     });
     const { session } = await manager.start({ agentId: 'fake', cwd });
     const sessionId = session.sessionId;
@@ -150,7 +150,6 @@ describe('engine lifecycle', () => {
       code: 'agent_unavailable',
       data: { reason: 'steer broke' },
     });
-    await expect(manager.diff(sessionId, turn.turnId)).rejects.toMatchObject({ data: { reason: 'diff broke' } });
     await manager.interrupt(sessionId, turn.turnId);
     expect(journal.turn(sessionId, turn.turnId)?.status).toBe('interrupted');
     expect(log).toHaveBeenCalledWith(expect.stringContaining('interrupt failed'), expect.any(Error));
@@ -286,7 +285,7 @@ describe('adapter events', () => {
 });
 
 describe('agent capabilities', () => {
-  it('turn/diff on a dormant session answers not_supported and starts no engine', async () => {
+  it('turn/diff on a dormant session starts no engine: not_supported without the capability, the git answer with it', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nano-dormant-'));
     const file = path.join(dir, 'journal.sqlite');
     const store = new SessionStore(path.join(dir, 'core.sqlite'));
@@ -298,7 +297,7 @@ describe('agent capabilities', () => {
 
     // After a host restart the session is dormant: no adapter, a known engine session id to resume.
     const reopened = new Journal({ path: file });
-    const agent = new FakeAgent();
+    const agent = new FakeAgent({ capabilities: { diff: false } });
     const after = new SessionManager({ journal: reopened, agents: [agent], store });
     open.push({ journal: reopened, manager: after });
     expect(store.get(session.sessionId).engineSessionId).toMatch(/^eng_fake_/);
@@ -307,6 +306,11 @@ describe('agent capabilities', () => {
       data: { agentId: 'fake' },
     });
     expect(agent.adapters).toHaveLength(0);
+    // With the capability the host answers from git alone (this folder is no repository): still no engine.
+    const withDiff = new FakeAgent();
+    const third = new SessionManager({ journal: reopened, agents: [withDiff], store });
+    await expect(third.diff(session.sessionId, turn!.turnId)).rejects.toMatchObject({ code: 'not_a_repository', data: { cwd } });
+    expect(withDiff.adapters).toHaveLength(0);
     store.close();
   });
 
@@ -390,8 +394,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: false, approvalModes: FAKE_APPROVAL_MODES });
-    expect(await adapter.diff('trn')).toEqual([]);
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES });
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });
 

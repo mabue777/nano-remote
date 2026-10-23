@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'preact/hooks';
 
 import { useModel } from '../../use-model';
 import { ItemDetailModel, type DetailReplica, type DetailTab } from './detail-model';
-import { DiffView } from './DiffView';
+import { ChangesView } from './DiffView';
 import { OutputView } from './OutputView';
 
 const TAB_LABEL: Record<DetailTab, string> = { output: 'Output', changes: 'Changes' };
@@ -74,7 +74,7 @@ export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onCl
           </div>
         )}
         <div id="detail-panel" role={tabs.length > 1 ? 'tabpanel' : undefined} aria-labelledby={tabs.length > 1 ? `detail-tab-${model.tab}` : undefined}>
-          {model.tab === 'output' ? <OutputView model={model} /> : <DiffView model={model} />}
+          {model.tab === 'output' ? <OutputView model={model} /> : <ChangesView model={model.changes} />}
         </div>
       </section>
     </div>
