@@ -11,6 +11,7 @@
 //     "codexBinary": "/Applications/ChatGPT.app/…/codex",
 //     "claudeConfigDir": "/Users/me/.config/claude", // optional; Claude Code's login, default ~/.claude
 //     "claudeExecutable": "/…/claude",  // optional; default the Claude Code build bundled with the SDK
+//     "piBinary": "/Users/me/.local/bin/pi", // optional; default ~/.local/bin/pi. pi is listed when found
 //     "journalPath": "…/journal.sqlite",
 //     "logFile": "~/Library/Logs/NanoHost/host.log",
 //     "vapidContact": "mailto:me@example.org", // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
@@ -47,6 +48,11 @@ export interface HostConfig {
   claudeConfigDir?: string;
   /** The Claude Code executable; absent means the build bundled with the Claude Agent SDK. */
   claudeExecutable?: string;
+  /**
+   * The pi program; absent means NANO_PI_BIN or ~/.local/bin/pi. pi is not part of `enabledAgents`: the
+   * host lists it whenever this program exists (Phase 5b ruling R1).
+   */
+  piBinary?: string;
   journalPath: string;
   logFile: string;
   /** VAPID `sub` claim (`https:` or `mailto:` with a real domain); absent means DEFAULT_VAPID_CONTACT. */
@@ -93,6 +99,7 @@ const KEYS: readonly (keyof HostConfig)[] = [
   'codexBinary',
   'claudeConfigDir',
   'claudeExecutable',
+  'piBinary',
   'journalPath',
   'logFile',
   'vapidContact',
@@ -155,6 +162,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
 
   const claudeConfigDir = raw.claudeConfigDir ?? defaults.claudeConfigDir;
   const claudeExecutable = raw.claudeExecutable ?? defaults.claudeExecutable;
+  const piBinary = raw.piBinary ?? defaults.piBinary;
   const providers = raw.providers === undefined ? defaults.providers : validateProviders(raw.providers, fail);
 
   return {
@@ -166,6 +174,7 @@ export function validateConfig(value: unknown, file: string, defaults: HostConfi
     codexBinary: absolute(raw.codexBinary ?? defaults.codexBinary, 'codexBinary'),
     ...(claudeConfigDir !== undefined ? { claudeConfigDir: absolute(claudeConfigDir, 'claudeConfigDir') } : {}),
     ...(claudeExecutable !== undefined ? { claudeExecutable: absolute(claudeExecutable, 'claudeExecutable') } : {}),
+    ...(piBinary !== undefined ? { piBinary: absolute(piBinary, 'piBinary') } : {}),
     journalPath: absolute(raw.journalPath ?? defaults.journalPath, 'journalPath'),
     logFile: absolute(raw.logFile ?? defaults.logFile, 'logFile'),
     ...(vapidContact !== undefined ? { vapidContact: vapidContact as string } : {}),

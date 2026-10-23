@@ -11,8 +11,10 @@ import path from 'node:path';
 
 import { ClaudeAgent } from '../adapters/claude/provider.js';
 import { CodexAgent } from '../adapters/codex/provider.js';
+import { PiAgent, piInstalled } from '../adapters/pi/provider.js';
 import { claudeConfig } from '../config/claude.js';
 import { codexConfig } from '../config/codex.js';
+import { piConfig } from '../config/pi.js';
 import { ensurePrivateDir } from '../config/private-files.js';
 import { describeAgent, type AgentProvider } from '../core/adapter.js';
 import { HostCore } from '../core/host-core.js';
@@ -61,8 +63,12 @@ export function shortHostname(name = hostname()): string {
   return name.replace(/\.local$/i, '').split('.')[0] || 'mac';
 }
 
+/**
+ * The agents of `enabledAgents`, then pi when its program is found (Phase 5b ruling R1: pi is listed only
+ * when installed, so a host without pi shows no pi at all).
+ */
 export function buildAgents(config: HostConfig, logger: Logger): AgentProvider[] {
-  return config.enabledAgents.map((id) => {
+  const agents = config.enabledAgents.map((id): AgentProvider => {
     switch (id) {
       case 'codex':
         return new CodexAgent({ config: codexConfig({ binary: config.codexBinary }), log: logger.forModule('codex') });
@@ -77,6 +83,9 @@ export function buildAgents(config: HostConfig, logger: Logger): AgentProvider[]
         });
     }
   });
+  const pi = piConfig(config.piBinary !== undefined ? { binary: config.piBinary } : {});
+  if (piInstalled(pi)) agents.push(new PiAgent({ config: pi, log: logger.forModule('pi') }));
+  return agents;
 }
 
 /**

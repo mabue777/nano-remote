@@ -105,6 +105,8 @@ describe('config file', () => {
     [{ claudeConfigDir: '' }, /claudeConfigDir must be a non-empty string/],
     [{ claudeExecutable: 'bin/claude' }, /claudeExecutable must be an absolute path/],
     [{ claudeExecutable: 7 }, /claudeExecutable/],
+    [{ piBinary: 'bin/pi' }, /piBinary must be an absolute path/],
+    [{ enabledAgents: ['pi'] }, /unknown agent "pi"/],
     [{ journalPath: 'journal.sqlite' }, /journalPath must be an absolute path/],
     [{ logFile: 3 }, /logFile/],
     [{ vapidContact: 'mailto:nano-remote@localhost' }, /vapidContact must be an https: URL or a mailto: address/],
@@ -138,6 +140,11 @@ describe('config file', () => {
       claudeConfigDir: '/Users/me/.config/claude',
       claudeExecutable: '/opt/claude/bin/claude',
     });
+  });
+
+  it('accepts an optional piBinary, omitted by default', () => {
+    expect(defaultConfig(home, 'host_x')).not.toHaveProperty('piBinary');
+    expect(validateConfig({ piBinary: '/Users/me/.local/bin/pi' }, 'c', defaultConfig(home, 'host_x')).piBinary).toBe('/Users/me/.local/bin/pi');
   });
 
   it('drops duplicate agents', () => {

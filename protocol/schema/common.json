@@ -1127,6 +1127,10 @@
         },
         "default": {
           "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "description": "The provider that serves the model, for agents that reach many (pi: llamacpp, openrouter, ...). Absent for agents with one provider. Additive within v1."
         }
       }
     },

@@ -178,7 +178,11 @@ Result:
 ### `host/status` → `{host, agents, sessionsActive, uptimeSeconds}`; `host/status/changed` notification
 with the same shape whenever an agent's status changes.
 
-### `agent/list` → `{agents}` (same objects as in `initialize`). `model/list {agentId}` → `{models:[{id, displayName, default}]}`.
+### `agent/list` → `{agents}` (same objects as in `initialize`). `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
+`provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
+lists every model it has credentials for, with ids of the form `provider/model` (pi's own `--model` form,
+for example `llamacpp/bonsai-27b`) and `provider` set (`llamacpp`). `session/start` with that id in
+`settings.model` starts the session on it. Agents with one provider leave `provider` out.
 
 ### `fs/readDirectory {path}` → `{entries:[{name, kind:"dir"|"file", path}]}`; `project/list` →
 `{projects:[{path, name, lastUsedAt, sessions}]}` (recent working folders, for the folder picker; capture P3).
@@ -438,21 +442,25 @@ The host has one adapter per agent; each produces the section 5 vocabulary. The 
 by the capture and the host-drive spike, the Claude Code column by the adapter's live test
 (`host/src/adapters/claude/live.test.ts`) and the Phase 4 acceptance (`host/acceptance/host-claude.log`), except cells marked
 "unverified", "not probed" or "did not occur". The Kimi column records the `kimi acp` spike
-(`spikes/kimi-drive/NOTES.md`), run against a scripted fake model only; Kimi is not a v1 agent.
+(`spikes/kimi-drive/NOTES.md`), run against a scripted fake model only; Kimi is not a v1 agent. The Pi
+column (Phase 5b, ADR 0007) records pi in RPC mode as probed on the operator's Mac (1.3.0, an Ollama cloud
+model) and the adapter's live test on pi 1.4.0 (`host/src/adapters/pi/live.test.ts`: `llamacpp/bonsai-27b`
+and `openrouter/deepseek/deepseek-v4.1-flash`); cells
+marked "not probed" are covered only by the fake pi of the unit tests.
 
-| Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by the adapter's live test) | Kimi (ACP, post-v1, fake-model spike only) |
-|---|---|---|---|
-| `session/start` | `thread/start` | `query()` with a new session | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` |
-| `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal |
-| `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn |
-| `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely |
-| `turn/interrupt` | `turn/interrupt` | `query.interrupt()`; the turn ends with result `error_during_execution`, reported `interrupted` | not probed |
-| `item/*` | `item/started`, `item/*/delta`, `item/completed` | `stream_event` text deltas, then assistant text and tool_use blocks and the tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` |
-| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | reverse request `session/request_permission` (not probed for shell commands) |
-| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed, with suggestions, so `acceptForSession` is offered) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome |
-| `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) |
-| `status/changed` | `thread/status/changed` | derived from stream state (running on a user message, idle on `result`) | derived (active while `session/prompt` is pending) |
-| `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` |
+| Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by the adapter's live test) | Kimi (ACP, post-v1, fake-model spike only) | Pi (`pi --mode rpc`, JSONL over stdio, Phase 5b) |
+|---|---|---|---|---|
+| `session/start` | `thread/start` | `query()` with a new session | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id` |
+| `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal | the same command with the stored `--session-id` (pi reloads its session file; `get_messages` returns the history) + host Journal. `--session <id>` is not used: it exits with "No session found" for a session whose first prompt never ran |
+| `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn | `prompt {message, images}`; no turn id, the host assigns one; `agent_settled` ends the turn |
+| `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely | `steer {message, images}`: queued, delivered before the next model call, then reported by pi as a user message (the host journals its own) |
+| `turn/interrupt` | `turn/interrupt` | `query.interrupt()`; the turn ends with result `error_during_execution`, reported `interrupted` | not probed | `clear_queue`, then `abort`, then open approvals are declined (pi's abort waits for idle, which an open dialog blocks); `agent_settled {aborted: true}`, reported `interrupted` |
+| `item/*` | `item/started`, `item/*/delta`, `item/completed` | `stream_event` text deltas, then assistant text and tool_use blocks and the tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` | `message_update` `text_delta` and `thinking_delta`, `message_end`, `tool_execution_start`, `tool_execution_update` (bash output), `tool_execution_end` (`isError`; declined when the host refused it) |
+| `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | reverse request `session/request_permission` (not probed for shell commands) | Nano's extension `tool_call` hook calls `ctx.ui.confirm`; it arrives as `extension_ui_request {method: confirm, title: "nano-approval"}` for bash, answered with `extension_ui_response {confirmed}`; a refusal blocks the tool (accepted and declined both probed). Decisions `accept`, `decline`, `cancel` |
+| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed, with suggestions, so `acceptForSession` is offered) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome | the same confirm for `write` (probed) and `edit` (not probed); any other tool except read, grep, find, ls asks as `permission` (not probed) |
+| `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) | other dialogs (`select`, `input`, `editor`) become one question (not probed) |
+| `status/changed` | `thread/status/changed` | derived from stream state (running on a user message, idle on `result`) | derived (active while `session/prompt` is pending) | derived (running from `turn/start` to `agent_settled`, `error` when pi exits) |
+| `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` | `get_session_stats` after every turn (`tokens`, `contextUsage.percent`) |
 
 The Claude Code approvals and questions reach `canUseTool` only when the adapter passes
 `permissionMode: "default"` and `settingSources: []`. With the user's own settings loaded, auto mode

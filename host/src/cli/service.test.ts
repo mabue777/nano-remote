@@ -9,6 +9,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ClaudeAgent } from '../adapters/claude/provider.js';
+import { PiAgent } from '../adapters/pi/provider.js';
 import { claudeConfig } from '../config/claude.js';
 import { FakeAgent } from '../core/testing/fake-adapter.js';
 import { text, waitEvent } from '../core/testing/harness.js';
@@ -107,12 +108,21 @@ describe('agents from enabledAgents', () => {
       enabledAgents: ['codex', 'claude'],
       claudeConfigDir: '/Users/me/.config/claude',
       claudeExecutable: '/opt/claude/bin/claude',
+      piBinary: '/nonexistent/pi',
     };
     const agents = buildAgents(config, quiet);
     expect(agents.map((a) => a.id)).toEqual(['codex', 'claude']);
     const claude = agents[1] as ClaudeAgent;
     expect(claude).toBeInstanceOf(ClaudeAgent);
     expect(claude.config).toMatchObject({ configDir: '/Users/me/.config/claude', executable: '/opt/claude/bin/claude' });
+  });
+
+  it('lists pi when its program is found, whatever enabledAgents says, and leaves it out otherwise', () => {
+    const found = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['codex'], piBinary: process.execPath }, quiet);
+    expect(found.map((a) => a.id)).toEqual(['codex', 'pi']);
+    expect((found[1] as PiAgent).config.binary).toBe(process.execPath);
+    const missing = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: [], piBinary: '/nonexistent/pi' }, quiet);
+    expect(missing).toEqual([]);
   });
 
   it('keeps the Claude defaults for keys the config leaves out', () => {
@@ -578,7 +588,7 @@ describe('nano-host commands', () => {
     // First start writes the config; this one would listen on the tailnet, so give it loopback instead.
     writeFileSync(
       path.join(home, 'seed.json'),
-      JSON.stringify({ listenAddresses: ['127.0.0.1'], port, journalPath: path.join(home, 'j.sqlite'), logFile: path.join(home, 'h.log'), codexBinary: '/nonexistent/codex', enabledAgents: ['codex', 'claude'], claudeConfigDir: '/nonexistent/claude' }),
+      JSON.stringify({ listenAddresses: ['127.0.0.1'], port, journalPath: path.join(home, 'j.sqlite'), logFile: path.join(home, 'h.log'), codexBinary: '/nonexistent/codex', enabledAgents: ['codex', 'claude'], claudeConfigDir: '/nonexistent/claude', piBinary: '/nonexistent/pi' }),
     );
     mkdirSync(path.dirname(configPath), { recursive: true });
     copyFileSync(path.join(home, 'seed.json'), configPath);
