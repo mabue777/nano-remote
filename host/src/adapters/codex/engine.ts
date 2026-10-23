@@ -3,10 +3,10 @@
 // `kill()` also ends the shells and tools it started. When the process exits or its stdout closes on its
 // own, every outstanding call rejects with `agent_unavailable` and `onExit` fires once.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createInterface } from 'node:readline';
 
 import type { CodexConfig } from '../../config/codex.js';
 import { RpcError } from '../../errors.js';
+import { LineSplitter } from '../shared/line-splitter.js';
 
 export type RpcId = number | string;
 
@@ -89,7 +89,10 @@ export class Engine {
     });
     proc.stdin!.on('error', () => this.lost('engine closed its stdin'));
     proc.stderr!.on('data', (chunk: Buffer) => this.handlers.log?.(`codex stderr: ${String(chunk).trimEnd()}`));
-    createInterface({ input: proc.stdout! }).on('line', (line) => this.onLine(line));
+    // Records are split on LF only (shared/line-splitter.ts): readline would also split inside JSON strings.
+    const stdout = new LineSplitter();
+    proc.stdout!.on('data', (chunk: Buffer) => stdout.push(chunk, (line) => this.onLine(line)));
+    proc.stdout!.once('end', () => stdout.end((line) => this.onLine(line)));
 
     const result = (await this.call('initialize', {
       clientInfo: this.config.clientInfo,

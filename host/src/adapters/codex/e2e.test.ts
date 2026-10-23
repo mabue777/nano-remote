@@ -438,4 +438,22 @@ describe('session core end to end with the Codex adapter', () => {
     const list = await rpcError(phone, 'model/list', { agentId: 'codex' });
     expect(list.code).toBe('agent_unavailable');
   });
+
+  it('a delta whose text holds U+2028 and U+2029 reaches the Journal intact (LF-only framing)', async () => {
+    const reply = 'one\u2028two\u2029three';
+    const { h } = await setup({ turns: [[{ reply, chunks: 1 }]] });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: text('Say it'), clientMessageId: randomUUID() });
+    await waitEvent(phone, 'turn/completed');
+    const stored = h.journal.since(sessionId, 0).events;
+    const deltas = stored.filter((e) => e.method === 'item/delta').map((e) => (e.params as { delta: string }).delta);
+    expect(deltas).toEqual([reply]);
+    const message = stored
+      .filter((e) => e.method === 'item/completed')
+      .map((e) => (e.params as { item: { type: string; text?: string } }).item)
+      .find((i) => i.type === 'agentMessage');
+    expect(message?.text).toBe(reply);
+  });
 });

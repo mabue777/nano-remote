@@ -8,10 +8,12 @@
 // `onExit` fires once, with pi's last stderr line in the reason (pi reports its startup failures there,
 // for example "No session found matching ...").
 import { spawn, type ChildProcess } from 'node:child_process';
-import { StringDecoder } from 'node:string_decoder';
 
 import { childPath, type PiConfig } from '../../config/pi.js';
 import { RpcError } from '../../errors.js';
+import { LineSplitter } from '../shared/line-splitter.js';
+
+export { LineSplitter };
 
 type Json = Record<string, unknown>;
 
@@ -34,21 +36,6 @@ interface Call {
 
 export function unavailable(reason: string): RpcError {
   return new RpcError('agent_unavailable', `agent pi is unavailable: ${reason}`, { agentId: 'pi', reason });
-}
-
-/** Splits a byte stream into LF-terminated records (a preceding CR is dropped). */
-export class LineSplitter {
-  private readonly decoder = new StringDecoder('utf8');
-  private buffer = '';
-
-  push(chunk: Buffer | string, onLine: (line: string) => void): void {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
-    for (let end = this.buffer.indexOf('\n'); end >= 0; end = this.buffer.indexOf('\n')) {
-      const line = this.buffer.slice(0, end);
-      this.buffer = this.buffer.slice(end + 1);
-      onLine(line.endsWith('\r') ? line.slice(0, -1) : line);
-    }
-  }
 }
 
 export class PiEngine {
