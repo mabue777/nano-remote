@@ -1,0 +1,236 @@
+/* Home (HomeScreen.tsx): top bar end, connection badge, host and notifications cards, the
+   Sessions | Chats switch, and the session rows (also used by the chat list, chat/ChatsPanel.tsx). */
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-md);
+  color: var(--muted);
+  text-align: right;
+}
+
+.connection.connected .dot,
+.agent.ok .dot {
+  background: var(--ok);
+}
+
+.connection.connecting .dot {
+  background: var(--warn);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.agent.warn .dot {
+  background: var(--warn);
+}
+
+.connection.offline .dot,
+.connection.unpaired .dot,
+.connection.update_required .dot {
+  background: var(--error);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection.connecting .dot {
+    animation: none;
+  }
+}
+
+.host {
+  margin-bottom: var(--space-10);
+}
+
+.host-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.agents {
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.agent-status {
+  margin-left: auto;
+  text-align: right;
+}
+
+/* The Notifications card (Web Push) under the host card. */
+.notifications {
+  margin-bottom: var(--space-10);
+}
+
+.notifications-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.notifications-line h2 {
+  margin: 0;
+}
+
+.notifications p {
+  margin: var(--space-4) 0 0;
+}
+
+.notifications-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin-top: var(--space-5);
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.session {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-6) var(--space-7);
+}
+
+.session:active {
+  background: var(--bg);
+}
+
+.session-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.session-title {
+  font-weight: 600;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.status {
+  font-weight: 600;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.busy {
+  color: var(--busy);
+}
+
+.status.attention {
+  color: var(--warn);
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.status.muted {
+  color: var(--muted);
+}
+
+.preview {
+  margin: var(--space-3) 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) 0;
+}
+
+/* A home row whose turn ended while the app was hidden or offline, until it is opened. */
+.away-mark {
+  font-weight: 600;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.session.away {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The "Sessions | Chats" switch on Home. */
+.segmented {
+  display: flex;
+  padding: 3px; /* one-off: the segmented control's inner inset */
+  margin-bottom: var(--space-7);
+  border: 1px solid var(--line);
+  border-radius: 12px; /* one-off: outer radius around the 10 px buttons */
+  background: var(--surface);
+}
+
+.segmented button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  min-height: 38px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.segmented button.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch);
+  min-height: var(--touch);
+  font-size: var(--font-xl);
+  color: var(--muted);
+  text-decoration: none;
+}

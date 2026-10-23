@@ -1,0 +1,20 @@
+/* The new version prompt (UpdatePrompt.tsx). */
+
+.update-prompt {
+  position: fixed;
+  top: calc(var(--safe-top) + var(--space-4));
+  left: calc(var(--safe-left) + var(--space-6));
+  right: calc(var(--safe-right) + var(--space-6));
+  max-width: 536px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-7);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.15);
+  z-index: 20;
+}

@@ -1,0 +1,18 @@
+/* The app's stylesheets in cascade order; main.tsx imports this file only. Each screen's styles live next
+   to its .tsx. The order is part of the design: tokens, then base, then shared components, then screens,
+   so a screen rule wins over a shared one of the same specificity. The session page comes before local
+   chat, which reuses its layout and adjusts it. Add a new screen's stylesheet at the end. */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import '../screens/PairScreen.css';
+@import '../screens/HomeScreen.css';
+@import '../screens/NewSessionSheet.css';
+@import '../screens/session/SessionScreen.css';
+@import '../screens/session/approvals/RequestCards.css';
+@import '../screens/session/views/views.css';
+@import '../pwa/UpdatePrompt.css';
+@import '../screens/chat/ChatsPanel.css';
+@import '../screens/chat/ChatScreen.css';
+@import '../screens/settings/host/KeepAwakeSection.css';
+@import '../screens/settings/providers/ProviderSettingsScreen.css';

@@ -1,0 +1,520 @@
+/* The session page (SessionScreen.tsx): header, task state, turn list, composer, attachments (spec 8.1).
+   The local chat page (chat/ChatScreen.tsx) reuses this layout. */
+
+.bypass-tag {
+  display: inline-block;
+  margin-left: var(--space-4);
+  padding: 1px 7px; /* one-off: tag geometry */
+  border-radius: 6px; /* one-off: tag corner */
+  background: var(--error);
+  color: #fff;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.session-heading {
+  margin-bottom: var(--space-3);
+}
+
+/* The session view: a fixed-height column; only the conversation scrolls, the composer stays put. */
+.session-screen {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+
+.session-head p {
+  margin: 0 0 var(--space-4);
+}
+
+.decision-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warn) 16%, var(--surface));
+  border: 1px solid var(--warn);
+}
+
+.decision-banner .counters {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.decision-banner .badge {
+  background: var(--warn);
+  padding: 0 var(--space-4);
+}
+
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 calc(-1 * var(--space-8));
+  padding: 0 var(--space-8) var(--space-6);
+}
+
+.older {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0 var(--space-4);
+}
+
+.turns,
+.steers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+.steers {
+  margin-top: var(--space-5);
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.msg p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--accent);
+  color: var(--accent-text);
+  padding: var(--space-4) var(--space-6);
+  border-radius: 16px 16px 4px 16px; /* one-off: speech-bubble corners */
+}
+
+.msg.user .muted {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.turn.sending .msg.user,
+.steer.sending,
+.steer.queued {
+  opacity: 0.7;
+}
+
+.turn.failed_to_send .msg.user,
+.steer.failed {
+  opacity: 0.6;
+}
+
+.msg.agent {
+  align-self: stretch;
+}
+
+.item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+}
+
+/*
+ * Long unbroken text (paths, JSON arrays, tokens) breaks anywhere rather than running past a card's
+ * right edge (field check 2026-10-21, defect 2). Inherited by everything inside a transcript item or
+ * request card; buttons and fieldsets are named because their UA styles size them to their content.
+ */
+.item,
+.msg,
+.request-card,
+.request-notice,
+.item button,
+.request-card button,
+.request-card fieldset,
+.request-card legend {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.request-card legend {
+  max-width: 100%;
+}
+
+.item-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.item .summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.item pre {
+  margin: var(--space-3) 0 0;
+  max-height: 240px;
+  overflow: auto;
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+}
+
+.state {
+  font-weight: 600;
+  flex: none;
+}
+
+.state.ok,
+.turn-state.ok {
+  color: var(--ok);
+}
+
+.state.busy,
+.turn-state.busy {
+  color: var(--busy);
+}
+
+.state.error,
+.turn-state.error {
+  color: var(--error);
+}
+
+.state.muted,
+.turn-state.muted {
+  color: var(--muted);
+}
+
+.turn-state {
+  margin: 0;
+  font-weight: 600;
+}
+
+.paths {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.paths .kind.add {
+  color: var(--ok);
+}
+
+.paths .kind.delete {
+  color: var(--error);
+}
+
+.reasoning-toggle {
+  padding: 0;
+  text-align: left;
+}
+
+.reasoning-text {
+  margin: var(--space-3) 0 0;
+  white-space: pre-wrap;
+}
+
+.send-failure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: flex-end;
+  color: var(--error);
+}
+
+.send-failure .actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.jump-pill {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 132px); /* one-off: just above the composer */
+  transform: translateX(-50%);
+  border-radius: var(--radius-pill);
+  min-height: 36px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+  z-index: 5;
+}
+
+.composer {
+  flex: none;
+  border-top: 1px solid var(--line);
+  margin: 0 calc(-1 * var(--space-8));
+  padding: var(--space-4) var(--space-8) calc(var(--safe-bottom) + var(--space-6));
+  background: var(--bg);
+}
+
+.composer .usage {
+  margin: 0 0 var(--space-3);
+}
+
+.composer-form {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+
+.composer-form textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  max-height: 40dvh;
+}
+
+/* The box is one row while empty; a placeholder that wrapped would be cut off (field check 2026-10-21). */
+.composer-form textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+button.stop {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.attach-button {
+  flex: none;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border-radius: var(--radius-round);
+  font-size: var(--font-2xl);
+  line-height: 1;
+}
+
+.attach-input {
+  display: none;
+}
+
+.attach-tray .error {
+  margin: 0 0 var(--space-3);
+}
+
+.tray {
+  display: flex;
+  gap: var(--space-6);
+  margin: 0 0 var(--space-4);
+  /* Room for the remove buttons, which sit over each entry's top right corner. */
+  padding: var(--space-5) var(--space-5) var(--space-2) 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.tray-entry {
+  position: relative;
+  flex: none;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tray-thumb,
+.tray-file {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tray-thumb {
+  object-fit: cover;
+  display: block;
+}
+
+.tray-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  box-sizing: border-box;
+  font-size: var(--font-2xs);
+  text-align: center;
+}
+
+.tray-file .file-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-entry.failed .tray-thumb,
+.tray-entry.failed .tray-file {
+  border-color: var(--error);
+}
+
+.tray-progress {
+  width: 72px;
+  height: 4px;
+}
+
+.tray-entry.failed {
+  width: 120px;
+}
+
+.tray-remove {
+  position: absolute;
+  top: calc(-1 * var(--space-5));
+  left: 56px; /* one-off: over the 72 px tile's top right corner */
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-round);
+  font-size: var(--font-lg);
+  line-height: 1;
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+}
+
+.tray-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--error);
+  font-size: var(--font-2xs);
+}
+
+.tray-error .small {
+  font-size: var(--font-2xs);
+}
+
+.attach-note {
+  margin: 0 0 var(--space-3);
+}
+
+.sent-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sent-attachments + p {
+  margin-top: var(--space-3);
+}
+
+.thumbs,
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumbs img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 0.2);
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 0.18);
+  color: inherit;
+  text-decoration: none;
+  font-size: var(--font-md);
+}
+
+.file-chip .file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-row.user {
+  align-self: flex-end;
+  align-items: flex-end;
+  max-width: 85%;
+}
+
+.item-row.user .msg.user {
+  max-width: 100%;
+}
+
+.open-detail {
+  align-self: flex-end;
+  padding: var(--space-1) 0 0;
+  color: var(--muted);
+}
+
+.turn-changes {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: var(--space-2) 0;
+}
+
+/* The session header's one-line task state (Running, Waiting for your approval, Finished…), toned like
+   the session list's status. The pending card below stays the call to action; this only names the state. */
+.task-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.task-state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+  flex: none;
+}
+
+.task-state.ok {
+  color: var(--ok);
+}
+
+.task-state.busy {
+  color: var(--busy);
+}
+
+.task-state.attention {
+  color: var(--warn);
+}
+
+.task-state.error {
+  color: var(--error);
+}

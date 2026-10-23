@@ -4,12 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
+import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
+import { Switch } from '../ui/Switch';
 import { HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
 import { NewSessionSheet } from './NewSessionSheet';
 import { useModel } from './use-model';
-
-/** How far (px) the list must be pulled down before letting go refreshes it. */
-const PULL_THRESHOLD = 70;
 
 export interface HomeScreenProps {
   client: StreamClient;
@@ -34,7 +33,10 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
   const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
   const [creating, setCreating] = useState(false);
-  const pull = usePullToRefresh(() => void model.refresh());
+  const pull = usePullToRefresh(
+    () => window.scrollY <= 0,
+    () => void model.refresh(),
+  );
   const sentinel = useInfiniteScroll(() => void model.loadMore(), model.hasMore);
   const sessions = model.sessions;
 
@@ -52,9 +54,7 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
         chats
       ) : (
         <>
-          <div class="pull" style={{ height: `${pull.distance}px` }} aria-hidden={pull.distance === 0}>
-            {pull.distance > 0 && <span>{pull.distance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}</span>}
-          </div>
+          <PullIndicator distance={pull.distance} pullLabel="Pull to refresh" releaseLabel="Release to refresh" />
           <HostCard host={model.host} />
           {notifications !== undefined && <NotificationsCard push={notifications} />}
           <section class="sessions" aria-labelledby="sessions-title">
@@ -180,18 +180,13 @@ function NotificationsCard({ push }: { push: PushModel }) {
       <div class="notifications-line">
         <h2 id="notifications-title">Notifications</h2>
         {switchable && (
-          <button
-            type="button"
-            role="switch"
-            class={`switch${state.kind === 'on' ? ' on' : ''}`}
-            aria-checked={state.kind === 'on' || state.kind === 'subscribing'}
-            aria-labelledby="notifications-title"
+          <Switch
+            checked={state.kind === 'on' || state.kind === 'subscribing'}
+            labelledBy="notifications-title"
             disabled={state.kind === 'subscribing'}
             // turnOn asks for permission inside this tap: iOS allows it only from a user gesture.
-            onClick={() => void (state.kind === 'on' ? push.turnOff() : push.turnOn())}
-          >
-            <span class="knob" aria-hidden="true" />
-          </button>
+            onChange={(on) => void (on ? push.turnOn() : push.turnOff())}
+          />
         )}
       </div>
       {state.kind === 'unsupported' && <p class="muted small">This browser cannot show notifications from Nano Remote.</p>}
@@ -269,30 +264,6 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
       </a>
     </li>
   );
-}
-
-/** Pull down at the top of the page to refresh (touch screens). */
-function usePullToRefresh(onRefresh: () => void) {
-  const [distance, setDistance] = useState(0);
-  const start = useRef<number | undefined>(undefined);
-  return {
-    distance,
-    handlers: {
-      onTouchStart: (event: TouchEvent) => {
-        start.current = window.scrollY <= 0 ? event.touches[0]?.clientY : undefined;
-      },
-      onTouchMove: (event: TouchEvent) => {
-        if (start.current === undefined) return;
-        const dy = (event.touches[0]?.clientY ?? start.current) - start.current;
-        setDistance(dy > 0 ? Math.min(dy * 0.5, PULL_THRESHOLD * 1.5) : 0);
-      },
-      onTouchEnd: () => {
-        if (start.current !== undefined && distance >= PULL_THRESHOLD) onRefresh();
-        start.current = undefined;
-        setDistance(0);
-      },
-    },
-  };
 }
 
 /** Calls onMore when the element scrolls into view (the bottom of the list). */

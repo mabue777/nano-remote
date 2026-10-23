@@ -1,0 +1,156 @@
+/* The local chat page (ChatScreen.tsx): model button, thinking row, messages, markdown, model picker. */
+
+.model-button {
+  max-width: 60%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+}
+
+.model-button .model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.chat-sub p {
+  margin: 0;
+}
+
+.thinking-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+}
+
+.chat-message {
+  gap: var(--space-3);
+}
+
+.chat-message .msg {
+  -webkit-touch-callout: none;
+}
+
+.chat-message .usage,
+.chat-message .turn-state {
+  margin: 0;
+}
+
+.chat-message.user .turn-state,
+.chat-message.user .error {
+  align-self: flex-end;
+}
+
+.markdown > * {
+  margin: 0 0 var(--space-4);
+}
+
+.markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown li,
+.markdown blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown h3,
+.markdown h4 {
+  font-size: var(--font-base);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 22px; /* one-off: list marker indent */
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: var(--space-5);
+  color: var(--muted);
+}
+
+.markdown .code-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+  overflow-x: auto;
+  font-size: var(--font-sm);
+  white-space: pre;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
+.chat-notice {
+  margin: 0 0 var(--space-3);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 96px); /* one-off: just above the composer */
+  transform: translateX(-50%);
+  margin: 0;
+  padding: var(--space-4) var(--space-7);
+  border-radius: var(--radius-pill);
+  background: var(--text);
+  color: var(--bg);
+  z-index: 6;
+}
+
+.toast.error {
+  background: var(--error);
+  color: #fff;
+}
+
+.picker-group {
+  border-top: 1px solid var(--line);
+  padding: var(--space-6) 0;
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.picker-head h3 {
+  font-size: var(--font-base);
+  margin: 0;
+}
+
+.picker-head p {
+  margin: 0;
+}
+
+.picker-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.picker-models .choice {
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}

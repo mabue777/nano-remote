@@ -4,6 +4,9 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
+import { BackHeader } from '../../ui/BackHeader';
+import { Sheet, SheetHeader } from '../../ui/Sheet';
+import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
 import { useLiveModel, usePress } from './hooks';
 import type { Block, Inline } from './markdown';
@@ -57,21 +60,11 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
 
   return (
     <main class="screen session-screen chat-screen">
-      <header class="topbar">
-        <a
-          class="back"
-          href="/chats"
-          onClick={(event) => {
-            event.preventDefault();
-            onBack();
-          }}
-        >
-          ‹ {backLabel}
-        </a>
+      <BackHeader href="/chats" label={backLabel} onBack={onBack}>
         <button type="button" class="model-button small" onClick={() => model.openPicker()} aria-haspopup="dialog" aria-label={`Model: ${model.modelLabel}`} disabled={!model.found}>
           <span class="model-name">{model.modelLabel}</span> ▾
         </button>
-      </header>
+      </BackHeader>
       <div class="session-head chat-head">
         <h1 class="session-heading">{model.title}</h1>
         <div class="chat-sub">
@@ -84,16 +77,7 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
               <span id="thinking-label" class="small">
                 Thinking
               </span>
-              <button
-                type="button"
-                role="switch"
-                class={`switch${model.thinking ? ' on' : ''}`}
-                aria-checked={model.thinking}
-                aria-labelledby="thinking-label"
-                onClick={() => model.toggleThinking()}
-              >
-                <span class="knob" aria-hidden="true" />
-              </button>
+              <Switch checked={model.thinking} labelledBy="thinking-label" onChange={() => model.toggleThinking()} />
             </div>
           )}
         </div>
@@ -203,63 +187,56 @@ function Message({ row, model }: { row: MessageRow; model: ChatModel }) {
 function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() => void) | undefined }) {
   const groups = model.pickerGroups;
   return (
-    <div class="sheet-backdrop" onClick={(event) => event.target === event.currentTarget && model.closePicker()}>
-      <section class="sheet model-picker" role="dialog" aria-modal="true" aria-labelledby="model-picker-title">
-        <header class="sheet-head">
-          <h2 id="model-picker-title">Model</h2>
-          <button type="button" class="ghost" onClick={() => model.closePicker()}>
-            Done
-          </button>
-        </header>
-        {groups.length === 0 && (
-          <p class="muted">
-            No providers yet.{' '}
-            <a
-              class="settings-link"
-              href="/settings/providers"
-              onClick={(event) => {
-                event.preventDefault();
-                model.closePicker();
-                onSettings?.();
-              }}
-            >
-              Add one in Settings › Providers
-            </a>
-          </p>
-        )}
-        {groups.map((group) => (
-          <section key={group.providerId} class="picker-group" aria-label={group.name}>
-            <div class="picker-head">
-              <div>
-                <h3>{group.name}</h3>
-                <p class="muted small">{group.route}</p>
-              </div>
-              <button type="button" class="ghost small" onClick={() => void model.refreshModels(group.providerId)} disabled={group.refreshing} aria-label={`Refresh models of ${group.name}`}>
-                {group.refreshing ? 'Refreshing…' : 'Refresh'}
-              </button>
+    <Sheet labelledBy="model-picker-title" class="model-picker" onClose={() => model.closePicker()}>
+      <SheetHeader titleId="model-picker-title" title="Model" actionLabel="Done" onAction={() => model.closePicker()} />
+      {groups.length === 0 && (
+        <p class="muted">
+          No providers yet.{' '}
+          <a
+            class="settings-link"
+            href="/settings/providers"
+            onClick={(event) => {
+              event.preventDefault();
+              model.closePicker();
+              onSettings?.();
+            }}
+          >
+            Add one in Settings › Providers
+          </a>
+        </p>
+      )}
+      {groups.map((group) => (
+        <section key={group.providerId} class="picker-group" aria-label={group.name}>
+          <div class="picker-head">
+            <div>
+              <h3>{group.name}</h3>
+              <p class="muted small">{group.route}</p>
             </div>
-            {group.error !== undefined && (
-              <p class="error small" role="alert">
-                {group.error}
-              </p>
-            )}
-            {group.models.length === 0 ? (
-              <p class="muted small">No models cached. Refresh to load them.</p>
-            ) : (
-              <ul class="picker-models">
-                {group.models.map((m) => (
-                  <li key={m.id}>
-                    <button type="button" class={`choice${m.selected ? ' selected' : ''}`} aria-pressed={m.selected} onClick={() => model.selectModel(group.providerId, m.id)}>
-                      {m.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ))}
-      </section>
-    </div>
+            <button type="button" class="ghost small" onClick={() => void model.refreshModels(group.providerId)} disabled={group.refreshing} aria-label={`Refresh models of ${group.name}`}>
+              {group.refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+          {group.error !== undefined && (
+            <p class="error small" role="alert">
+              {group.error}
+            </p>
+          )}
+          {group.models.length === 0 ? (
+            <p class="muted small">No models cached. Refresh to load them.</p>
+          ) : (
+            <ul class="picker-models">
+              {group.models.map((m) => (
+                <li key={m.id}>
+                  <button type="button" class={`choice${m.selected ? ' selected' : ''}`} aria-pressed={m.selected} onClick={() => model.selectModel(group.providerId, m.id)}>
+                    {m.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
+    </Sheet>
   );
 }
 

@@ -1,0 +1,29 @@
+/* Settings, host section (KeepAwakeSection.tsx). */
+
+.host-settings h2 {
+  margin: 0 0 var(--space-5);
+}
+
+.keep-awake-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.host-settings p {
+  margin: var(--space-4) 0 0;
+}
+
+/* The status line: green when the Mac is kept awake, plain text otherwise (amber is too faint for text). */
+.keep-awake-status {
+  font-weight: 600;
+}
+
+.keep-awake-status[data-kind='active'] {
+  color: var(--ok);
+}
+
+.keep-awake-status[data-kind='off'] {
+  color: var(--muted);
+}

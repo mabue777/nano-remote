@@ -1,0 +1,138 @@
+/* Settings > Providers (ProviderSettingsScreen.tsx). */
+
+.settings-screen h1 {
+  margin-top: 0;
+}
+
+.settings-screen > section {
+  margin-bottom: 18px; /* one-off: space between settings sections */
+}
+
+.settings-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-7);
+}
+
+.provider-list,
+.candidates,
+.test-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.provider-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.provider-row p {
+  margin: 0;
+}
+
+.provider-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.provider-name {
+  font-weight: 600;
+  margin-right: auto;
+  overflow-wrap: anywhere;
+}
+
+.provider-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.provider-meta span {
+  white-space: nowrap;
+}
+
+.key-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.key-prompt .field {
+  width: 100%;
+}
+
+.candidate {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-7);
+  text-align: left;
+}
+
+.candidate .muted {
+  overflow-wrap: anywhere;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--space-3);
+}
+
+.preset-grid .preset {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  font-size: var(--font-md);
+}
+
+.detection {
+  font-size: var(--font-md);
+}
+
+.test-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.test-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.test-result.ok .dot {
+  background: var(--ok);
+}
+
+.test-result.busy .dot {
+  background: var(--busy);
+}
+
+.test-result.attention .dot {
+  background: var(--warn);
+}
+
+.test-result.error .dot {
+  background: var(--error);
+}
+
+.test-models {
+  gap: var(--space-1);
+  padding-left: 17px; /* one-off: lines the models up with the status text after the dot */
+  font-size: var(--font-lg);
+}

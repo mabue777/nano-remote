@@ -1,0 +1,13 @@
+/* Pairing (PairScreen.tsx). */
+
+.pair-header {
+  margin: var(--space-12) 0 var(--space-8);
+}
+
+.pair-header p {
+  margin: var(--space-4) 0 0;
+}
+
+.pair .form button.primary {
+  margin-top: var(--space-2);
+}

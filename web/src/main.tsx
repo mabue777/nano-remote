@@ -5,7 +5,7 @@ import { listenForNavigate } from './pwa/navigate';
 import { browserPushEnvironment, type PushWindow } from './pwa/push';
 import { startUpdates, UpdatePrompt, type UpdateSignal } from './pwa/UpdatePrompt';
 import { Router } from './routes/router';
-import './styles.css';
+import './styles/index.css';
 
 const root = document.getElementById('app');
 if (!root) {

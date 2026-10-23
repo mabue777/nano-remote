@@ -2,9 +2,11 @@
 // cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this
 // file renders them and owns only the DOM work (scrolling, the pull-down gesture, keeping the reading
 // position when older turns are put in front).
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
+import { BackHeader } from '../../ui/BackHeader';
+import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
 import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
@@ -14,8 +16,6 @@ import { SessionModel, type AttachmentServices, type AttachmentView, type ItemRo
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
-/** How far (px) the list must be pulled down at the top before letting go loads older turns. */
-const PULL_THRESHOLD = 70;
 /** Within this many px of the bottom counts as "at the bottom" (auto-scroll stays on). */
 const BOTTOM_SLACK = 48;
 
@@ -97,7 +97,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
     if (element !== null && model.hasOlder && !model.loadingOlder) keep.current = { height: element.scrollHeight, top: element.scrollTop };
     void model.loadOlder();
   };
-  const pull = usePullDown(scroller, loadOlder);
+  const pull = usePullToRefresh(() => (scroller.current?.scrollTop ?? 0) <= 0, loadOlder);
 
   const status = model.status;
   const task = model.taskState;
@@ -108,21 +108,11 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
 
   return (
     <main class="screen session-screen">
-      <header class="topbar">
-        <a
-          class="back"
-          href="/"
-          onClick={(event) => {
-            event.preventDefault();
-            onBack();
-          }}
-        >
-          ‹ Sessions
-        </a>
+      <BackHeader href="/" label="Sessions" onBack={onBack}>
         <span class={`pill ${status.tone}`} aria-label="Session status" data-status={status.status}>
           {status.label}
         </span>
-      </header>
+      </BackHeader>
       <div class="session-head">
         <h1 class="session-heading">
           {model.title}
@@ -184,9 +174,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         }}
         {...pull.handlers}
       >
-        <div class="pull" style={{ height: `${pull.distance}px` }} aria-hidden={pull.distance === 0}>
-          {pull.distance > 0 && <span>{pull.distance >= PULL_THRESHOLD ? 'Release to load earlier turns' : 'Pull for earlier turns'}</span>}
-        </div>
+        <PullIndicator distance={pull.distance} pullLabel="Pull for earlier turns" releaseLabel="Release to load earlier turns" />
         {model.hasOlder && (
           <div class="older">
             <button type="button" class="ghost small" onClick={loadOlder} disabled={model.loadingOlder}>
@@ -584,28 +572,4 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
       </form>
     </footer>
   );
-}
-
-/** Pull down while the list is at its top to load older turns (touch screens). */
-function usePullDown(scroller: { current: HTMLElement | null }, onPull: () => void) {
-  const [distance, setDistance] = useState(0);
-  const start = useRef<number | undefined>(undefined);
-  return {
-    distance,
-    handlers: {
-      onTouchStart: (event: TouchEvent) => {
-        start.current = (scroller.current?.scrollTop ?? 0) <= 0 ? event.touches[0]?.clientY : undefined;
-      },
-      onTouchMove: (event: TouchEvent) => {
-        if (start.current === undefined) return;
-        const dy = (event.touches[0]?.clientY ?? start.current) - start.current;
-        setDistance(dy > 0 ? Math.min(dy * 0.5, PULL_THRESHOLD * 1.5) : 0);
-      },
-      onTouchEnd: () => {
-        if (start.current !== undefined && distance >= PULL_THRESHOLD) onPull();
-        start.current = undefined;
-        setDistance(0);
-      },
-    },
-  };
 }

@@ -2,6 +2,7 @@
 // live in KeepAwakeModel; nothing renders until the paired host has reported `keepAwake`.
 import { useEffect, useMemo } from 'preact/hooks';
 
+import { Switch } from '../../../ui/Switch';
 import { useLiveModel } from '../../chat/hooks';
 import { KEEP_AWAKE_NOTE, KEEP_AWAKE_TITLE, KeepAwakeModel, type KeepAwakeLink } from './keep-awake-model';
 
@@ -18,18 +19,13 @@ export function KeepAwakeSection({ link }: { link: KeepAwakeLink }) {
       <h2 id="host-settings-title">This Mac</h2>
       <div class="keep-awake-line">
         <span id="keep-awake-title">{KEEP_AWAKE_TITLE}</span>
-        <button
-          type="button"
-          role="switch"
-          class="switch"
-          aria-checked={model.checked}
-          aria-labelledby="keep-awake-title"
-          aria-describedby="keep-awake-status"
+        <Switch
+          checked={model.checked}
+          labelledBy="keep-awake-title"
+          describedBy="keep-awake-status"
           disabled={model.pending !== undefined}
-          onClick={() => void model.set(!model.checked)}
-        >
-          <span class="knob" aria-hidden="true" />
-        </button>
+          onChange={(on) => void model.set(on)}
+        />
       </div>
       <p id="keep-awake-status" class="keep-awake-status small" data-kind={model.kind} aria-live="polite">
         {model.line}

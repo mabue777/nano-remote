@@ -1,0 +1,253 @@
+/* The item detail and Changes sheets (ItemDetailSheet.tsx, ChangesSheet.tsx): tabs, output view, diff view. */
+
+.detail-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 92dvh;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.tab.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+#detail-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mono,
+.output-text,
+.output-command {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-sm);
+}
+
+.output-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+}
+
+.output-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.output-command {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.output-text {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-status {
+  padding: var(--space-4) 0;
+}
+
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.changes-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.changes-summary,
+.changes-omitted {
+  margin: 0;
+}
+
+.diff-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.diff-file-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--touch);
+  text-align: left;
+}
+
+.diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-kind {
+  flex: none;
+  padding: 1px 7px; /* one-off: tag geometry */
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: var(--font-xs);
+  border: 1px solid currentColor;
+}
+
+.file-kind.added {
+  color: var(--ok);
+}
+
+.file-kind.deleted {
+  color: var(--error);
+}
+
+.file-kind.modified {
+  color: var(--warn);
+}
+
+.file-kind.renamed {
+  color: var(--accent);
+}
+
+.diff-counts {
+  flex: none;
+}
+
+.diff-counts .plus {
+  color: var(--ok);
+}
+
+.diff-counts .minus {
+  color: var(--error);
+}
+
+.diff-file-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.diff-back {
+  align-self: flex-start;
+}
+
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.diff-file-view > p {
+  margin: 0;
+}
+
+/* Code never wraps: the table scrolls sideways while the line numbers stay pinned at the left. */
+.diff-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem; /* one-off: code text, between --font-xs and --font-sm */
+  line-height: 1.45;
+}
+
+.diff-table .diff-line {
+  display: table-row; /* not the approval cards' block lines */
+  padding: 0;
+}
+
+.diff-table td {
+  padding: 0;
+  vertical-align: top;
+  white-space: pre;
+}
+
+.diff-table .ln {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  color: var(--muted);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-table .ln span {
+  display: inline-block;
+  min-width: 2.4em;
+  text-align: right;
+}
+
+.diff-table .sign {
+  width: 1.4em;
+  text-align: center;
+  user-select: none;
+  color: var(--muted);
+}
+
+.diff-table .code {
+  padding-right: var(--space-6);
+  width: 100%;
+}
+
+.diff-table .diff-line.add td {
+  background: color-mix(in srgb, var(--ok) 16%, var(--surface));
+}
+
+.diff-table .diff-line.add .sign,
+.diff-table .diff-line.add .ln {
+  color: var(--ok);
+}
+
+.diff-table .diff-line.remove td {
+  background: color-mix(in srgb, var(--error) 14%, var(--surface));
+}
+
+.diff-table .diff-line.remove .sign,
+.diff-table .diff-line.remove .ln {
+  color: var(--error);
+}
+
+.diff-table .diff-line.hunk td {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.diff-table .diff-line.meta td {
+  color: var(--muted);
+}

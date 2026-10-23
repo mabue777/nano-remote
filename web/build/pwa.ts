@@ -13,7 +13,7 @@ import { ICON_SIZES, ICON_SOURCE, renderIcons } from '../scripts/icons.mjs';
 
 const SW_TEMPLATE = fileURLToPath(new URL('./service-worker.js', import.meta.url));
 
-/** Light theme background (web/src/styles.css --bg): the splash and the standalone window color. */
+/** Light theme background (web/src/styles/tokens.css --bg): the splash and the standalone window color. */
 export const THEME_COLOR = '#f6f6f4';
 export const DARK_THEME_COLOR = '#121211';
 export const MANIFEST_FILE = 'manifest.webmanifest';

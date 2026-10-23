@@ -1,0 +1,34 @@
+/* The chat list (ChatsPanel.tsx, ChatsHome.tsx): pairing hint, rows with swipe-to-delete. */
+
+.pair-hint {
+  margin: 0 0 var(--space-7);
+}
+
+.pair-hint a,
+.settings-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Rows take vertical pans; a horizontal move reaches the swipe-to-delete gesture. */
+.chat-row .session {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.chat-row.revealed .session {
+  border-color: var(--error);
+}
+
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

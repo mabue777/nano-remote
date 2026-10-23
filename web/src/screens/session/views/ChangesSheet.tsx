@@ -2,6 +2,7 @@
 // view. State lives in ChangesModel.
 import { useEffect, useMemo } from 'preact/hooks';
 
+import { Sheet, SheetHeader, useCloseOnEscape } from '../../../ui/Sheet';
 import { useModel } from '../../use-model';
 import { ChangesModel, type ChangesReplica } from './changes-model';
 import { ChangesView } from './DiffView';
@@ -19,27 +20,13 @@ export function ChangesSheet({ sessionId, turnId, replica, onClose }: ChangesShe
     model.start();
     return () => model.dispose();
   }, [model]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useCloseOnEscape(onClose);
   return (
-    <div class="sheet-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <section class="sheet detail-sheet" role="dialog" aria-modal="true" aria-labelledby="changes-title">
-        <header class="sheet-head">
-          <div class="detail-title">
-            <h2 id="changes-title">Changes</h2>
-            {model.summary !== '' && <p class="muted small detail-subtitle">{model.summary}</p>}
-          </div>
-          <button type="button" class="ghost" onClick={onClose}>
-            Close
-          </button>
-        </header>
-        <div id="detail-panel">
-          <ChangesView model={model} summary={false} />
-        </div>
-      </section>
-    </div>
+    <Sheet labelledBy="changes-title" class="detail-sheet" onClose={onClose}>
+      <SheetHeader titleId="changes-title" title="Changes" subtitle={model.summary} actionLabel="Close" onAction={onClose} />
+      <div id="detail-panel">
+        <ChangesView model={model} summary={false} />
+      </div>
+    </Sheet>
   );
 }

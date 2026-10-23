@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef } from 'preact/hooks';
 import type { HostRequester } from '../../../chat/providers/host-probe';
 import { PRESETS } from '../../../chat/providers/presets';
 import type { FetchLike } from '../../../chat/providers/probe';
+import { BackHeader } from '../../../ui/BackHeader';
+import { Sheet } from '../../../ui/Sheet';
 import { useLiveModel } from '../../chat/hooks';
 import { KeepAwakeSection } from '../host/KeepAwakeSection';
 import type { KeepAwakeLink } from '../host/keep-awake-model';
@@ -43,18 +45,7 @@ export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }
   const form = model.form;
   return (
     <main class="screen settings-screen">
-      <header class="topbar">
-        <a
-          class="back"
-          href="/"
-          onClick={(event) => {
-            event.preventDefault();
-            onBack();
-          }}
-        >
-          ‹ {backLabel}
-        </a>
-      </header>
+      <BackHeader href="/" label={backLabel} onBack={onBack} />
       <h1>Providers</h1>
       {model.notice !== undefined && (
         <p class="card settings-notice" role="status">
@@ -378,22 +369,20 @@ function ConfirmSheet({ model }: { model: ProviderSettingsModel }) {
   if (confirm === null) return null;
   const all = confirm.type === 'delete-all';
   return (
-    <div class="sheet-backdrop" onClick={(event) => event.target === event.currentTarget && model.cancelConfirm()}>
-      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <h2 id="confirm-title">{all ? 'Delete every provider?' : `Delete ${confirm.name}?`}</h2>
-        <p class="muted small">
-          {all ? 'Their keys on this phone go too. Chats stay, but cannot continue until you add a provider again.' : 'Its key on this phone goes too.'}
-        </p>
-        <div class="actions">
-          <button type="button" class="small ghost" onClick={() => model.cancelConfirm()}>
-            Cancel
-          </button>
-          <button type="button" class="small danger" onClick={() => model.confirmDelete()}>
-            {all ? 'Delete all' : 'Delete'}
-          </button>
-        </div>
-      </section>
-    </div>
+    <Sheet labelledBy="confirm-title" onClose={() => model.cancelConfirm()}>
+      <h2 id="confirm-title">{all ? 'Delete every provider?' : `Delete ${confirm.name}?`}</h2>
+      <p class="muted small">
+        {all ? 'Their keys on this phone go too. Chats stay, but cannot continue until you add a provider again.' : 'Its key on this phone goes too.'}
+      </p>
+      <div class="actions">
+        <button type="button" class="small ghost" onClick={() => model.cancelConfirm()}>
+          Cancel
+        </button>
+        <button type="button" class="small danger" onClick={() => model.confirmDelete()}>
+          {all ? 'Delete all' : 'Delete'}
+        </button>
+      </div>
+    </Sheet>
   );
 }
 

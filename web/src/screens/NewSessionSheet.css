@@ -1,0 +1,86 @@
+/* The new-session sheet (NewSessionSheet.tsx): agent and model choice, folder picker, bypass row. */
+
+/* The model picker: search, then the grouped list; both span the sheet and never widen it. */
+.model-field > input,
+.model-field > select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.model-field > .model-provider {
+  margin: 0;
+}
+
+/* The bypass row on the new-session sheet: label on the left, the 52 x 32 switch at the right edge. */
+.field.bypass-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.field.bypass-row > .bypass-title {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.field.bypass-row.on > .bypass-title {
+  color: var(--error);
+}
+
+.field.bypass-row.on .switch[aria-checked='true'] {
+  background: var(--error);
+  border-color: var(--error);
+}
+
+.folder-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.folder {
+  flex: 1;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.projects,
+.dir-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.projects .choice,
+.dir {
+  width: 100%;
+  text-align: left;
+}
+
+.browser {
+  margin-top: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+}
+
+.dir-list {
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+
+.browser-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
