@@ -405,7 +405,13 @@ describe('session core end to end with the Claude adapter', () => {
       { id: 'haiku', displayName: 'Haiku 5.5', default: false },
     ]);
     const before = await rpc<{ agents: { id: string; version?: string }[] }>(phone, 'agent/list');
-    expect(before.agents.find((a) => a.id === 'claude')).toEqual({ id: 'claude', name: 'Claude Code', status: 'ready', version: '0.3.308' });
+    expect(before.agents.find((a) => a.id === 'claude')).toEqual({
+      id: 'claude',
+      name: 'Claude Code',
+      status: 'ready',
+      version: '0.3.308',
+      capabilities: { steer: false, diff: false, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
+    });
     const sessionId = await newSession(h, phone);
     await rpc(phone, 'session/open', { sessionId });
     await rpc(phone, 'turn/start', { sessionId, input: text('hi'), clientMessageId: randomUUID() });

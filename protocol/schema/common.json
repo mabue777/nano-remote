@@ -151,7 +151,7 @@
         },
         "approvalMode": {
           "type": "string",
-          "description": "When the agent asks for approval. Codex: untrusted | on-failure | on-request | never; never means approvals are bypassed (with full access unless sandbox says otherwise). Unknown values fall back to the host default. Additive within v1."
+          "description": "When the agent asks for approval. Values come from the agent's capabilities.approvalModes; never means approvals are bypassed. Additive within v1."
         }
       }
     },
@@ -894,6 +894,35 @@
         },
         "reason": {
           "type": "string"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/AgentCapabilities"
+        }
+      }
+    },
+    "AgentCapabilities": {
+      "type": "object",
+      "description": "What the agent supports, fixed per agent. Absent on Agent from an older host: clients then offer every control and learn from not_supported. Additive within v1.",
+      "required": [
+        "steer",
+        "diff",
+        "approvalModes"
+      ],
+      "properties": {
+        "steer": {
+          "type": "boolean",
+          "description": "turn/steer works while a turn runs."
+        },
+        "diff": {
+          "type": "boolean",
+          "description": "turn/diff works."
+        },
+        "approvalModes": {
+          "type": "array",
+          "description": "The settings.approvalMode values the agent honours; empty when it honours none. never means approvals can be bypassed.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

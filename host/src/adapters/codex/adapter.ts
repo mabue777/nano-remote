@@ -16,7 +16,6 @@ import type { Decision, FileChange, InputPart, Settings } from '../../generated/
 import type {
   Adapter,
   AdapterApprovalRequest,
-  AdapterCapabilities,
   AdapterEvent,
   AdapterListener,
 } from '../../core/adapter.js';
@@ -29,7 +28,7 @@ import {
   type CodexConfig,
   type CodexSandbox,
 } from '../../config/codex.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 import { Engine, unavailable, type RpcId } from './engine.js';
 import {
   APPROVAL_METHODS,
@@ -88,7 +87,6 @@ export function sessionPolicy(settings: Settings, config: CodexConfig): { approv
 }
 
 export class CodexAdapter implements Adapter {
-  readonly capabilities: AdapterCapabilities = { steer: true, diff: false };
   private readonly config: CodexConfig;
   private readonly options: CodexAdapterOptions;
   private readonly listeners = new Set<AdapterListener>();

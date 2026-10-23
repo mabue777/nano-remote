@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdapterEvent } from '../../core/adapter.js';
 import { NANO_APPROVAL_EXTENSION } from '../../config/pi.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 import { PiAdapter } from './adapter.js';
 import { fakePi, until, type FakePi } from './testing/fake-pi-config.js';
 import type { FakePiFixture } from './testing/fixture.js';
@@ -66,7 +66,6 @@ describe('PiAdapter start and resume', () => {
     // No set_model without settings.model: pi's own default model, reported back as provider/id.
     expect(r.fake.log().flatMap((e) => (e.record ? [e.record.type] : []))).toEqual(['get_state']);
     expect(r.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
-    expect(r.adapter.capabilities).toEqual({ steer: true, diff: false });
   });
 
   it('settings.model provider/id selects the model with set_model (the id may hold slashes)', async () => {

@@ -12,7 +12,7 @@ import type { Adapter } from './adapter.js';
 import { newId } from './ids.js';
 import { DEFAULT_TITLE, SessionManager, TITLE_MAX, titleFrom } from './session-manager.js';
 import { SessionStore } from './store.js';
-import { FakeAdapter, FakeAgent, echoScript, scripted, type FakeAgentOptions } from './testing/fake-adapter.js';
+import { FAKE_APPROVAL_MODES, FakeAdapter, FakeAgent, echoScript, scripted, type FakeAgentOptions } from './testing/fake-adapter.js';
 
 const cwd = mkdtempSync(path.join(tmpdir(), 'nano-sm-'));
 const text = (value: string) => [{ type: 'text' as const, text: value }];
@@ -285,6 +285,62 @@ describe('adapter events', () => {
   });
 });
 
+describe('agent capabilities', () => {
+  it('turn/diff on a dormant session answers not_supported and starts no engine', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-dormant-'));
+    const file = path.join(dir, 'journal.sqlite');
+    const store = new SessionStore(path.join(dir, 'core.sqlite'));
+    const journal = new Journal({ path: file });
+    const before = new SessionManager({ journal, agents: [new FakeAgent()], store });
+    const { session, turn } = await before.start({ agentId: 'fake', cwd, input: text('a') });
+    await before.close();
+    journal.close();
+
+    // After a host restart the session is dormant: no adapter, a known engine session id to resume.
+    const reopened = new Journal({ path: file });
+    const agent = new FakeAgent();
+    const after = new SessionManager({ journal: reopened, agents: [agent], store });
+    open.push({ journal: reopened, manager: after });
+    expect(store.get(session.sessionId).engineSessionId).toMatch(/^eng_fake_/);
+    await expect(after.diff(session.sessionId, turn!.turnId)).rejects.toMatchObject({
+      code: 'not_supported',
+      data: { agentId: 'fake' },
+    });
+    expect(agent.adapters).toHaveLength(0);
+    store.close();
+  });
+
+  it('steer on an agent that cannot steer answers not_supported and never reaches the adapter', async () => {
+    const { manager, agent } = make({ script: [[{ hold: true }]], capabilities: { steer: false } });
+    const { session, turn } = await manager.start({ agentId: 'fake', cwd, input: text('a') });
+    await expect(manager.steer(session.sessionId, turn!.turnId, text('b'), cmid())).rejects.toMatchObject({ code: 'not_supported' });
+    expect(agent.last.calls.map((c) => c.method)).toEqual(['start', 'turnStart']);
+  });
+
+  it('stores and reports an approvalMode only when the agent honours it', async () => {
+    const pi = make({ id: 'pi', capabilities: { approvalModes: [] } });
+    const { session } = await pi.manager.start({ agentId: 'pi', cwd, settings: { approvalMode: 'never', model: 'm' } });
+    expect(session.settings).toEqual({ model: 'm' });
+    expect(pi.journal.session(session.sessionId)?.settings).toEqual({ model: 'm' });
+    expect(pi.agent.last.calls[0]).toEqual({ method: 'start', args: [cwd, { model: 'm' }] });
+
+    const codex = make();
+    const bypass = await codex.manager.start({ agentId: 'fake', cwd, settings: { approvalMode: 'never' } });
+    expect(bypass.session.settings).toEqual({ approvalMode: 'never' });
+    const unknown = await codex.manager.start({ agentId: 'fake', cwd, settings: { approvalMode: 'sometimes' } });
+    expect(unknown.session.settings).toEqual({});
+  });
+
+  it('drops an approvalMode the adapter reports when the agent does not honour it', async () => {
+    const { manager } = make({ capabilities: { approvalModes: [] }, adapter: { effectiveSettings: { approvalMode: 'never', sandbox: 'x' } } });
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    expect(session.settings).toEqual({ sandbox: 'x' });
+    const honouring = make({ adapter: { effectiveSettings: { approvalMode: 'on-request' } } });
+    const started = await honouring.manager.start({ agentId: 'fake', cwd });
+    expect(started.session.settings).toEqual({ approvalMode: 'on-request' });
+  });
+});
+
 describe('recovery after a host restart', () => {
   it('fails turns that were running, withdraws their requests and sets sessions idle', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nano-recover-'));
@@ -334,7 +390,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(adapter.capabilities).toEqual({ steer: true, diff: false });
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: false, approvalModes: FAKE_APPROVAL_MODES });
     expect(await adapter.diff('trn')).toEqual([]);
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });

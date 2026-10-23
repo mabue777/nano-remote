@@ -58,6 +58,9 @@ export function childEnv(config: Pick<ClaudeConfig, 'configDir' | 'env'>, env: N
   return { ...out, ...config.env };
 }
 
+/** The approvalMode values a Claude session honours (spec 5.1); anything else runs as `default`. */
+export const CLAUDE_APPROVAL_MODES: readonly string[] = ['default', 'acceptEdits', 'plan', 'never'];
+
 /**
  * The permission mode of a session (spec 5.1 `approvalMode`): `never` (the client's "Bypass approvals")
  * is bypassPermissions, `acceptEdits` and `plan` are the Claude modes of the same name, anything else is

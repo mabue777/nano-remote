@@ -404,7 +404,13 @@ describe('session core end to end with the Codex adapter', () => {
       { id: 'gpt-b', displayName: 'B', default: true },
     ]);
     const { agents } = await rpc<{ agents: { id: string; status: string; version?: string }[] }>(phone, 'agent/list');
-    expect(agents.find((a) => a.id === 'codex')).toEqual({ id: 'codex', name: 'Codex', status: 'ready', version: '0.163.0-alpha.10.2' });
+    expect(agents.find((a) => a.id === 'codex')).toEqual({
+      id: 'codex',
+      name: 'Codex',
+      status: 'ready',
+      version: '0.163.0-alpha.10.2',
+      capabilities: { steer: true, diff: false, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
+    });
     expect(changes).toEqual([1]);
     // Cached: no second engine for the list, and new sessions get the default without asking again.
     await rpc(phone, 'model/list', { agentId: 'codex' });

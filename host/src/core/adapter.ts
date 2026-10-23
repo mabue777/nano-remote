@@ -62,10 +62,15 @@ export type AdapterEvent =
 
 export type AdapterListener = (event: AdapterEvent) => void;
 
-/** Operations an adapter may lack (spec 7: `turn/steer` and `turn/diff` answer `not_supported`). */
-export interface AdapterCapabilities {
-  steer: boolean;
-  diff: boolean;
+/**
+ * What an agent supports, fixed per agent (spec 4 `Agent.capabilities`): `steer` and `diff` say whether
+ * `turn/steer` and `turn/diff` work (otherwise they answer `not_supported` without starting the agent),
+ * `approvalModes` lists the `settings.approvalMode` values the agent honours (empty: none).
+ */
+export interface AgentCapabilities {
+  readonly steer: boolean;
+  readonly diff: boolean;
+  readonly approvalModes: readonly string[];
 }
 
 /**
@@ -74,20 +79,19 @@ export interface AdapterCapabilities {
  * arrive as events. A method that rejects tells the core the engine is unavailable.
  */
 export interface Adapter {
-  readonly capabilities: AdapterCapabilities;
   /** Creates a new engine session. Returns its id, or '' when the engine reports it later (`engine/session`). */
   start(cwd: string, settings: Settings): Promise<string>;
   /** Reattaches to an existing engine session after the engine or the host restarted. */
   resume(engineSessionId: string, cwd: string, settings: Settings): Promise<void>;
   turnStart(input: InputPart[], clientMessageId: string): Promise<void>;
-  /** Adds input to the running turn. Only called when `capabilities.steer`. */
+  /** Adds input to the running turn. Only called when the agent's `capabilities.steer`. */
   steer(input: InputPart[], clientMessageId: string): Promise<void>;
   /** Stops the running turn; the adapter then emits `turn/completed {status: "interrupted"}`. */
   interrupt(): Promise<void>;
   resolveApproval(requestId: string, decision: Decision): Promise<void>;
   /** Answers keyed by question id (spec 5.3); the adapter maps them onto what its engine expects. */
   answerInput(requestId: string, answers: Record<string, string[]>): Promise<void>;
-  /** The net change of one turn. Only called when `capabilities.diff`. */
+  /** The net change of one turn. Only called when the agent's `capabilities.diff`. */
   diff(turnId: string): Promise<FileChange[]>;
   /** Ends the engine process. The adapter emits nothing afterwards. */
   kill(): Promise<void>;
@@ -104,12 +108,15 @@ export interface Adapter {
 export type AgentState = Pick<Agent, 'status' | 'version' | 'reason'>;
 
 /**
- * One agent the host can drive (Codex, Claude Code, Kimi): its identity, health, models, and a factory
- * for adapters. The host registers one provider per agent.
+ * One agent the host can drive (Codex, Claude Code, Pi): its identity, capabilities, health, models, and
+ * a factory for adapters. The host registers one provider per agent. (The name predates the model
+ * providers of section 15: here "provider" means a coding agent; CONTEXT.md "Agent".)
  */
 export interface AgentProvider {
   readonly id: string;
   readonly name: string;
+  /** Static: known without creating an adapter or starting the engine. */
+  readonly capabilities: AgentCapabilities;
   /** `status: "ready"` when sessions can start; anything else answers `agent_unavailable`. */
   state(): AgentState;
   models(): ModelInfo[] | Promise<ModelInfo[]>;
@@ -124,5 +131,7 @@ export function describeAgent(provider: AgentProvider): Agent {
   const agent: Agent = { id: provider.id, name: provider.name, status: state.status };
   if (state.version !== undefined) agent.version = state.version;
   if (state.reason !== undefined) agent.reason = state.reason;
+  const { steer, diff, approvalModes } = provider.capabilities;
+  agent.capabilities = { steer, diff, approvalModes: [...approvalModes] };
   return agent;
 }

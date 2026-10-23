@@ -17,7 +17,8 @@ import type { DirEntry, Host, HostStatus, ProjectEntry } from '../generated/comm
 import { CursorExpired } from '../journal/errors.js';
 import { DEFAULT_SNAPSHOT_TURNS, MAX_SINCE_LIMIT, type Journal } from '../journal/journal.js';
 import type { JournalEvent, Subscription } from '../journal/types.js';
-import { RpcError, type MethodMap, type MethodRegistry, type RequestContext } from '../stream/router.js';
+import { RpcError } from '../errors.js';
+import type { MethodMap, MethodRegistry, RequestContext } from '../stream/router.js';
 import type { StreamServer } from '../stream/server.js';
 import { describeAgent, type AgentProvider } from './adapter.js';
 import * as p from './params.js';

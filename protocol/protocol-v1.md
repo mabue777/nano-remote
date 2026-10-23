@@ -161,8 +161,10 @@ Result:
   "protocolVersion":1,
   "host":{"hostId":"host_2b…","name":"mabue-mbp","version":"0.1.0","os":"darwin","arch":"arm64"},
   "device":{"clientId":"dev_8f3a…","displayName":"iPhone (Safari)"},
-  "agents":[{"id":"codex","name":"Codex","status":"ready","version":"0.163.0"},
-            {"id":"claude","name":"Claude Code","status":"ready"},
+  "agents":[{"id":"codex","name":"Codex","status":"ready","version":"0.163.0",
+             "capabilities":{"steer":true,"diff":false,"approvalModes":["untrusted","on-failure","on-request","never"]}},
+            {"id":"claude","name":"Claude Code","status":"ready",
+             "capabilities":{"steer":false,"diff":false,"approvalModes":["default","acceptEdits","plan","never"]}},
             {"id":"kimi","name":"Kimi","status":"unavailable","reason":"CLI not found"}],
   "push":{"vapidPublicKey":"BOr…","subscribed":true},
   "limits":{"maxMessageBytes":16777216,"snapshotTurns":5}
@@ -178,7 +180,16 @@ Result:
 ### `host/status` → `{host, agents, sessionsActive, uptimeSeconds}`; `host/status/changed` notification
 with the same shape whenever an agent's status changes.
 
-### `agent/list` → `{agents}` (same objects as in `initialize`). `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
+### `agent/list` → `{agents}` (same objects as in `initialize`).
+`capabilities` (additive within v1) is what the agent supports, fixed per agent: `steer` (`turn/steer` works),
+`diff` (`turn/diff` works) and `approvalModes` (the `settings.approvalMode` values it honours, section 5.1;
+empty when it honours none). Clients show only the controls an agent supports: say up front that input waits
+while a turn runs when `steer` is false, no Changes view when `diff` is false, "Bypass approvals" only when
+`approvalModes` contains `never`. The host answers `not_supported` for `turn/steer` and `turn/diff` without
+starting the agent. A host that sends no `capabilities` is older: clients then offer every control and learn
+from `not_supported`.
+
+### `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
 lists every model it has credentials for, with ids of the form `provider/model` (pi's own `--model` form,
 for example `llamacpp/bonsai-27b`) and `provider` set (`llamacpp`). `session/start` with that id in
@@ -205,6 +216,8 @@ session has none; the list shows "finished", "interrupted" or "failed" from it w
 
 **Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model` and `approvalMode`).
 `approvalMode` (additive within v1) may be set in `session/start` settings and is reported back as in effect.
+Its values come from the agent's `capabilities.approvalModes` (section 4); the host stores and reports an
+`approvalMode` only when the agent honours that value, so a session never claims a mode its agent ignores.
 Codex values: `untrusted` | `on-failure` | `on-request` | `never`; unknown values fall back to the host's default
 (`on-request`). `never` bypasses all approvals and, unless `settings.sandbox` names a sandbox, runs with
 `danger-full-access`; clients mark such a session ("Bypass").
@@ -212,6 +225,8 @@ Claude Code: `never` runs the session in Claude's permission mode `bypassPermiss
 access to what the Mac user can reach) and is reported back as `never`, so clients mark it the same way;
 `acceptEdits` and `plan` pass through as the Claude modes of those names; any other value is Claude's
 `default` mode, reported as `default`.
+Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through Nano's approval extension
+(section 11), and a Pi session reports no `approvalMode`.
 
 **Turn**
 ```json

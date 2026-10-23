@@ -26,7 +26,7 @@ import type {
   SessionSummary,
   Turn,
 } from '../journal/types.js';
-import { RpcError } from '../stream/router.js';
+import { RpcError } from '../errors.js';
 import type { Adapter, AdapterEvent, AgentProvider, FinalTurnStatus } from './adapter.js';
 import { newId } from './ids.js';
 import { SessionStore } from './store.js';
@@ -116,6 +116,18 @@ export class SessionManager {
     const provider = this.providers.get(agentId);
     if (!provider) throw RpcError.invalidParams(at, `unknown agent ${JSON.stringify(agentId)}`);
     return provider;
+  }
+
+  /**
+   * `not_supported` when the session's agent lacks `capability`, decided from the agent's static
+   * capabilities, so no engine starts. An agent the host no longer has falls through: the operation
+   * then answers `agent_unavailable` as before.
+   */
+  private requireCapability(agentId: string, capability: 'steer' | 'diff', what: string): void {
+    const provider = this.providers.get(agentId);
+    if (provider && !provider.capabilities[capability]) {
+      throw new RpcError('not_supported', `agent ${agentId} ${what}`, { agentId });
+    }
   }
 
   private requireReady(provider: AgentProvider): void {
@@ -216,7 +228,7 @@ export class SessionManager {
       updatedAt: now,
       lastSeq: 1,
       pending: { approvals: 0, inputs: 0 },
-      settings: params.settings ?? {},
+      settings: honoured(provider, params.settings ?? {}),
     };
     this.append(sessionId, { method: 'session/changed', params: { session } });
     const live = this.liveOf(sessionId);
@@ -316,17 +328,13 @@ export class SessionManager {
         turnId: running?.turnId ?? null,
       });
     }
+    this.requireCapability(summary.agentId, 'steer', 'cannot steer a running turn');
     // A running turn has an adapter booting or booted (turnStart called ensureAdapter), unless the boot
     // just failed and the turn is about to be failed.
     const ready = live.ready ?? Promise.reject(new Error('the engine is not attached'));
     const adapter = await ready.catch((error: unknown) => {
       throw this.unavailable(summary.agentId, error);
     });
-    if (!adapter.capabilities.steer) {
-      throw new RpcError('not_supported', `agent ${summary.agentId} cannot steer a running turn`, {
-        agentId: summary.agentId,
-      });
-    }
     if (live.turn !== running) {
       throw new RpcError('turn_mismatch', `turn ${turnId} ended`, { turnId: live.turn?.turnId ?? null });
     }
@@ -370,12 +378,9 @@ export class SessionManager {
     if (!this.journal.turn(sessionId, turnId)) {
       throw new RpcError('not_found', `no turn ${turnId} in ${sessionId}`, { sessionId, turnId });
     }
+    // Checked before ensureAdapter: answering not_supported must never boot or resume an engine.
+    this.requireCapability(summary.agentId, 'diff', 'cannot compute a turn diff');
     const adapter = await this.ensureAdapter(this.liveOf(sessionId));
-    if (!adapter.capabilities.diff) {
-      throw new RpcError('not_supported', `agent ${summary.agentId} cannot compute a turn diff`, {
-        agentId: summary.agentId,
-      });
-    }
     try {
       return await adapter.diff(turnId);
     } catch (error) {
@@ -573,17 +578,19 @@ export class SessionManager {
     return turnId === undefined ? undefined : this.turn(sessionId, turnId);
   }
 
-  /** Journals `session/changed` with the session as it is now plus `patch`. */
   /** Merges the adapter's effective settings into Session.settings; journals session/changed only on a change. */
   private reportSettings(sessionId: string, effective: Settings | undefined): void {
     const session = this.journal.session(sessionId);
     if (effective === undefined || session === undefined) return;
     const current = session.settings ?? {};
+    const provider = this.providers.get(session.agentId);
+    if (provider) effective = honoured(provider, effective);
     const settings = { ...current, ...effective };
     if (Object.entries(effective).every(([key, value]) => current[key] === value)) return;
     this.changeSession(sessionId, { settings });
   }
 
+  /** Journals `session/changed` with the session as it is now plus `patch`. */
   private changeSession(sessionId: string, patch: Partial<Session>): void {
     const session: Session = {
       ...this.journal.session(sessionId)!,
@@ -744,6 +751,17 @@ export class SessionManager {
       if (busy) this.setStatus(sessionId, 'idle');
     }
   }
+}
+
+/**
+ * `settings` without an `approvalMode` the agent does not honour (spec 5.1): the session then neither
+ * stores nor reports a mode its agent ignores (Pi honours none, so a Pi session never shows "Bypass").
+ */
+function honoured(provider: AgentProvider, settings: Settings): Settings {
+  const mode = settings.approvalMode;
+  if (mode === undefined || provider.capabilities.approvalModes.includes(mode)) return settings;
+  const { approvalMode: _dropped, ...rest } = settings;
+  return rest;
 }
 
 function isDirectory(dir: string): boolean {

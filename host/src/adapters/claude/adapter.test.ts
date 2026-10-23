@@ -160,7 +160,6 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
 
   it('steer and diff answer not_supported', async () => {
     const { adapter } = rig();
-    expect(adapter.capabilities).toEqual({ steer: false, diff: false });
     await expect(adapter.steer()).rejects.toMatchObject({ code: 'not_supported' });
     await expect(adapter.diff()).rejects.toMatchObject({ code: 'not_supported' });
   });

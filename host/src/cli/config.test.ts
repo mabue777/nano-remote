@@ -29,7 +29,7 @@ describe('config file', () => {
       listenAddresses: [],
       port: 7420,
       tls: { certPath: path.join(dir, 'tls-cert.pem'), keyPath: path.join(dir, 'tls-key.pem') },
-      enabledAgents: ['codex'],
+      enabledAgents: ['codex', 'pi'],
       codexBinary: DEFAULT_CODEX_BINARY,
       journalPath: path.join(dir, 'journal.sqlite'),
       logFile: path.join(home, 'Library', 'Logs', 'NanoHost', 'host.log'),
@@ -70,7 +70,7 @@ describe('config file', () => {
     const { config } = loadConfig(file, { home, create: true });
     expect(config.port).toBe(9000);
     expect(config.listenAddresses).toEqual(['100.101.102.103', 'fd7a:115c:a1e0::1']);
-    expect(config.enabledAgents).toEqual(['codex']);
+    expect(config.enabledAgents).toEqual(['codex', 'pi']);
     expect(JSON.parse(readFileSync(file, 'utf8')).hostId).toBe(config.hostId);
     expect(mode(file)).toBe(0o600);
   });
@@ -100,13 +100,12 @@ describe('config file', () => {
     [{ enabledAgents: ['codex', 'gemini'] }, /unknown agent "gemini"/],
     [{ enabledAgents: 'codex' }, /enabledAgents must be an array/],
     [{ codexBinary: '' }, /codexBinary must be a non-empty string/],
-    [{ enabledAgents: ['claude', 'kimi'] }, /unknown agent "kimi" \(known: codex, claude\)/],
+    [{ enabledAgents: ['claude', 'kimi'] }, /unknown agent "kimi" \(known: codex, claude, pi\)/],
     [{ claudeConfigDir: '.config/claude' }, /claudeConfigDir must be an absolute path/],
     [{ claudeConfigDir: '' }, /claudeConfigDir must be a non-empty string/],
     [{ claudeExecutable: 'bin/claude' }, /claudeExecutable must be an absolute path/],
     [{ claudeExecutable: 7 }, /claudeExecutable/],
     [{ piBinary: 'bin/pi' }, /piBinary must be an absolute path/],
-    [{ enabledAgents: ['pi'] }, /unknown agent "pi"/],
     [{ journalPath: 'journal.sqlite' }, /journalPath must be an absolute path/],
     [{ logFile: 3 }, /logFile/],
     [{ vapidContact: 'mailto:nano-remote@localhost' }, /vapidContact must be an https: URL or a mailto: address/],
@@ -126,7 +125,7 @@ describe('config file', () => {
 
   it('accepts claude with optional claudeConfigDir and claudeExecutable, omitted by default', () => {
     const defaults = defaultConfig(home, 'host_x');
-    expect(defaults.enabledAgents).toEqual(['codex']);
+    expect(defaults.enabledAgents).toEqual(['codex', 'pi']);
     expect(defaults).not.toHaveProperty('claudeConfigDir');
     expect(defaults).not.toHaveProperty('claudeExecutable');
     expect(validateConfig({}, 'c', defaults)).not.toHaveProperty('claudeConfigDir');
@@ -145,6 +144,33 @@ describe('config file', () => {
   it('accepts an optional piBinary, omitted by default', () => {
     expect(defaultConfig(home, 'host_x')).not.toHaveProperty('piBinary');
     expect(validateConfig({ piBinary: '/Users/me/.local/bin/pi' }, 'c', defaultConfig(home, 'host_x')).piBinary).toBe('/Users/me/.local/bin/pi');
+  });
+
+  it('accepts pi in enabledAgents', () => {
+    expect(validateConfig({ enabledAgents: ['pi'] }, 'c', defaultConfig(home, 'host_x')).enabledAgents).toEqual(['pi']);
+  });
+
+  it('still loads config files written before pi joined enabledAgents', () => {
+    // A Phase 5b file: Codex and Claude enabled, piBinary set beside them. Same shape, still valid.
+    const file = path.join(home, 'old.json');
+    const old = {
+      hostId: 'host_0123456789abcdef',
+      listenAddresses: [],
+      port: 7420,
+      tls: { certPath: '/Users/me/tls-cert.pem', keyPath: '/Users/me/tls-key.pem' },
+      enabledAgents: ['codex', 'claude'],
+      codexBinary: '/Applications/ChatGPT.app/Contents/Resources/codex',
+      claudeConfigDir: '/Users/me/.config/claude',
+      piBinary: '/Users/me/.local/bin/pi',
+      journalPath: '/Users/me/journal.sqlite',
+      logFile: '/Users/me/host.log',
+    };
+    writeFileSync(file, JSON.stringify(old));
+    expect(loadConfig(file, { home, create: true })).toEqual({ config: old, created: false });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(old);
+    // Older still: a Phase 3 file with Codex alone keeps Codex alone.
+    writeFileSync(file, JSON.stringify({ ...old, enabledAgents: ['codex'], claudeConfigDir: undefined, piBinary: undefined }));
+    expect(loadConfig(file, { home }).config.enabledAgents).toEqual(['codex']);
   });
 
   it('drops duplicate agents', () => {

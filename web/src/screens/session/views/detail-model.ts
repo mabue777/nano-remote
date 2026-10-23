@@ -7,7 +7,9 @@
 //   +/- counts. `not_supported` means the agent does not provide diffs. The diff is fetched again when the
 //   turn's status changes (a running turn's diff is not final).
 //
-// Command items open on Output, every other item on Changes.
+// Command items open on Output, every other item on Changes. When the agent's capabilities say it provides
+// no diffs (spec 4), there is no Changes view: a command shows only its output, and other items have no
+// detail sheet (the session view does not offer one).
 import type { TurnDiffResult } from '../../../generated/methods';
 import type { Item, SessionView } from '../../../replica/types';
 import { errorText, Model } from '../../model';
@@ -68,6 +70,8 @@ export interface ItemDetailModelOptions {
   itemId: string;
   replica: DetailReplica;
   clipboard?: Clipboard;
+  /** The agent provides turn diffs (default true: an older host sends no capabilities). */
+  diffs?: boolean;
 }
 
 export class ItemDetailModel extends Model {
@@ -87,6 +91,7 @@ export class ItemDetailModel extends Model {
   private copiedTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly replica: DetailReplica;
   private readonly clipboard: Clipboard | undefined;
+  private readonly diffs: boolean;
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -96,7 +101,8 @@ export class ItemDetailModel extends Model {
     this.itemId = options.itemId;
     this.replica = options.replica;
     this.clipboard = options.clipboard;
-    this.tab = this.item?.type === 'command' ? 'output' : 'changes';
+    this.diffs = options.diffs ?? true;
+    this.tab = this.item?.type === 'command' || !this.diffs ? 'output' : 'changes';
     this.unsubscribe = this.replica.subscribe(() => {
       if (this.tab === 'changes' && this.diffFor !== undefined && this.diffFor !== this.turnStatus) void this.loadDiff();
       this.changed();
@@ -157,7 +163,8 @@ export class ItemDetailModel extends Model {
   }
 
   get tabs(): DetailTab[] {
-    return this.item?.type === 'command' ? ['output', 'changes'] : ['changes'];
+    const changes: DetailTab[] = this.diffs ? ['changes'] : [];
+    return this.item?.type === 'command' ? ['output', ...changes] : changes;
   }
 
   /** The full command (shell wrapper removed) and its folder, for the output view's header. */

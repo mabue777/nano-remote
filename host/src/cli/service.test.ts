@@ -12,7 +12,7 @@ import { ClaudeAgent } from '../adapters/claude/provider.js';
 import { PiAgent } from '../adapters/pi/provider.js';
 import { claudeConfig } from '../config/claude.js';
 import { FakeAgent } from '../core/testing/fake-adapter.js';
-import { text, waitEvent } from '../core/testing/harness.js';
+import { rpc, startHarness, text, waitEvent } from '../core/testing/harness.js';
 import { Journal } from '../journal/journal.js';
 import { CloseCode } from '../stream/constants.js';
 import { TestClient } from '../stream/testing/client.js';
@@ -117,12 +117,34 @@ describe('agents from enabledAgents', () => {
     expect(claude.config).toMatchObject({ configDir: '/Users/me/.config/claude', executable: '/opt/claude/bin/claude' });
   });
 
-  it('lists pi when its program is found, whatever enabledAgents says, and leaves it out otherwise', () => {
-    const found = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['codex'], piBinary: process.execPath }, quiet);
+  it('lists an enabled pi when its program is found, and leaves it out when missing or not enabled', () => {
+    const found = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['codex', 'pi'], piBinary: process.execPath }, quiet);
     expect(found.map((a) => a.id)).toEqual(['codex', 'pi']);
     expect((found[1] as PiAgent).config.binary).toBe(process.execPath);
-    const missing = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: [], piBinary: '/nonexistent/pi' }, quiet);
-    expect(missing).toEqual([]);
+    const missing = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['codex', 'pi'], piBinary: '/nonexistent/pi' }, quiet);
+    expect(missing.map((a) => a.id)).toEqual(['codex']);
+    // Installed but not enabled: the operator switched pi off.
+    const off = buildAgents({ ...defaultConfig(home, 'host_x'), enabledAgents: ['codex', 'claude'], piBinary: process.execPath }, quiet);
+    expect(off.map((a) => a.id)).toEqual(['codex', 'claude']);
+  });
+
+  it('agent/list carries the exact capabilities of codex, claude and pi', async () => {
+    const agents = buildAgents(
+      { ...defaultConfig(home, 'host_x'), enabledAgents: ['codex', 'claude', 'pi'], piBinary: process.execPath },
+      quiet,
+    );
+    const h = await startHarness({ extraAgents: agents });
+    try {
+      const phone = await h.connect();
+      const listed = (await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list')).agents;
+      expect(Object.fromEntries(listed.filter((a) => a.id !== 'fake').map((a) => [a.id, a.capabilities]))).toEqual({
+        codex: { steer: true, diff: false, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] },
+        claude: { steer: false, diff: false, approvalModes: ['default', 'acceptEdits', 'plan', 'never'] },
+        pi: { steer: true, diff: false, approvalModes: [] },
+      });
+    } finally {
+      await h.close();
+    }
   });
 
   it('keeps the Claude defaults for keys the config leaves out', () => {

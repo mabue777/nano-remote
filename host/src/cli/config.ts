@@ -7,11 +7,11 @@
 //     "listenAddresses": [],              // [] = this Mac's tailnet addresses from Tailscale
 //     "port": 7420,
 //     "tls": { "certPath": "…/tls-cert.pem", "keyPath": "…/tls-key.pem" },
-//     "enabledAgents": ["codex"],
+//     "enabledAgents": ["codex", "pi"],   // known: codex, claude, pi
 //     "codexBinary": "/Applications/ChatGPT.app/…/codex",
 //     "claudeConfigDir": "/Users/me/.config/claude", // optional; Claude Code's login, default ~/.claude
 //     "claudeExecutable": "/…/claude",  // optional; default the Claude Code build bundled with the SDK
-//     "piBinary": "/Users/me/.local/bin/pi", // optional; default ~/.local/bin/pi. pi is listed when found
+//     "piBinary": "/Users/me/.local/bin/pi", // optional; default ~/.local/bin/pi. Enabled pi is listed when found
 //     "journalPath": "…/journal.sqlite",
 //     "logFile": "~/Library/Logs/NanoHost/host.log",
 //     "vapidContact": "mailto:me@example.org", // optional; VAPID sub claim, default DEFAULT_VAPID_CONTACT
@@ -33,7 +33,7 @@ import { configDir, logsDir } from './paths.js';
 export const DEFAULT_HOST_PORT = DEFAULT_PORT;
 
 /** Agents this host build can drive. */
-export const KNOWN_AGENTS = ['codex', 'claude'] as const;
+export const KNOWN_AGENTS = ['codex', 'claude', 'pi'] as const;
 export type AgentId = (typeof KNOWN_AGENTS)[number];
 
 export interface HostConfig {
@@ -49,8 +49,8 @@ export interface HostConfig {
   /** The Claude Code executable; absent means the build bundled with the Claude Agent SDK. */
   claudeExecutable?: string;
   /**
-   * The pi program; absent means NANO_PI_BIN or ~/.local/bin/pi. pi is not part of `enabledAgents`: the
-   * host lists it whenever this program exists (Phase 5b ruling R1).
+   * The pi program; absent means NANO_PI_BIN or ~/.local/bin/pi. pi is listed when `enabledAgents` names
+   * it and this program exists (Phase 5b ruling R1: a host without pi shows no pi at all).
    */
   piBinary?: string;
   journalPath: string;
@@ -83,7 +83,7 @@ export function defaultConfig(home?: string, hostId = newHostId()): HostConfig {
     listenAddresses: [],
     port: DEFAULT_HOST_PORT,
     tls: { certPath: path.join(dir, TLS_CERT_FILE), keyPath: path.join(dir, TLS_KEY_FILE) },
-    enabledAgents: ['codex'],
+    enabledAgents: ['codex', 'pi'],
     codexBinary: DEFAULT_CODEX_BINARY,
     journalPath: path.join(dir, 'journal.sqlite'),
     logFile: path.join(logsDir(home), 'host.log'),

@@ -4,11 +4,11 @@ export { describeAgent } from './adapter.js';
 export type {
   Adapter,
   AdapterApprovalRequest,
-  AdapterCapabilities,
   AdapterEvent,
   AdapterInputRequest,
   AdapterItem,
   AdapterListener,
+  AgentCapabilities,
   AgentProvider,
   AgentState,
   FinalTurnStatus,
@@ -21,5 +21,5 @@ export { DEFAULT_TITLE, SessionManager, TITLE_MAX, titleFrom } from './session-m
 export type { SessionManagerOptions, StartParams } from './session-manager.js';
 export { SessionStore } from './store.js';
 export type { SessionRecord } from './store.js';
-export { FakeAdapter, FakeAgent, echoScript, scripted } from './testing/fake-adapter.js';
+export { FAKE_APPROVAL_MODES, FakeAdapter, FakeAgent, echoScript, scripted } from './testing/fake-adapter.js';
 export type { FakeAdapterOptions, FakeAgentOptions, FakeCall, FakeScript, FakeStep, FakeTurn } from './testing/fake-adapter.js';

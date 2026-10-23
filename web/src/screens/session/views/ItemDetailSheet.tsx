@@ -13,14 +13,23 @@ export interface ItemDetailSheetProps {
   sessionId: string;
   itemId: string;
   replica: DetailReplica;
+  /** False when the session's agent provides no diffs: no Changes view. */
+  diffs?: boolean;
   onClose: () => void;
 }
 
-export function ItemDetailSheet({ sessionId, itemId, replica, onClose }: ItemDetailSheetProps) {
+export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onClose }: ItemDetailSheetProps) {
   const model = useModel(
     useMemo(
-      () => new ItemDetailModel({ sessionId, itemId, replica, ...(typeof navigator !== 'undefined' && navigator.clipboard ? { clipboard: navigator.clipboard } : {}) }),
-      [sessionId, itemId, replica],
+      () =>
+        new ItemDetailModel({
+          sessionId,
+          itemId,
+          replica,
+          diffs,
+          ...(typeof navigator !== 'undefined' && navigator.clipboard ? { clipboard: navigator.clipboard } : {}),
+        }),
+      [sessionId, itemId, replica, diffs],
     ),
   );
   useEffect(() => {

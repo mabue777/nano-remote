@@ -1,7 +1,7 @@
 // Params checks for the core's methods. Each throws `invalid_params` with `data.path` (spec 10) naming the
 // offending field, so handlers can read typed values in one line. Unknown fields are ignored (spec 3).
 import type { Decision, InputPart, Settings } from '../generated/common.js';
-import { RpcError } from '../stream/router.js';
+import { RpcError } from '../errors.js';
 
 type Params = Record<string, unknown>;
 

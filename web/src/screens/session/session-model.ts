@@ -11,8 +11,14 @@
 // a turn runs, send becomes turn/steer into it. `session_busy` on a send offers "steer instead";
 // `turn_mismatch` on a steer (the turn just ended) sends it as a new turn; `not_supported` queues it until
 // the running turn ends, then sends it as a new turn. Interrupt is turn/interrupt for the running turn.
+// The agent's capabilities (spec 4) decide up front where they are known: an agent that cannot steer gets
+// no steer attempt (the composer says the message waits, and it is queued at once), an agent without
+// diffs offers no Changes view, and the "Bypass" tag needs an agent that honours approvalMode "never".
+// Without capabilities (an older host) the rules above apply unchanged.
 import type { RequestError } from '../../stream/client';
+import type { Agent } from '../../generated/common';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
+import { canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
 import { folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { modelLabel } from '../new-session-model';
@@ -284,7 +290,12 @@ const OLDER_PAGE = 5;
 export interface SessionModelOptions {
   sessionId: string;
   replica: SessionReplica;
+  /** The host's agents with their capabilities (the stream client's initialize result). */
+  agents?: AgentsSource;
 }
+
+/** The composer's note while a turn runs and the agent cannot steer. */
+export const NO_STEER_NOTE = 'This agent cannot take input while it works. Your message is sent when the turn ends.';
 
 export class SessionModel extends Model {
   readonly sessionId: string;
@@ -302,6 +313,7 @@ export class SessionModel extends Model {
   detailItemId: string | undefined;
   private interruptingTurn: string | undefined;
   private readonly replica: SessionReplica;
+  private readonly agents: AgentsSource | undefined;
   private readonly expanded = new Set<string>();
   private readonly steers = new Map<string, Steer>();
   private readonly unsubscribe: (() => void)[] = [];
@@ -311,6 +323,7 @@ export class SessionModel extends Model {
     super();
     this.sessionId = options.sessionId;
     this.replica = options.replica;
+    this.agents = options.agents;
     this.unsubscribe.push(
       this.replica.subscribe(() => {
         this.reconcileSteers();
@@ -377,9 +390,32 @@ export class SessionModel extends Model {
     return typeof id === 'string' && id !== '' ? modelLabel(id) : undefined;
   }
 
-  /** True while the session runs with approvals bypassed (Session.settings.approvalMode "never"). */
+  /** The session's agent as the host lists it; undefined until known (or on an older host's list). */
+  get agent(): Agent | undefined {
+    return findAgent(this.agents, this.agentId);
+  }
+
+  /**
+   * True while the session runs with approvals bypassed: Session.settings.approvalMode "never" and an agent
+   * that honours it (a host that stored "never" for an agent ignoring it must not show "Bypass").
+   */
   get bypass(): boolean {
-    return this.view?.session?.settings?.approvalMode === 'never';
+    return this.view?.session?.settings?.approvalMode === 'never' && canBypass(this.agent);
+  }
+
+  /** The agent takes input while a turn runs (turn/steer). */
+  get steerable(): boolean {
+    return canSteer(this.agent);
+  }
+
+  /** The agent provides turn diffs: items offer the Changes view. */
+  get diffs(): boolean {
+    return hasDiff(this.agent);
+  }
+
+  /** The item has a detail sheet: a command (its output), or any item when the agent provides diffs. */
+  hasDetail(kind: ItemRow['kind']): boolean {
+    return kind === 'command' || this.diffs;
   }
 
   /** The status pill: the loaded view's status (status/changed), else the list row's. */
@@ -451,9 +487,18 @@ export class SessionModel extends Model {
     return this.status.status === 'closed';
   }
 
-  /** `steer` while a turn is running (send adds to it), else `send` (a new turn). */
-  get mode(): 'send' | 'steer' {
-    return this.runningTurnId !== undefined ? 'steer' : 'send';
+  /**
+   * `steer` while a turn is running (send adds to it), `queue` instead when the agent cannot steer (send
+   * waits for the turn to end), else `send` (a new turn).
+   */
+  get mode(): 'send' | 'steer' | 'queue' {
+    if (this.runningTurnId === undefined) return 'send';
+    return this.steerable ? 'steer' : 'queue';
+  }
+
+  /** Said up front in the composer while a turn runs and the agent cannot steer. */
+  get composerNote(): string | undefined {
+    return this.mode === 'queue' ? NO_STEER_NOTE : undefined;
   }
 
   get canSend(): boolean {
@@ -492,9 +537,16 @@ export class SessionModel extends Model {
     this.atBottom = true;
     this.scrollRequest += 1;
     const running = this.runningTurnId;
-    if (running !== undefined) void this.steer(text, running, this.replica.newClientMessageId());
-    else this.replica.sendMessage(this.sessionId, [{ type: 'text', text }]);
+    if (running === undefined) this.replica.sendMessage(this.sessionId, [{ type: 'text', text }]);
+    else if (this.steerable) void this.steer(text, running, this.replica.newClientMessageId());
+    else this.queue(text, running);
     this.changed();
+  }
+
+  /** Holds a message for an agent that cannot steer; it goes out as a new turn once the turn ends. */
+  private queue(text: string, turnId: string): void {
+    const clientMessageId = this.replica.newClientMessageId();
+    this.steers.set(clientMessageId, { clientMessageId, text, turnId, state: 'queued' });
   }
 
   /** Sends a refused message again (same clientMessageId). */
@@ -506,7 +558,10 @@ export class SessionModel extends Model {
     this.replica.discardSend(this.sessionId, clientMessageId);
   }
 
-  /** After `session_busy`: drops the refused turn and steers its text into the running turn instead. */
+  /**
+   * After `session_busy`: drops the refused turn and steers its text into the running turn instead (an
+   * agent that cannot steer gets it queued until that turn ends).
+   */
   steerInstead(clientMessageId: string): void {
     const view = this.view;
     const turn = view?.turns.find((t) => t.optimistic?.clientMessageId === clientMessageId);
@@ -519,7 +574,13 @@ export class SessionModel extends Model {
       return;
     }
     this.replica.discardSend(this.sessionId, clientMessageId);
-    void this.steer(inputText(item.content).text, target, this.replica.newClientMessageId());
+    const text = inputText(item.content).text;
+    if (this.steerable) void this.steer(text, target, this.replica.newClientMessageId());
+    else {
+      this.queue(text, target);
+      this.reconcileSteers();
+      this.changed();
+    }
   }
 
   /** Steers a failed steer again: into the running turn, or as a new turn when none runs any more. */
@@ -579,7 +640,9 @@ export class SessionModel extends Model {
 
   /** Opens the detail sheet (output, changes) for an item of the turn list. */
   openItem(itemId: string): void {
-    if (this.view?.items[itemId] === undefined || this.detailItemId === itemId) return;
+    const item = this.view?.items[itemId];
+    if (item === undefined || this.detailItemId === itemId) return;
+    if (item.type !== 'command' && !this.diffs) return;
     this.detailItemId = itemId;
     this.changed();
   }

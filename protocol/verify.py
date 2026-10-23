@@ -222,6 +222,11 @@ NEGATIVE = [
      {"requestId": "r1", "status": "failed"}),
     ("provider/delta with unknown kind is rejected", "events.json#/$defs/provider~1delta",
      {"requestId": "r1", "kind": "tool", "text": "x"}),
+    ("agent capabilities without approvalModes is rejected", "common.json#/$defs/Agent",
+     {"id": "pi", "name": "Pi", "status": "ready", "capabilities": {"steer": True, "diff": False}}),
+    ("agent capabilities with a non-boolean steer is rejected", "common.json#/$defs/Agent",
+     {"id": "pi", "name": "Pi", "status": "ready",
+      "capabilities": {"steer": "yes", "diff": False, "approvalModes": []}}),
     ("provider/list entry carrying no hasKey is rejected", "common.json#/$defs/ProviderInfo",
      {"id": "p1", "name": "Ollama", "baseURL": "http://127.0.0.1:11434", "kind": "ollama"}),
 ]

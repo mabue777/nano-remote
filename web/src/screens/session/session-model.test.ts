@@ -4,10 +4,12 @@ import { FakeTransport, rpcError, settle } from '../../../test/replica-doubles';
 import { SID, agentItem, approval, ev, inputRequest, session, snapshot, summary, turn, userItem } from '../../../test/replica-fixtures';
 import { Replica } from '../../replica/replica';
 import type { Item, TurnView } from '../../replica/types';
+import type { AgentsSource } from '../capabilities';
 import {
   commandSummary,
   formatDuration,
   itemRow,
+  NO_STEER_NOTE,
   oneLine,
   sendErrorText,
   SessionModel,
@@ -23,7 +25,7 @@ function command(over: Record<string, unknown> = {}): any {
   return { itemId: 'c1', type: 'command', turnId: 't1', status: 'inProgress', command: '/bin/zsh -lc "echo hello > hello.txt"', cwd: '/w', output: '', ...over };
 }
 
-async function setup(options: { open?: boolean; turns?: any[]; over?: Record<string, unknown> } = {}) {
+async function setup(options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource } = {}) {
   const client = new FakeTransport();
   client.rule('session/list', () => ({ sessions: [summary({ title: 'Listed title', cwd: '/Users/me/Desktop/phone-test' })] }));
   client.rule('session/close', () => ({ ok: true }));
@@ -31,7 +33,7 @@ async function setup(options: { open?: boolean; turns?: any[]; over?: Record<str
   const replica = new Replica({ client, storage: null, newClientMessageId: () => `cm-${++n}`, now: () => 100 });
   client.goReady();
   await settle();
-  const model = new SessionModel({ sessionId: SID, replica });
+  const model = new SessionModel({ sessionId: SID, replica, ...(options.agents ? { agents: options.agents } : {}) });
   const changes = vi.fn();
   model.subscribe(changes);
   if (options.open !== false) {
@@ -292,6 +294,82 @@ describe('SessionModel: what the screen shows', () => {
     const other = await setup({ open: false });
     other.model.dispose();
     expect(other.client.count('session/close')).toBe(0);
+  });
+});
+
+/** The fixtures' session runs on "codex"; these lists say what the host reports about that agent. */
+const codexAs = (capabilities?: Record<string, unknown>): AgentsSource => () => [
+  { id: 'codex', name: 'Codex', status: 'ready', ...(capabilities ? { capabilities: capabilities as any } : {}) },
+];
+const NO_STEER = codexAs({ steer: false, diff: false, approvalModes: ['default', 'never'] });
+const PI_LIKE = codexAs({ steer: true, diff: false, approvalModes: [] });
+const FULL = codexAs({ steer: true, diff: true, approvalModes: ['on-request', 'never'] });
+
+describe('SessionModel: agent capabilities (spec 4)', () => {
+  const never = { session: session({ lastSeq: 0, settings: { approvalMode: 'never' } }) };
+
+  it('the Bypass tag needs approvalMode never and an agent that honours it', async () => {
+    expect((await setup({ over: never, agents: FULL })).model.bypass).toBe(true);
+    expect((await setup({ over: never, agents: PI_LIKE })).model.bypass).toBe(false);
+    const asking = await setup({ over: { session: session({ lastSeq: 0, settings: { approvalMode: 'on-request' } }) }, agents: FULL });
+    expect(asking.model.bypass).toBe(false);
+  });
+
+  it('an older host (no capabilities), or an agent not listed yet, keeps today\'s behaviour', async () => {
+    const old = await setup({ over: never, agents: codexAs() });
+    expect(old.model.bypass).toBe(true);
+    expect(old.model.steerable).toBe(true);
+    expect(old.model.diffs).toBe(true);
+    const unlisted = await setup({ over: never, agents: () => undefined });
+    expect(unlisted.model.agent).toBeUndefined();
+    expect(unlisted.model.bypass).toBe(true);
+    expect(unlisted.model.hasDetail('agent')).toBe(true);
+  });
+
+  it('an agent that cannot steer: the composer says so up front and queues without trying turn/steer', async () => {
+    const { client, model, live } = await setup({ agents: NO_STEER });
+    expect(model.mode).toBe('send');
+    expect(model.composerNote).toBeUndefined();
+    live(1, [['turn/started', { turn: turn('t1') }]]);
+    expect(model.mode).toBe('queue');
+    expect(model.composerNote).toBe(NO_STEER_NOTE);
+    model.setDraft('after this');
+    model.send();
+    expect(client.count('turn/steer')).toBe(0);
+    expect(model.steerRows).toEqual([{ clientMessageId: 'cm-1', text: 'after this', state: 'queued', label: 'Queued until the turn ends' }]);
+    live(2, [['turn/completed', { turn: turn('t1', { status: 'completed' }) }]]);
+    expect(model.steerRows).toEqual([]);
+    expect(client.last('turn/start').params.input).toEqual([{ type: 'text', text: 'after this' }]);
+  });
+
+  it('an agent that cannot steer: "steer instead" after session_busy queues the message', async () => {
+    const { client, model, live } = await setup({ agents: NO_STEER });
+    model.setDraft('later');
+    model.send();
+    client.last('turn/start').reject(rpcError('session_busy', { turnId: 't9' }));
+    await settle();
+    live(1, [['turn/started', { turn: turn('t9') }]]);
+    model.steerInstead('cm-1');
+    expect(client.count('turn/steer')).toBe(0);
+    expect(model.steerRows).toMatchObject([{ text: 'later', state: 'queued' }]);
+    expect(client.count('turn/start')).toBe(1);
+    live(2, [['turn/completed', { turn: turn('t9', { status: 'completed' }) }]]);
+    expect(client.count('turn/start')).toBe(2);
+    expect(client.last('turn/start').params.input).toEqual([{ type: 'text', text: 'later' }]);
+  });
+
+  it('an agent without diffs: only command items open the detail sheet', async () => {
+    const { model } = await setup({
+      turns: [turn('t1', { status: 'completed', items: [agentItem('a1', 't1', 'done'), command({ status: 'completed' })] })],
+      agents: PI_LIKE,
+    });
+    expect(model.diffs).toBe(false);
+    expect(model.hasDetail('agent')).toBe(false);
+    expect(model.hasDetail('command')).toBe(true);
+    model.openItem('a1');
+    expect(model.detailItemId).toBeUndefined();
+    model.openItem('c1');
+    expect(model.detailItemId).toBe('c1');
   });
 });
 

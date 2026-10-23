@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
+import type { AgentsSource } from '../capabilities';
 import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
@@ -26,10 +27,12 @@ export interface SessionScreenProps {
   deviceName?: (clientId: string) => Promise<string | undefined>;
   /** Told when the session is shown, so its "Finished while away" marker goes (home-model AwayTracker). */
   onOpened?: (sessionId: string) => void;
+  /** The host's agents with their capabilities (the stream client's initialize result). */
+  agents?: AgentsSource;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened }: SessionScreenProps) {
-  const model = useModel(useMemo(() => new SessionModel({ sessionId, replica }), [sessionId, replica]));
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents }: SessionScreenProps) {
+  const model = useModel(useMemo(() => new SessionModel({ sessionId, replica, ...(agents !== undefined ? { agents } : {}) }), [sessionId, replica, agents]));
   const requests = useModel(
     useMemo(
       () => new ApprovalsModel({ sessionId, replica, ...(clientId !== undefined ? { clientId } : {}), ...(deviceName !== undefined ? { deviceName } : {}) }),
@@ -209,7 +212,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       <PinnedQuestions model={requests} />
       <Composer model={model} running={running} />
       {model.detailItemId !== undefined && (
-        <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} onClose={() => model.closeItem()} />
+        <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} diffs={model.diffs} onClose={() => model.closeItem()} />
       )}
     </main>
   );
@@ -233,7 +236,7 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
           <div class="actions">
             {turn.send.busy && (
               <button type="button" class="small primary" onClick={() => model.steerInstead(turn.send!.clientMessageId)}>
-                Steer instead
+                {model.steerable ? 'Steer instead' : 'Send when it ends'}
               </button>
             )}
             <button type="button" class="small" onClick={() => model.retry(turn.send!.clientMessageId)}>
@@ -266,6 +269,13 @@ const ITEM_NAME: Record<ItemRow['kind'], string> = {
  * own controls, or its details button (keyboard and screen readers).
  */
 function OpenableItem({ item, model }: { item: ItemRow; model: SessionModel }) {
+  if (!model.hasDetail(item.kind)) {
+    return (
+      <div class={`item-row ${item.kind === 'user' ? 'user' : ''}`} data-item-id={item.itemId}>
+        <Item item={item} model={model} />
+      </div>
+    );
+  }
   return (
     <div
       class={`item-row ${item.kind === 'user' ? 'user' : ''}`}
@@ -379,6 +389,7 @@ function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
 
 function Composer({ model, running }: { model: SessionModel; running: boolean }) {
   const steering = model.mode === 'steer';
+  const queueing = model.mode === 'queue';
   return (
     <footer class="composer">
       {model.usage !== undefined && (
@@ -392,6 +403,11 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         </p>
       )}
       {model.closed && <p class="muted small">This session is closed.</p>}
+      {model.composerNote !== undefined && (
+        <p class="muted small composer-note" role="note">
+          {model.composerNote}
+        </p>
+      )}
       <form
         class="composer-form"
         onSubmit={(event) => {
@@ -402,7 +418,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         <textarea
           aria-label="Message"
           rows={Math.min(6, Math.max(1, model.draft.split('\n').length))}
-          placeholder={steering ? 'Steer the turn…' : 'Message the agent…'}
+          placeholder={steering ? 'Steer the turn…' : queueing ? 'Message for after this turn…' : 'Message the agent…'}
           value={model.draft}
           disabled={model.closed}
           onInput={(event) => model.setDraft((event.currentTarget as HTMLTextAreaElement).value)}
@@ -420,7 +436,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
             </button>
           )}
           <button type="submit" class="primary" disabled={!model.canSend}>
-            {steering ? 'Steer' : 'Send'}
+            {steering ? 'Steer' : queueing ? 'Queue' : 'Send'}
           </button>
         </div>
       </form>

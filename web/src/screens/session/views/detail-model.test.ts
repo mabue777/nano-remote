@@ -28,7 +28,7 @@ const ITEMS: Item[] = [
 ];
 
 /** A Replica double: one session, a turn whose status the test sets, and turn/diff answered by hand. */
-function setup(itemId: string, clipboard?: { writeText(text: string): Promise<void> }) {
+function setup(itemId: string, clipboard?: { writeText(text: string): Promise<void> }, diffs?: boolean) {
   const view = {
     sessionId: SID,
     turns: [{ turnId: 't1', status: 'inProgress', items: ITEMS.map((i) => i.itemId) }],
@@ -45,7 +45,13 @@ function setup(itemId: string, clipboard?: { writeText(text: string): Promise<vo
     turnDiff: (_sessionId, turnId) => new Promise((resolve, reject) => calls.push({ turnId, resolve, reject })),
   };
   const changed = () => listeners.forEach((fn) => fn());
-  const model = new ItemDetailModel({ sessionId: SID, itemId, replica, ...(clipboard !== undefined ? { clipboard } : {}) });
+  const model = new ItemDetailModel({
+    sessionId: SID,
+    itemId,
+    replica,
+    ...(clipboard !== undefined ? { clipboard } : {}),
+    ...(diffs !== undefined ? { diffs } : {}),
+  });
   return { model, view, calls, changed, listeners };
 }
 
@@ -261,5 +267,27 @@ describe('ItemDetailModel: diff view', () => {
     calls[0]!.resolve({ files: [] });
     await settle();
     expect(model.diff).toEqual({ state: 'loading' });
+  });
+});
+
+describe('ItemDetailModel: agents without diffs (spec 4 capabilities)', () => {
+  it('hides the Changes tab and never asks turn/diff when the agent provides no diffs', () => {
+    const { model, calls } = setup('c1', undefined, false);
+    expect(model.tabs).toEqual(['output']);
+    expect(model.tab).toBe('output');
+    model.start();
+    model.selectTab('changes');
+    expect(model.tab).toBe('output');
+    expect(calls).toHaveLength(0);
+    const other = setup('a1', undefined, false);
+    expect(other.model.tabs).toEqual([]);
+    other.model.start();
+    expect(other.calls).toHaveLength(0);
+  });
+
+  it('keeps the Changes tab when the agent provides diffs or the host sends no capabilities', () => {
+    expect(setup('c1', undefined, true).model.tabs).toEqual(['output', 'changes']);
+    expect(setup('c1').model.tabs).toEqual(['output', 'changes']);
+    expect(setup('a1').model.tab).toBe('changes');
   });
 });

@@ -11,7 +11,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 
 import { childPath, type PiConfig } from '../../config/pi.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 
 type Json = Record<string, unknown>;
 

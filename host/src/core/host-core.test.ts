@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Journal } from '../journal/journal.js';
 import type { JournalEvent } from '../journal/types.js';
 import type { TestClient } from '../stream/testing/client.js';
-import { FakeAgent } from './testing/fake-adapter.js';
+import { FAKE_APPROVAL_MODES, FakeAgent } from './testing/fake-adapter.js';
 import { eventsOf, rpc, rpcError, startHarness, text, waitEvent, type Harness, type HarnessOptions } from './testing/harness.js';
 import { readDirectory } from './host-core.js';
 
@@ -44,8 +44,8 @@ describe('discovery', () => {
     expect(status).toEqual({
       host: expect.objectContaining({ hostId: 'host_test' }),
       agents: [
-        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0' },
-        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found' },
+        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
+        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
       ],
       sessionsActive: 0,
       uptimeSeconds: 42,
@@ -83,7 +83,7 @@ describe('discovery', () => {
     h.agent.setState({ status: 'unavailable', reason: 'updating' });
     const changed = await phone.until(() => phone.messages.find((m) => m.method === 'host/status/changed'));
     expect((changed.params as { agents: unknown[] }).agents).toEqual([
-      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating' },
+      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: false, approvalModes: [...FAKE_APPROVAL_MODES] } },
     ]);
     await h.core.close();
     const before = phone.messages.length;
@@ -428,7 +428,7 @@ describe('turns and requests', () => {
   });
 
   it('turn/steer answers not_supported for adapters that cannot steer, turn_mismatch when idle', async () => {
-    const h = await setup({ agent: { script: [[{ hold: true }]], adapter: { capabilities: { steer: false } } } });
+    const h = await setup({ agent: { script: [[{ hold: true }]], capabilities: { steer: false } } });
     const phone = await h.connect();
     const sessionId = await newSession(h, phone);
     const idle = await rpcError(phone, 'turn/steer', { sessionId, turnId: 'trn_x', input: text('a'), clientMessageId: randomUUID() });

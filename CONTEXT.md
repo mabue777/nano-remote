@@ -14,6 +14,29 @@ notifications are Web Push sent by the host (ADR 0005). The wire format is
 Your computer — the always-on machine where agent sessions actually execute.
 _Avoid_: server, machine, desktop
 
+**Agent**:
+A coding agent the host can drive: Codex, Claude Code, Pi (Kimi later). The
+host lists the ones `enabledAgents` names and finds; each has an id, a status
+and its agent capabilities. In host code an agent is an `AgentProvider`
+(`host/src/core/adapter.ts`): that name predates model providers and means a
+coding agent, not a model provider.
+_Avoid_: engine (the agent's own program, which the adapter starts), bot, provider
+
+**Agent capabilities**:
+What an agent supports, fixed per agent and sent with it in `initialize` and
+`agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes) and
+`approvalModes` (the approval modes it honours; Pi honours none). The phone
+shows only the controls an agent supports; without capabilities (an older
+host) it offers everything and learns from `not_supported`.
+_Avoid_: features, flags
+
+**Model provider**:
+A service that serves models over an OpenAI-style or Ollama API (Ollama,
+OpenRouter, LM Studio, ...), used by local chat and relayed by the host for
+private addresses (protocol section 15). Some agents reach many model
+providers themselves (Pi names one per model).
+_Avoid_: agent, backend; plain "provider" is fine where only model providers are meant
+
 **Agent session**:
 A live conversation with a coding agent (Claude Code, Codex; Kimi later) that runs
 on the host, driven from the phone.

@@ -260,6 +260,37 @@ describe('NewSessionModel', () => {
     expect(again.started[0]).toEqual({ agentId: 'codex', cwd: '/Users/me/Desktop/phone-test' });
   });
 
+  it('offers Bypass for codex and claude, whose capabilities honour never, and not for pi', async () => {
+    const pi = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: false, approvalModes: [] } };
+    const { client, model, started } = setup(memoryStorage({ [bypassKey('pi')]: '1' }));
+    standardRules(client);
+    client.rule('agent/list', () => ({ agents: [...AGENTS, pi] }));
+    await model.load();
+    expect(model.agentId).toBe('codex');
+    expect(model.bypassOffered).toBe(true);
+    await model.selectAgent('claude');
+    expect(model.bypassOffered).toBe(true);
+    await model.selectAgent('pi');
+    expect(model.bypassOffered).toBe(false);
+    // A "1" remembered from before capabilities existed never reaches session/start for pi.
+    await model.submit();
+    expect(started[0]).not.toHaveProperty('settings.approvalMode');
+  });
+
+  it('offers Bypass for every agent when an older host sends no capabilities', async () => {
+    const { client, model, started } = setup(memoryStorage({ [bypassKey('pi')]: '1' }));
+    standardRules(client);
+    client.rule('agent/list', () => ({
+      agents: [...AGENTS.map(({ capabilities: _c, ...agent }: { capabilities?: unknown }) => agent), { id: 'pi', name: 'Pi', status: 'ready' }],
+    }));
+    await model.load();
+    expect(model.bypassOffered).toBe(true);
+    await model.selectAgent('pi');
+    expect(model.bypassOffered).toBe(true);
+    await model.submit();
+    expect(started[0]).toMatchObject({ agentId: 'pi', settings: { approvalMode: 'never' } });
+  });
+
   it('a failed session/start shows the error and allows another try', async () => {
     const { client, model, starter } = setup();
     standardRules(client);

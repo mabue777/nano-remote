@@ -1,12 +1,13 @@
 // Message layer (spec 3, 10): a typed registry of client-to-host request methods and the error type
-// handlers throw. The stream connection owns the ordering rules (initialize first); this file owns
+// handlers throw (defined in ../errors.ts, re-exported). The stream connection owns the ordering rules (initialize first); this file owns
 // "which handler, which params type, which error shape".
-import type * as envelope from '../generated/envelope.js';
 import type * as m from '../generated/methods.js';
+import { RpcError, type ErrorBody, type ErrorCode } from '../errors.js';
 import type { Bad } from './guard.js';
 
-export type ErrorCode = envelope.Error['code'];
-export type ErrorBody = envelope.Error;
+// RpcError lives in ../errors.ts (adapters and core throw it without depending on the transport);
+// re-exported here so existing importers keep working.
+export { RpcError, type ErrorBody, type ErrorCode };
 
 /** Params and result types per request method, from protocol/schema/methods.json (spec 4 to 9, 15). */
 export interface MethodMap {
@@ -44,30 +45,6 @@ export interface MethodMap {
   'provider/discover': { params: m.ProviderDiscoverParams; result: m.ProviderDiscoverResult };
 }
 export type MethodName = keyof MethodMap;
-
-/** A protocol error (spec 10). Handlers throw it; the connection turns it into an error response. */
-export class RpcError extends Error {
-  readonly code: ErrorCode;
-  readonly data: Record<string, unknown> | undefined;
-
-  constructor(code: ErrorCode, message: string, data?: Record<string, unknown>) {
-    super(message);
-    this.name = 'RpcError';
-    this.code = code;
-    this.data = data;
-  }
-
-  /** `invalid_params` always carries `data.path` (spec 10). */
-  static invalidParams(path: string, message: string): RpcError {
-    return new RpcError('invalid_params', message, { path });
-  }
-
-  toBody(): ErrorBody {
-    return this.data === undefined
-      ? { code: this.code, message: this.message }
-      : { code: this.code, message: this.message, data: this.data };
-  }
-}
 
 const KNOWN_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'not_initialized',

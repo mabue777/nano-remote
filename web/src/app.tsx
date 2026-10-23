@@ -105,7 +105,16 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
     // Created before start(), so it hears the first ready; it lives as long as the stream client.
     const notifications = push === null ? undefined : new PushModel({ client, env: push, storage });
     const away = new AwayTracker({ client, replica, storage: tabStorage(), doc: document });
-    return { client, replica, notifications, away, opened: (sessionId: string) => away.opened(sessionId), deviceName: (clientId: string) => devices.nameOf(clientId) };
+    return {
+      client,
+      replica,
+      notifications,
+      away,
+      opened: (sessionId: string) => away.opened(sessionId),
+      deviceName: (clientId: string) => devices.nameOf(clientId),
+      // The agents and their capabilities as the current stream's initialize reported them (spec 4).
+      agents: () => client.host?.agents,
+    };
   }, [device.clientId, storage, push]);
 
   useEffect(() => {
@@ -167,6 +176,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           clientId={device.clientId}
           deviceName={services.deviceName}
           onOpened={services.opened}
+          agents={services.agents}
           onBack={() => router.navigate('/')}
         />
       );

@@ -9,10 +9,10 @@ import type { Decision, FileChange, InputPart, ModelInfo, Settings } from '../..
 import type {
   Adapter,
   AdapterApprovalRequest,
-  AdapterCapabilities,
   AdapterEvent,
   AdapterInputRequest,
   AdapterListener,
+  AgentCapabilities,
   AgentProvider,
   AgentState,
 } from '../adapter.js';
@@ -39,15 +39,16 @@ export type FakeTurn = FakeStep[];
 /** Picks the steps of a turn from its input and its number (0-based, counted per FakeAgent). */
 export type FakeScript = (input: InputPart[], turnIndex: number) => FakeTurn;
 
-type Method = Exclude<keyof Adapter, 'capabilities' | 'onEvent'>;
+type Method = Exclude<keyof Adapter, 'onEvent'>;
 
 export interface FakeAdapterOptions {
   script?: FakeScript;
-  capabilities?: Partial<AdapterCapabilities>;
   /** What `start` returns; '' makes the adapter report it with the first turn (`engine/session`), like Claude. */
   engineSessionId?: string;
   /** Files `diff` returns. */
   diff?: FileChange[];
+  /** What `effectiveSettings` reports after start and resume. Default: nothing. */
+  effectiveSettings?: Settings;
   /** Methods that reject with this message instead of doing their work. */
   failOn?: Partial<Record<Method, string>>;
 }
@@ -70,7 +71,6 @@ export function scripted(turns: FakeTurn[]): FakeScript {
 let engineCounter = 0;
 
 export class FakeAdapter implements Adapter {
-  readonly capabilities: AdapterCapabilities;
   readonly calls: FakeCall[] = [];
   /** Decisions and answers the core passed in, by request id. */
   readonly resolutions = new Map<string, Decision | Record<string, string[]>>();
@@ -89,7 +89,10 @@ export class FakeAdapter implements Adapter {
   constructor(options: FakeAdapterOptions = {}) {
     this.options = options;
     this.script = options.script ?? echoScript;
-    this.capabilities = { steer: true, diff: options.diff !== undefined, ...options.capabilities };
+  }
+
+  effectiveSettings(): Settings {
+    return this.options.effectiveSettings ?? {};
   }
 
   /** A turn is running (started and not yet completed). */
@@ -271,14 +274,22 @@ export interface FakeAgentOptions {
   script?: FakeTurn[] | FakeScript;
   models?: ModelInfo[];
   state?: AgentState;
+  /**
+   * The agent's static capabilities. Default: steers, has a diff when `adapter.diff` is set, and honours
+   * the Codex approval modes (`FAKE_APPROVAL_MODES`).
+   */
+  capabilities?: Partial<AgentCapabilities>;
   /** Passed to every adapter this agent creates (the script comes from the agent). */
   adapter?: Omit<FakeAdapterOptions, 'script'>;
 }
+
+export const FAKE_APPROVAL_MODES: readonly string[] = ['untrusted', 'on-failure', 'on-request', 'never'];
 
 /** An AgentProvider whose adapters are FakeAdapters. Keeps every adapter it created, newest last. */
 export class FakeAgent implements AgentProvider {
   readonly id: string;
   readonly name: string;
+  readonly capabilities: AgentCapabilities;
   readonly adapters: FakeAdapter[] = [];
   adapterOptions: Omit<FakeAdapterOptions, 'script'>;
   private stateValue: AgentState;
@@ -295,6 +306,12 @@ export class FakeAgent implements AgentProvider {
     const script = options.script ?? echoScript;
     this.script = typeof script === 'function' ? script : scripted(script);
     this.adapterOptions = options.adapter ?? {};
+    this.capabilities = {
+      steer: true,
+      diff: this.adapterOptions.diff !== undefined,
+      approvalModes: FAKE_APPROVAL_MODES,
+      ...options.capabilities,
+    };
   }
 
   /** The newest adapter. Throws when none was created yet. */

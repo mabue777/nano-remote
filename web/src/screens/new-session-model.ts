@@ -2,7 +2,9 @@
 // projects from project/list, then browsing with fs/readDirectory), an optional title and an optional
 // first message, then session/start (spec 4, 6). With a first message the host starts the first turn
 // in the same round trip. A "Bypass approvals" switch (off by default, remembered per agent) starts the
-// session with settings.approvalMode "never": the agent runs everything without asking (spec 5.1).
+// session with settings.approvalMode "never": the agent runs everything without asking (spec 5.1). It is
+// offered only for an agent whose capabilities.approvalModes include "never" (pi has none), or for every
+// agent when an older host sends no capabilities.
 // Agents that reach many providers (pi) list hundreds of models, each with a `provider` (spec 4): the
 // picker groups them by provider and offers a search field once the list is long.
 import type {
@@ -18,6 +20,7 @@ import type {
   SessionStartResult,
 } from '../generated/methods';
 import { defaultStorage, type StorageLike } from '../replica/storage';
+import { canBypass } from './capabilities';
 import { errorText, Model } from './model';
 
 /** localStorage key of the agent's last "Bypass approvals" choice. */
@@ -168,6 +171,11 @@ export class NewSessionModel extends Model {
     return this.models.length >= SEARCH_FROM;
   }
 
+  /** The "Bypass approvals" switch is shown: the chosen agent honours approvalMode "never". */
+  get bypassOffered(): boolean {
+    return canBypass(this.agent);
+  }
+
   get canSubmit(): boolean {
     return !this.submitting && this.agent?.status === 'ready' && this.cwd !== undefined;
   }
@@ -310,7 +318,7 @@ export class NewSessionModel extends Model {
           model: this.modelId,
           defaultModel,
           message: this.message,
-          bypass: this.bypass,
+          bypass: this.bypass && this.bypassOffered,
           pinModel: typeof this.model?.provider === 'string',
         }),
       );

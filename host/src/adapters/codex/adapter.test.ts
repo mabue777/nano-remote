@@ -530,7 +530,6 @@ describe('CodexAdapter', () => {
     const r = rig();
     await expect(r.adapter.turnStart(text('go'), 'cm')).rejects.toMatchObject({ code: 'agent_unavailable' });
     await expect(r.adapter.diff()).rejects.toMatchObject({ code: 'not_supported' });
-    expect(r.adapter.capabilities).toEqual({ steer: true, diff: false });
   });
 
   it('a missing binary or a failing initialize rejects start', async () => {
@@ -558,7 +557,6 @@ describe('CodexAdapter', () => {
   });
   it('defaults to the host configuration', () => {
     const adapter = new CodexAdapter();
-    expect(adapter.capabilities.steer).toBe(true);
     expect(adapter.pid).toBeUndefined();
   });
 

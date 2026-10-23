@@ -161,22 +161,24 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
             )}
           </div>
 
-          <div class={`field bypass-row${model.bypass ? ' on' : ''}`}>
-            <span id="bypass-title" class="bypass-title">
-              Bypass approvals (full access)
-            </span>
-            <button
-              type="button"
-              role="switch"
-              class="switch"
-              aria-checked={model.bypass}
-              aria-labelledby="bypass-title"
-              onClick={() => model.setBypass(!model.bypass)}
-            >
-              <span class="knob" aria-hidden="true" />
-            </button>
-          </div>
-          {model.bypass && (
+          {model.bypassOffered && (
+            <div class={`field bypass-row${model.bypass ? ' on' : ''}`}>
+              <span id="bypass-title" class="bypass-title">
+                Bypass approvals (full access)
+              </span>
+              <button
+                type="button"
+                role="switch"
+                class="switch"
+                aria-checked={model.bypass}
+                aria-labelledby="bypass-title"
+                onClick={() => model.setBypass(!model.bypass)}
+              >
+                <span class="knob" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          {model.bypassOffered && model.bypass && (
             <p class="error small" role="note">
               The agent runs every command and edit without asking, anywhere your user account can reach.
             </p>

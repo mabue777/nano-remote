@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 import type { CodexConfig } from '../../config/codex.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 
 export type RpcId = number | string;
 

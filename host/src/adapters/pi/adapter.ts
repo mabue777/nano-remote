@@ -24,10 +24,10 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Decision, FileChange, InputPart, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterCapabilities, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { piConfig, type PiConfig } from '../../config/pi.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 import { PiEngine, unavailable } from './engine.js';
 import {
   DIALOG_METHODS,
@@ -76,7 +76,6 @@ interface OpenTool {
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 export class PiAdapter implements Adapter {
-  readonly capabilities: AdapterCapabilities = { steer: true, diff: false };
   private readonly config: PiConfig;
   private readonly options: PiAdapterOptions;
   private readonly listeners = new Set<AdapterListener>();

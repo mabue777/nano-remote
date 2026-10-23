@@ -29,8 +29,23 @@ type Json = any;
 const SEGMENT_BYTES = 100 * 1024;
 const SEND_SEGMENT_BYTES = SEGMENT_BYTES - (SEGMENT_BYTES % 3);
 
-/** Pi as agent/list lists it when the host finds the program (agent/list only; initialize keeps example 08). */
-export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready' };
+/**
+ * Pi as initialize and agent/list list it after example 08's agents. Its capabilities honour no
+ * approvalMode (spec 4), so the new-session sheet offers no "Bypass approvals" for it.
+ */
+export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: false, approvalModes: [] as string[] } };
+
+/**
+ * The agents of initialize and agent/list: example 08's (Kimi there carries no capabilities, like an agent
+ * from an older host) and pi. This fake computes turn/diff for every session, so its Codex and Claude
+ * declare `diff: true`; the real adapters do not provide diffs yet.
+ */
+function fakeAgents(): Json[] {
+  const agents = exampleMessage('08').result.agents.map((agent: Json) =>
+    agent.capabilities === undefined ? agent : { ...agent, capabilities: { ...agent.capabilities, diff: true } },
+  );
+  return [...agents, PI_AGENT];
+}
 
 /** pi's model/list: provider/model ids from two providers, each with `provider` (spec 4, example 54). */
 export const PI_MODELS = [
@@ -516,6 +531,7 @@ export class FakeHost {
         }
         stream.initialized = true;
         const result = exampleMessage('08').result;
+        result.agents = fakeAgents();
         result.device.clientId = stream.clientId;
         result.push = { vapidPublicKey: FAKE_VAPID_PUBLIC_KEY, subscribed: this.pushSubscriptions.has(stream.clientId) };
         return { result };
@@ -533,7 +549,7 @@ export class FakeHost {
         return { result: next < all.length ? { sessions, nextCursor: `cur_${next}` } : { sessions } };
       }
       case 'agent/list':
-        return { result: { agents: [...exampleMessage('08').result.agents, PI_AGENT] } };
+        return { result: { agents: fakeAgents() } };
       case 'model/list': {
         if (params.agentId === 'pi') return { result: { models: PI_MODELS } };
         if (params.agentId !== 'codex' && params.agentId !== 'claude') {

@@ -3,11 +3,14 @@
 import { accessSync, constants } from 'node:fs';
 
 import type { ModelInfo } from '../../generated/common.js';
-import type { AgentProvider, AgentState } from '../../core/adapter.js';
-import { codexConfig, type CodexConfig } from '../../config/codex.js';
+import type { AgentCapabilities, AgentProvider, AgentState } from '../../core/adapter.js';
+import { CODEX_APPROVAL_POLICIES, codexConfig, type CodexConfig } from '../../config/codex.js';
 import { CodexAdapter } from './adapter.js';
 import { Engine } from './engine.js';
 import { defaultModel, toModels, versionFrom } from './mapping.js';
+
+/** Codex steers a running turn (`turn/steer`), has no turn diff, and honours its four approval policies. */
+export const CODEX_CAPABILITIES: AgentCapabilities = { steer: true, diff: false, approvalModes: CODEX_APPROVAL_POLICIES };
 
 export interface CodexAgentOptions {
   config?: CodexConfig;
@@ -17,6 +20,7 @@ export interface CodexAgentOptions {
 export class CodexAgent implements AgentProvider {
   readonly id = 'codex';
   readonly name = 'Codex';
+  readonly capabilities = CODEX_CAPABILITIES;
   readonly config: CodexConfig;
   private readonly log: ((message: string) => void) | undefined;
   private version: string | undefined;

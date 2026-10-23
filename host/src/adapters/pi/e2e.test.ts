@@ -56,6 +56,23 @@ const items = (phone: TestClient, sessionId: string) =>
     .map((e) => (e.params as { item: Record<string, unknown> }).item);
 
 describe('session core end to end with the pi adapter', () => {
+  it('pi honours no approvalMode: agent/list says so and session/start with never stores and reports none', async () => {
+    const { h, phone } = await setup();
+    const { agents } = await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list');
+    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: false, approvalModes: [] });
+    const { session } = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/start', {
+      agentId: 'pi',
+      cwd: h.cwd,
+      settings: { approvalMode: 'never' },
+    });
+    expect(session.settings).not.toHaveProperty('approvalMode');
+    expect(h.journal.session(session.sessionId)?.settings).not.toHaveProperty('approvalMode');
+    const opened = await rpc<{ session: { settings: Record<string, unknown> } }>(phone, 'session/open', {
+      sessionId: session.sessionId,
+    });
+    expect(opened.session.settings).not.toHaveProperty('approvalMode');
+  });
+
   it('model/list carries the provider; session/start on a model; a write approved through approval/resolve', async () => {
     const write = { tool: { name: 'write', args: { path: 'hello.txt', content: 'hello' }, output: 'ok' } };
     const { h, fake, phone } = await setup({ turns: [[{ thinking: 'use write' }, write, { reply: 'done' }]] });

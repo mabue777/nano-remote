@@ -64,28 +64,32 @@ export function shortHostname(name = hostname()): string {
 }
 
 /**
- * The agents of `enabledAgents`, then pi when its program is found (Phase 5b ruling R1: pi is listed only
- * when installed, so a host without pi shows no pi at all).
+ * The agents of `enabledAgents`, in that order. An enabled pi is listed only when its program is found
+ * (Phase 5b ruling R1: a host without pi shows no pi at all); Codex and Claude Code are listed even when
+ * missing, with their unavailable reason.
  */
 export function buildAgents(config: HostConfig, logger: Logger): AgentProvider[] {
-  const agents = config.enabledAgents.map((id): AgentProvider => {
+  return config.enabledAgents.flatMap((id): AgentProvider[] => {
     switch (id) {
       case 'codex':
-        return new CodexAgent({ config: codexConfig({ binary: config.codexBinary }), log: logger.forModule('codex') });
+        return [new CodexAgent({ config: codexConfig({ binary: config.codexBinary }), log: logger.forModule('codex') })];
       case 'claude':
         // Only the keys the config sets: an absent one keeps claudeConfig()'s default.
-        return new ClaudeAgent({
-          config: claudeConfig({
-            ...(config.claudeConfigDir !== undefined ? { configDir: config.claudeConfigDir } : {}),
-            ...(config.claudeExecutable !== undefined ? { executable: config.claudeExecutable } : {}),
+        return [
+          new ClaudeAgent({
+            config: claudeConfig({
+              ...(config.claudeConfigDir !== undefined ? { configDir: config.claudeConfigDir } : {}),
+              ...(config.claudeExecutable !== undefined ? { executable: config.claudeExecutable } : {}),
+            }),
+            log: logger.forModule('claude'),
           }),
-          log: logger.forModule('claude'),
-        });
+        ];
+      case 'pi': {
+        const pi = piConfig(config.piBinary !== undefined ? { binary: config.piBinary } : {});
+        return piInstalled(pi) ? [new PiAgent({ config: pi, log: logger.forModule('pi') })] : [];
+      }
     }
   });
-  const pi = piConfig(config.piBinary !== undefined ? { binary: config.piBinary } : {});
-  if (piInstalled(pi)) agents.push(new PiAgent({ config: pi, log: logger.forModule('pi') }));
-  return agents;
 }
 
 /**

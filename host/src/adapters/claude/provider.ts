@@ -15,10 +15,10 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 
 import type { ModelInfo } from '../../generated/common.js';
-import type { AgentProvider, AgentState } from '../../core/adapter.js';
+import type { AgentCapabilities, AgentProvider, AgentState } from '../../core/adapter.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
 import { ClaudeAdapter, executablePath, Inbox, loadQuery, type ClaudeQuery, type QueryFn } from './adapter.js';
-import { childEnv, staticModels, toModels } from './mapping.js';
+import { CLAUDE_APPROVAL_MODES, childEnv, staticModels, toModels } from './mapping.js';
 
 export const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
 
@@ -28,6 +28,9 @@ export function resolveSdkVersion(): string {
   const manifest = JSON.parse(readFileSync(path.join(path.dirname(entry), 'package.json'), 'utf8')) as { version?: unknown };
   return typeof manifest.version === 'string' ? manifest.version : 'unknown';
 }
+
+/** Claude Code cannot steer a running turn (the SDK has no such call), has no turn diff, and honours four approval modes. */
+export const CLAUDE_CAPABILITIES: AgentCapabilities = { steer: false, diff: false, approvalModes: CLAUDE_APPROVAL_MODES };
 
 export interface ClaudeAgentOptions {
   config?: ClaudeConfig;
@@ -41,6 +44,7 @@ export interface ClaudeAgentOptions {
 export class ClaudeAgent implements AgentProvider {
   readonly id = 'claude';
   readonly name = 'Claude Code';
+  readonly capabilities = CLAUDE_CAPABILITIES;
   readonly config: ClaudeConfig;
   private readonly options: ClaudeAgentOptions;
   private sdk: { version: string } | { error: string } | undefined;

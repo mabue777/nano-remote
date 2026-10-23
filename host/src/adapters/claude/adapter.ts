@@ -59,10 +59,10 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import type { Decision, FileChange, InputPart, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterCapabilities, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Adapter, AdapterEvent, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
-import { RpcError } from '../../stream/router.js';
+import { RpcError } from '../../errors.js';
 import {
   CANCEL_MESSAGE,
   childEnv,
@@ -229,7 +229,6 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
 const alive = (child: ChildProcess): boolean => child.exitCode === null && child.signalCode === null;
 
 export class ClaudeAdapter implements Adapter {
-  readonly capabilities: AdapterCapabilities = { steer: false, diff: false };
   private readonly config: ClaudeConfig;
   private readonly options: ClaudeAdapterOptions;
   private readonly listeners = new Set<AdapterListener>();

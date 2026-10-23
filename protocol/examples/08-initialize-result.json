@@ -11,8 +11,10 @@
       "host": {"hostId": "host_2b7d4e90", "name": "mabue-mbp", "version": "0.1.0", "os": "darwin", "arch": "arm64"},
       "device": {"clientId": "dev_8f3a9c21", "displayName": "iPhone (Safari)"},
       "agents": [
-        {"id": "codex", "name": "Codex", "status": "ready", "version": "0.163.0"},
-        {"id": "claude", "name": "Claude Code", "status": "ready"},
+        {"id": "codex", "name": "Codex", "status": "ready", "version": "0.163.0",
+         "capabilities": {"steer": true, "diff": false, "approvalModes": ["untrusted", "on-failure", "on-request", "never"]}},
+        {"id": "claude", "name": "Claude Code", "status": "ready",
+         "capabilities": {"steer": false, "diff": false, "approvalModes": ["default", "acceptEdits", "plan", "never"]}},
         {"id": "kimi", "name": "Kimi", "status": "unavailable", "reason": "CLI not found"}
       ],
       "push": {"vapidPublicKey": "BOrExampleVapidPublicKeyForDocumentation", "subscribed": true},

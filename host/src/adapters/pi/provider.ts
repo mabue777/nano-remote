@@ -10,11 +10,17 @@ import { accessSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
 
 import type { ModelInfo } from '../../generated/common.js';
-import type { AgentProvider, AgentState } from '../../core/adapter.js';
+import type { AgentCapabilities, AgentProvider, AgentState } from '../../core/adapter.js';
 import { childPath, piConfig, type PiConfig } from '../../config/pi.js';
 import { PiAdapter } from './adapter.js';
 import { PiEngine } from './engine.js';
 import { obj, toModels, versionFrom } from './mapping.js';
+
+/**
+ * pi steers a running turn (`steer`), has no turn diff, and honours no approvalMode: Nano's approval
+ * extension always asks (ADR 0007), so a Pi session never runs with approvals bypassed.
+ */
+export const PI_CAPABILITIES: AgentCapabilities = { steer: true, diff: false, approvalModes: [] };
 
 export interface PiAgentOptions {
   config?: PiConfig;
@@ -36,6 +42,7 @@ export function piInstalled(config: PiConfig): boolean {
 export class PiAgent implements AgentProvider {
   readonly id = 'pi';
   readonly name = 'Pi';
+  readonly capabilities = PI_CAPABILITIES;
   readonly config: PiConfig;
   private readonly log: ((message: string) => void) | undefined;
   private readonly now: () => number;
