@@ -35,7 +35,7 @@ function phone(options: Partial<StreamClientOptions> = {}, storage = new MemoryS
     clientId: 'dev_8f3a9c21',
     url: host.url,
     lifecycle,
-    timing: { backoffMinMs: 20, backoffMaxMs: 200, drainingDelayMs: 150, requestTimeoutMs: 3000 },
+    timing: { backoffMinMs: 20, backoffMaxMs: 200, drainingDelayMs: 150, requestTimeoutMs: 10_000 },
     ...options,
   });
   clients.push(client);
@@ -43,7 +43,7 @@ function phone(options: Partial<StreamClientOptions> = {}, storage = new MemoryS
   return { client, replica, lifecycle, storage };
 }
 
-async function until(check: () => void, timeout = 3000): Promise<void> {
+async function until(check: () => void, timeout = 20_000): Promise<void> {
   await vi.waitFor(check, { timeout, interval: 5 });
 }
 

@@ -7,6 +7,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
+    // Generous limits for a busy machine: coverage instrumentation plus load slows tests several-fold, and
+    // vitest's 5 s / 10 s defaults timed out unrelated tests at load average 9-12. Tests that assert timing
+    // (a timeout firing, a delay elapsing) set their own short durations and are unaffected.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

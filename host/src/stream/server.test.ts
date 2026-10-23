@@ -72,6 +72,11 @@ async function start(options: Partial<StreamServerOptions> = {}): Promise<Stream
   return server;
 }
 
+/** vi.waitFor gives up after 1 s by default, too short on a loaded machine with coverage on. */
+function eventually(check: () => void): Promise<void> {
+  return vi.waitFor(check, { timeout: 20_000 });
+}
+
 async function connect(server: StreamServer, options: Parameters<typeof TestClient.connect>[1] = {}): Promise<TestClient> {
   const client = await TestClient.connect(server.url, options);
   clients.push(client);
@@ -82,7 +87,7 @@ async function ready(server: StreamServer, options: Parameters<typeof TestClient
   const client = await connect(server, options);
   client.ping();
   await client.handshake();
-  await vi.waitFor(() => expect(server.stream(client.streamId)?.ready).toBe(true));
+  await eventually(() => expect(server.stream(client.streamId)?.ready).toBe(true));
   return client;
 }
 
@@ -323,7 +328,7 @@ describe('envelope ordering and validation', () => {
     const plain = await connect(server);
     plain.send({ type: 'client_closed' });
     expect(await plain.closed).toEqual({ code: CloseCode.normal, reason: 'client closed' });
-    await vi.waitFor(() => expect(server.presence.isConnected('dev_test')).toBe(false));
+    await eventually(() => expect(server.presence.isConnected('dev_test')).toBe(false));
   });
 
   it('closes 4009 for a frame above 16 MiB', async () => {
@@ -394,7 +399,7 @@ describe('initialize and the message router', () => {
       error: { code: 'invalid_params', data: { path: 'message.method' } },
     });
     client.message({ method: 'x', params: [] });
-    await vi.waitFor(() => expect(log).toHaveBeenCalledWith(expect.stringContaining('dropped malformed message at message.params')));
+    await eventually(() => expect(log).toHaveBeenCalledWith(expect.stringContaining('dropped malformed message at message.params')));
     // Client responses and unknown notifications are accepted and ignored.
     client.message({ id: 9, result: {} });
     client.message({ method: 'something/else' });
@@ -430,7 +435,7 @@ describe('initialize and the message router', () => {
       error: { code: 'agent_unavailable' },
     });
     client.request('initialize', { protocolVersion: 1, client: CLIENT });
-    await vi.waitFor(() => expect(attempt).toBe(2));
+    await eventually(() => expect(attempt).toBe(2));
     const connection = server.stream(client.streamId)!;
     connection.close(CloseCode.normal, 'bye');
     release();
@@ -455,7 +460,7 @@ describe('initialize and the message router', () => {
     await client.call('session/open', { sessionId: 'ses_1' });
     client.close();
     await client.closed;
-    await vi.waitFor(() => expect(closed).toEqual([`${client.streamId}:ses_1`]));
+    await eventually(() => expect(closed).toEqual([`${client.streamId}:ses_1`]));
     expect(log).toHaveBeenCalledWith(expect.stringContaining('close handler failed'), expect.any(Error));
     late!(() => closed.push('late'));
     expect(closed).toContain('late');
@@ -491,7 +496,7 @@ describe('notifications', () => {
     expect(server.notifyClient('dev_test', 'session/updated', { summary: {} })).toBe(1);
     await a.until(() => a.messages.find((m) => m.method === 'session/updated'));
     b.message({ method: 'initialized' });
-    await vi.waitFor(() => expect(server.stream(b.streamId)?.ready).toBe(true));
+    await eventually(() => expect(server.stream(b.streamId)?.ready).toBe(true));
     expect(server.notifyClient('dev_test', 'session/updated', { summary: {} })).toBe(2);
     expect(server.notifyClient('dev_nobody', 'session/updated', {})).toBe(0);
   });
@@ -510,11 +515,11 @@ describe('notifications', () => {
 
     first.close();
     await first.closed;
-    await vi.waitFor(() => expect(server.presence.streams('dev_test')).toHaveLength(1));
+    await eventually(() => expect(server.presence.streams('dev_test')).toHaveLength(1));
     expect(server.presence.isConnected('dev_test')).toBe(true);
     second.close();
     await second.closed;
-    await vi.waitFor(() => expect(server.presence.isConnected('dev_test')).toBe(false));
+    await eventually(() => expect(server.presence.isConnected('dev_test')).toBe(false));
   });
 
   it('does not notify a closed stream', async () => {
@@ -532,15 +537,15 @@ describe('acks and backpressure', () => {
     const client = await ready(server);
     client.autoAck = false;
     const connection = server.stream(client.streamId)!;
-    await vi.waitFor(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
+    await eventually(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
     for (let i = 0; i < 5; i += 1) server.notifyStream(client.streamId, 'item/delta', { seq: i }, { journal: true });
     expect(connection.backlog.unackedEnvelopes).toBe(5);
     await client.until(() => client.messages.length >= 6);
     client.ack(4);
-    await vi.waitFor(() => expect(connection.backlog.unackedEnvelopes).toBe(2));
+    await eventually(() => expect(connection.backlog.unackedEnvelopes).toBe(2));
     client.ack(2); // stale ack: changes nothing
     client.ack(6);
-    await vi.waitFor(() => expect(connection.backlog).toEqual({ unackedEnvelopes: 0, unackedBytes: 0, waiting: 0 }));
+    await eventually(() => expect(connection.backlog).toEqual({ unackedEnvelopes: 0, unackedBytes: 0, waiting: 0 }));
   });
 
   it('holds Journal events at 256 unacked envelopes and resumes in order once acked', async () => {
@@ -548,7 +553,7 @@ describe('acks and backpressure', () => {
     const client = await ready(server);
     client.autoAck = false;
     const connection = server.stream(client.streamId)!;
-    await vi.waitFor(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
+    await eventually(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
     const total = MAX_UNACKED_ENVELOPES + 50;
     for (let seq = 1; seq <= total; seq += 1) {
       expect(server.notifyStream(client.streamId, 'item/delta', { sessionId: 's', seq }, { journal: true })).toBe(true);
@@ -557,7 +562,7 @@ describe('acks and backpressure', () => {
     // A response is not held back by the window itself, but it never overtakes waiting events.
     const id = client.request('host/status');
     await client.until(() => client.messages.length >= MAX_UNACKED_ENVELOPES + 1);
-    await vi.waitFor(() => expect(connection.backlog.waiting).toBe(51));
+    await eventually(() => expect(connection.backlog.waiting).toBe(51));
     expect(client.messages.length).toBe(MAX_UNACKED_ENVELOPES + 1);
 
     client.ack(client.frames.filter((f) => f.type === 'server_message').at(-1)!.seq_id);
@@ -575,7 +580,7 @@ describe('acks and backpressure', () => {
     const client = await ready(server);
     client.autoAck = false;
     const connection = server.stream(client.streamId)!;
-    await vi.waitFor(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
+    await eventually(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
     const delta = 'd'.repeat(90 * 1024);
     let sent = 0;
     while (connection.backlog.waiting === 0) {
@@ -600,7 +605,7 @@ describe('acks and backpressure', () => {
     const client = await ready(server);
     client.autoAck = false;
     const connection = server.stream(client.streamId)!;
-    await vi.waitFor(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
+    await eventually(() => expect(connection.backlog.unackedEnvelopes).toBe(0));
     for (let seq = 1; seq <= MAX_UNACKED_ENVELOPES; seq += 1) {
       server.notifyStream(client.streamId, 'item/delta', { seq }, { journal: true });
     }
@@ -694,7 +699,7 @@ describe('presence, ping timeout and draining', () => {
     const server = await start({ presence });
     const client = await connect(server);
     expect(server.presence).toBe(presence);
-    await vi.waitFor(() => expect(presence.isConnected('dev_test')).toBe(true));
+    await eventually(() => expect(presence.isConnected('dev_test')).toBe(true));
 
     vi.advanceTimersByTime(PING_TIMEOUT_MS - 1000);
     client.ping();
@@ -703,7 +708,7 @@ describe('presence, ping timeout and draining', () => {
     expect(client.isClosed).toBeUndefined();
     vi.advanceTimersByTime(1000);
     expect(await client.closed).toEqual({ code: CloseCode.pingTimeout, reason: 'no ping for 90 s' });
-    await vi.waitFor(() => expect(presence.isConnected('dev_test')).toBe(false));
+    await eventually(() => expect(presence.isConnected('dev_test')).toBe(false));
     expect(changes).toEqual([
       ['dev_test', true],
       ['dev_test', false],

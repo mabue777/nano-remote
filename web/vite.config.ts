@@ -23,6 +23,10 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Generous limits for a busy machine (coverage plus load slows tests several-fold); tests that assert
+    // timing set their own short durations.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     include: ['src/**/*.test.ts', 'test/**/*.test.ts', 'build/**/*.test.ts'],
     coverage: {
       provider: 'v8',

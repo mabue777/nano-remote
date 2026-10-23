@@ -326,7 +326,7 @@ describe('push/test over the stream', () => {
 });
 
 /** Polls until `check` is true (or fails after `ms`). */
-async function until(check: () => boolean, what: string, ms = 5_000): Promise<void> {
+async function until(check: () => boolean, what: string, ms = 20_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);

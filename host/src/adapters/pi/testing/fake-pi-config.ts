@@ -60,7 +60,7 @@ export function fakePi(fixture: FakePiFixture = {}, overrides: Partial<PiConfig>
 }
 
 /** Resolves when `check` returns a value other than undefined (polls every 10 ms, up to `ms`). */
-export async function until<T>(check: () => T | undefined, what: string, ms = 5000): Promise<T> {
+export async function until<T>(check: () => T | undefined, what: string, ms = 20_000): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = check();

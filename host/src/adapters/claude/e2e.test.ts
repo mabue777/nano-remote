@@ -35,7 +35,7 @@ async function setup(
 ): Promise<Rig> {
   const fake = extra.fake ?? new FakeClaude(options);
   const configDir = extra.configDir ?? mkdtempSync(path.join(tmpdir(), 'nano-claude-cfg-'));
-  const agent = new ClaudeAgent({ config: claudeConfig({ configDir, requestTimeoutMs: 5_000, killGraceMs: 300 }, {}), query: fake.query });
+  const agent = new ClaudeAgent({ config: claudeConfig({ configDir, requestTimeoutMs: 15_000, killGraceMs: 300 }, {}), query: fake.query });
   harness = await startHarness({
     extraAgents: [agent],
     ...(extra.journal ? { journal: extra.journal } : {}),

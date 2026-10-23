@@ -33,7 +33,7 @@ interface Rig {
 function rig(fakeOptions: FakeClaudeOptions = {}, config: Partial<ClaudeConfig> = {}, query?: QueryFn): Rig {
   const fake = new FakeClaude(fakeOptions);
   const cfg = claudeConfig(
-    { configDir: mkdtempSync(path.join(tmpdir(), 'nano-claude-cfg-')), requestTimeoutMs: 5_000, killGraceMs: 300, ...config },
+    { configDir: mkdtempSync(path.join(tmpdir(), 'nano-claude-cfg-')), requestTimeoutMs: 15_000, killGraceMs: 300, ...config },
     {},
   );
   const versions: string[] = [];

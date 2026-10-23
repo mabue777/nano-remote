@@ -27,7 +27,7 @@ beforeEach(async () => {
       { id: 'lab', name: 'Lab', baseURL: `${fake.url}/v1`, apiKey: 'sk-lab-secret' },
     ],
     http: { backoffBaseMs: 1, backoffMaxMs: 2 },
-    firstTokenTimeoutMs: 2_000,
+    firstTokenTimeoutMs: 10_000,
   });
   const registry = registerProviderMethods(
     new MethodRegistry().register('initialize', (_params, context) => ({

@@ -26,8 +26,8 @@ function relay(overrides: { firstTokenTimeoutMs?: number; modelsTimeoutMs?: numb
       { id: 'keyed', name: 'Keyed', baseURL: `${fake.url}/v1`, apiKey: 'sk-secret' },
     ],
     http: { backoffBaseMs: 5, backoffMaxMs: 20, random: () => 0.5, maxRetryAfterMs: overrides.maxRetryAfterMs ?? 30_000 },
-    firstTokenTimeoutMs: overrides.firstTokenTimeoutMs ?? 2_000,
-    modelsTimeoutMs: overrides.modelsTimeoutMs ?? 2_000,
+    firstTokenTimeoutMs: overrides.firstTokenTimeoutMs ?? 10_000,
+    modelsTimeoutMs: overrides.modelsTimeoutMs ?? 10_000,
   });
 }
 
