@@ -361,8 +361,10 @@ describe('first-token watchdog', () => {
   });
 
   it('stops watching after the first delta, however slow the rest', async () => {
-    fake.on('POST /api/chat', stream('ndjson', [{ message: { content: 'a' } }, { message: { content: 'b' } }, { done: true }], { delayMs: 120 }));
-    const r = relay({ firstTokenTimeoutMs: 100 });
+    // The first chunk is written at once; the deadline only has to cover a busy machine delivering it.
+    // Each later gap (1.2 s) is longer than the deadline (1 s), so a watchdog still armed would fire.
+    fake.on('POST /api/chat', stream('ndjson', [{ message: { content: 'a' } }, { message: { content: 'b' } }, { done: true }], { delayMs: 1_200 }));
+    const r = relay({ firstTokenTimeoutMs: 1_000 });
     const chat = run(r, r.resolve({ baseURL: fake.url, kind: 'ollama' }));
     expect(await chat.outcome).toEqual({ status: 'completed' });
     expect(textOf(chat.deltas)).toBe('ab');

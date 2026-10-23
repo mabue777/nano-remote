@@ -16,7 +16,8 @@ const TURNS: ChatTurn[] = [
 ];
 
 /** Fast timings so retries and the watchdog run in milliseconds. */
-const FAST: Partial<DirectTiming> = { retryBaseMs: 1, retryMaxMs: 4, firstTokenMs: 200 };
+// firstTokenMs only guards a busy machine here; tests that assert the watchdog fires set their own.
+const FAST: Partial<DirectTiming> = { retryBaseMs: 1, retryMaxMs: 4, firstTokenMs: 10_000 };
 
 function engine(fetch: ChatEngineDeps['fetch'], extra: Partial<ChatEngineDeps> = {}) {
   return createChatEngine({ fetch, keyFor: () => 'sk-test', host: () => null, timing: FAST, random: () => 0, ...extra });
@@ -386,11 +387,13 @@ describe('direct route watchdog and abort', () => {
     const controller = new AbortController();
     const events: ChatEvent[] = [];
     const run = (async () => {
-      for await (const event of engine(replay.fetch, { timing: { ...FAST, firstTokenMs: 20 } }).chat(OPENAI, 'm', TURNS, {}, controller.signal)) {
+      // The deadline covers a busy machine delivering the first delta; the wait outlasts it, so a watchdog
+      // still armed would have fired before the abort.
+      for await (const event of engine(replay.fetch, { timing: { ...FAST, firstTokenMs: 1_000 } }).chat(OPENAI, 'm', TURNS, {}, controller.signal)) {
         events.push(event);
       }
     })();
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
     expect(events.map((e) => e.type)).toEqual(['reasoning', 'reasoning']);
     controller.abort();
     await run;
