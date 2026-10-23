@@ -168,12 +168,32 @@ textarea {
 }
 
 .field > span,
+.field > label,
 .field > legend {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--muted);
   padding: 0;
   margin-bottom: 6px;
+}
+
+/* The model picker: search, then the grouped list; both span the sheet and never widen it. */
+.model-field > input,
+.model-field > select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.model-field > .model-provider {
+  margin: 0;
+}
+
+.session-model {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The bypass row on the new-session sheet: label on the left, the 52 x 32 switch at the right edge. */

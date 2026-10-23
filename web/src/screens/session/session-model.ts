@@ -15,6 +15,7 @@ import type { RequestError } from '../../stream/client';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
 import { folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
+import { modelLabel } from '../new-session-model';
 
 /** What the session view needs from the Replica; Replica fits. */
 export interface SessionReplica {
@@ -368,6 +369,12 @@ export class SessionModel extends Model {
 
   get agentId(): string | undefined {
     return this.summary?.agentId;
+  }
+
+  /** The model the session runs on ("model · provider" for provider/model ids), once opened. */
+  get model(): string | undefined {
+    const id = this.view?.session?.settings?.model;
+    return typeof id === 'string' && id !== '' ? modelLabel(id) : undefined;
   }
 
   /** True while the session runs with approvals bypassed (Session.settings.approvalMode "never"). */

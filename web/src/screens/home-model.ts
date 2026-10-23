@@ -9,6 +9,7 @@ import type { Agent, HostStatus, InitializeResult } from '../generated/methods';
 import type { SessionSummary } from '../replica/types';
 import type { ClientState } from '../stream/client';
 import { errorText, Model } from './model';
+import { modelLabel } from './new-session-model';
 
 /** What the home screen needs from the stream client; StreamClient fits. */
 export interface HomeClient {
@@ -29,6 +30,8 @@ export interface HomeReplica {
   refreshSessions(): Promise<unknown>;
   loadMoreSessions(): Promise<boolean>;
   subscribe(listener: () => void): () => void;
+  /** The session as last opened (its settings name the model); optional, rows then show no model. */
+  session?(sessionId: string): { session: { settings?: { model?: string } } | null } | undefined;
 }
 
 export type ConnectionKind = 'connecting' | 'connected' | 'offline' | 'update_required' | 'unpaired';
@@ -64,6 +67,8 @@ export interface SessionRow {
   agentName: string;
   /** The last part of the working folder. */
   folder: string;
+  /** The model it runs on ("model · provider" for provider/model ids), when the phone knows it. */
+  model?: string;
   /** What the session is doing or how its last turn ended. */
   statusLabel: string;
   tone: 'ok' | 'busy' | 'attention' | 'error' | 'muted';
@@ -158,9 +163,9 @@ export function folderOf(cwd: string): string {
   return parts.at(-1) ?? cwd;
 }
 
-export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<string, string>, nowMs: number): SessionRow {
+export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<string, string>, nowMs: number, modelId?: string): SessionRow {
   const status = statusOf(summary);
-  return {
+  const row: SessionRow = {
     sessionId: summary.sessionId,
     title: summary.title.trim() === '' ? 'Untitled session' : summary.title,
     agentName: agentNames.get(summary.agentId) ?? summary.agentId,
@@ -173,6 +178,8 @@ export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<stri
     updated: formatAgo(summary.updatedAt, nowMs),
     finishedWhileAway: false,
   };
+  if (modelId !== undefined && modelId !== '') row.model = modelLabel(modelId);
+  return row;
 }
 
 type Ranked = Pick<SessionSummary, 'status' | 'lastTurnStatus' | 'pending' | 'updatedAt'>;
@@ -470,7 +477,7 @@ export class HomeModel extends Model {
     for (const agent of this.status?.value.agents ?? this.client.host?.agents ?? []) names.set(agent.id, agent.name);
     const now = this.now();
     return orderSessions(this.replica.sessions).map((summary) => {
-      const row = sessionRow(summary, names, now);
+      const row = sessionRow(summary, names, now, this.replica.session?.(summary.sessionId)?.session?.settings?.model);
       if (this.away?.isMarked(summary.sessionId) === true && isFinished(summary)) row.finishedWhileAway = true;
       return row;
     });

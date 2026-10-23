@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { exampleMessage } from '../../test/fixtures';
 import { FakeTransport, rpcError, settle } from '../../test/replica-doubles';
 import type { SessionStartParams } from '../generated/methods';
-import { bypassKey, foldersOf, NewSessionModel, parentOf, startParams } from './new-session-model';
+import { bypassKey, foldersOf, groupModels, modelLabel, NewSessionModel, parentOf, SEARCH_FROM, startParams } from './new-session-model';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -268,5 +268,121 @@ describe('NewSessionModel', () => {
     expect(await model.submit()).toBeUndefined();
     expect(model.error).toBe('Could not start the session: agent_unavailable');
     expect(model.canSubmit).toBe(true);
+  });
+});
+
+// Pi (Phase 5b): listed by agent/list when the host finds the program; model/list gives provider/model ids
+// with `provider` set (spec 4, example 54).
+const PI = { id: 'pi', name: 'Pi', status: 'ready' as const };
+const PI_MODELS = [
+  ...exampleMessage('54').result.models,
+  { id: 'openrouter/qwen/qwen3.5-coder', displayName: 'Qwen 3.5 Coder', default: false, provider: 'openrouter' },
+  { id: 'google/gemini-3-pro', displayName: 'Gemini 3 Pro', default: false, provider: 'google' },
+];
+
+function piRules(client: FakeTransport, models: unknown[] = PI_MODELS) {
+  client.rule('agent/list', () => ({ agents: [...AGENTS, PI] }));
+  client.rule('project/list', () => ({ projects: PROJECTS }));
+  client.rule('model/list', ({ agentId }) => (agentId === 'pi' ? { models } : { models: MODELS }));
+}
+
+describe('Pi in the new session sheet', () => {
+  it('groupModels: unnamed group first, then providers by name, host order kept inside a group', () => {
+    const groups = groupModels([...MODELS, ...PI_MODELS]);
+    expect(groups.map((g) => g.provider)).toEqual([undefined, 'google', 'llamacpp', 'openrouter']);
+    expect(groups[0]!.models.map((m) => m.id)).toEqual(['gpt-5.5', 'gpt-5.5-mini']);
+    expect(groups[3]!.models.map((m) => m.id)).toEqual(['openrouter/~deepseek/deepseek-v4-flash-latest', 'openrouter/qwen/qwen3.5-coder']);
+    expect(groupModels(MODELS)).toEqual([{ provider: undefined, models: MODELS }]); // Codex and Claude: as before
+    expect(groupModels([{ id: 'x', displayName: 'X', default: false, provider: '' }])[0]!.provider).toBeUndefined();
+    expect(groupModels([])).toEqual([]);
+  });
+
+  it('groupModels filters by id, name or provider in any case, and keeps the current choice', () => {
+    const ids = (filter: string, keep?: string) => groupModels(PI_MODELS, filter, keep).flatMap((g) => g.models.map((m) => m.id));
+    expect(ids('  QWEN ')).toEqual(['openrouter/qwen/qwen3.5-coder']);
+    expect(ids('DeepSeek V4')).toEqual(['openrouter/~deepseek/deepseek-v4-flash-latest']);
+    expect(ids('llamacpp')).toEqual(['llamacpp/bonsai-27b']);
+    expect(ids('qwen', 'llamacpp/bonsai-27b')).toEqual(['llamacpp/bonsai-27b', 'openrouter/qwen/qwen3.5-coder']);
+    expect(ids('nothing matches')).toEqual([]);
+    expect(ids('')).toHaveLength(PI_MODELS.length);
+  });
+
+  it('modelLabel reads provider/model ids as "model · provider" and leaves other ids alone', () => {
+    expect(modelLabel('llamacpp/bonsai-27b')).toBe('bonsai-27b · llamacpp');
+    expect(modelLabel('openrouter/deepseek/deepseek-v4.1-flash')).toBe('deepseek/deepseek-v4.1-flash · openrouter');
+    expect(modelLabel('gpt-5.5')).toBe('gpt-5.5');
+    expect(modelLabel('/leading')).toBe('/leading');
+    expect(modelLabel('trailing/')).toBe('trailing/');
+  });
+
+  it('startParams with pinModel sends the model even when it is the default', () => {
+    const base = { agentId: 'pi', cwd: '/w', title: '', model: 'llamacpp/bonsai-27b', defaultModel: 'llamacpp/bonsai-27b', message: '' };
+    expect(startParams(base)).toEqual({ agentId: 'pi', cwd: '/w' });
+    expect(startParams({ ...base, pinModel: true })).toEqual({ agentId: 'pi', cwd: '/w', settings: { model: 'llamacpp/bonsai-27b' } });
+  });
+
+  it('no pi on the host: no Pi option', async () => {
+    const { client, model } = setup();
+    standardRules(client);
+    await model.load();
+    expect(model.agents.some((a) => a.id === 'pi')).toBe(false);
+  });
+
+  it('Pi is listed when the host lists it; choosing it loads its models grouped by provider', async () => {
+    const { client, model } = setup();
+    piRules(client);
+    await model.load();
+    expect(model.agents.map((a) => a.name)).toContain('Pi');
+    expect(model.modelGroups).toEqual([{ provider: undefined, models: MODELS }]);
+    await model.selectAgent('pi');
+    expect(model.agentId).toBe('pi');
+    expect(model.modelId).toBe('llamacpp/bonsai-27b'); // the default
+    expect(model.model?.provider).toBe('llamacpp');
+    expect(model.modelGroups.map((g) => g.provider)).toEqual(['google', 'llamacpp', 'openrouter']);
+    expect(model.modelSearch).toBe(false); // four models: no search field
+  });
+
+  it('a long model list gets a search field; the filter narrows the groups and resets with the agent', async () => {
+    const many = Array.from({ length: SEARCH_FROM }, (_, i) => ({
+      id: `${i % 2 === 0 ? 'xai' : 'ollama'}/model-${i}`,
+      displayName: `Model ${i}`,
+      default: i === 0,
+      provider: i % 2 === 0 ? 'xai' : 'ollama',
+    }));
+    const { client, model } = setup();
+    piRules(client, many);
+    await model.load();
+    await model.selectAgent('pi');
+    expect(model.modelSearch).toBe(true);
+    const seen: string[] = [];
+    model.subscribe(() => seen.push(model.modelFilter));
+    model.setModelFilter('ollama');
+    expect(seen).toEqual(['ollama']);
+    // the current choice (xai/model-0) stays listed next to the matches
+    expect(model.modelGroups.map((g) => [g.provider, g.models.length])).toEqual([
+      ['ollama', SEARCH_FROM / 2],
+      ['xai', 1],
+    ]);
+    await model.selectAgent('codex');
+    expect(model.modelFilter).toBe('');
+    expect(model.modelSearch).toBe(false);
+  });
+
+  it('picking a Pi model starts the session on it: settings.model carries provider/model, even the default', async () => {
+    const { client, model, started } = setup();
+    piRules(client);
+    await model.load();
+    await model.selectAgent('pi');
+    expect(await model.submit()).toBe('ses_new');
+    expect(started[0]).toEqual({ agentId: 'pi', cwd: '/Users/me/Desktop/phone-test', settings: { model: 'llamacpp/bonsai-27b' } });
+    model.selectModel('openrouter/qwen/qwen3.5-coder');
+    model.setMessage('Fix the test');
+    expect(await model.submit()).toBe('ses_new');
+    expect(started[1]).toEqual({
+      agentId: 'pi',
+      cwd: '/Users/me/Desktop/phone-test',
+      settings: { model: 'openrouter/qwen/qwen3.5-coder' },
+      input: [{ type: 'text', text: 'Fix the test' }],
+    });
   });
 });

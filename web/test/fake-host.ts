@@ -29,6 +29,17 @@ type Json = any;
 const SEGMENT_BYTES = 100 * 1024;
 const SEND_SEGMENT_BYTES = SEGMENT_BYTES - (SEGMENT_BYTES % 3);
 
+/** Pi as agent/list lists it when the host finds the program (agent/list only; initialize keeps example 08). */
+export const PI_AGENT = { id: 'pi', name: 'Pi', status: 'ready' };
+
+/** pi's model/list: provider/model ids from two providers, each with `provider` (spec 4, example 54). */
+export const PI_MODELS = [
+  { id: 'llamacpp/bonsai-27b', displayName: 'bonsai-27b', default: true, provider: 'llamacpp' },
+  { id: 'llamacpp/qwen3.5-9b', displayName: 'qwen3.5-9b', default: false, provider: 'llamacpp' },
+  { id: 'openrouter/deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash', default: false, provider: 'openrouter' },
+  { id: 'openrouter/qwen/qwen3.5-coder', displayName: 'Qwen 3.5 Coder', default: false, provider: 'openrouter' },
+];
+
 export interface JournalEntry {
   method: string;
   params: Json;
@@ -522,8 +533,9 @@ export class FakeHost {
         return { result: next < all.length ? { sessions, nextCursor: `cur_${next}` } : { sessions } };
       }
       case 'agent/list':
-        return { result: { agents: exampleMessage('08').result.agents } };
+        return { result: { agents: [...exampleMessage('08').result.agents, PI_AGENT] } };
       case 'model/list': {
+        if (params.agentId === 'pi') return { result: { models: PI_MODELS } };
         if (params.agentId !== 'codex' && params.agentId !== 'claude') {
           throw new HostError({ code: 'agent_unavailable', message: `${params.agentId} is not available`, data: { agentId: params.agentId } });
         }
@@ -553,6 +565,7 @@ export class FakeHost {
       case 'session/start': {
         const sessionId = this.createSession({ agentId: params.agentId, cwd: params.cwd, title: params.title ?? 'New session' });
         const session = this.session(sessionId);
+        if (params.settings !== undefined) session.settings = { ...session.settings, ...params.settings };
         if (!Array.isArray(params.input)) return { result: { session: this.full(session) } };
         const turn = this.newTurn(session, undefined);
         return {
@@ -779,8 +792,10 @@ export class FakeHost {
       this.emit(sessionId, 'item/started', { turnId, item: { ...command, itemId: running.commandItemId, turnId } });
       const request = exampleMessage('32').params.request;
       running.requestId = `req_fake_${++this.nextId}`;
+      // pi offers no "for this session" decision (its approvals are accept, decline or cancel)
+      const decisions = session.summary.agentId === 'pi' ? { availableDecisions: ['accept', 'decline', 'cancel'] } : {};
       this.emit(sessionId, 'approval/request', {
-        request: { ...request, requestId: running.requestId, sessionId, turnId, itemId: running.commandItemId },
+        request: { ...request, ...decisions, requestId: running.requestId, sessionId, turnId, itemId: running.commandItemId },
       });
       this.emit(sessionId, 'status/changed', { status: 'waiting_approval' });
     });

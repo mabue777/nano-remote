@@ -159,6 +159,14 @@ describe('SessionModel: what the screen shows', () => {
     expect(asking.model.bypass).toBe(false);
   });
 
+  it('model: the header names the model and provider from Session.settings.model', async () => {
+    expect((await setup({ over: { session: session({ lastSeq: 0, settings: {} }) } })).model.model).toBeUndefined();
+    const pi = await setup({ over: { session: session({ lastSeq: 0, agentId: 'pi', settings: { model: 'llamacpp/bonsai-27b' } }) } });
+    expect(pi.model.model).toBe('bonsai-27b · llamacpp');
+    const codex = await setup({ over: { session: session({ lastSeq: 0, settings: { model: 'gpt-5.5-codex' } }) } });
+    expect(codex.model.model).toBe('gpt-5.5-codex');
+  });
+
   it('an unknown session shows placeholders; a failed open shows why', async () => {
     const client = new FakeTransport();
     const replica = new Replica({ client, storage: null });

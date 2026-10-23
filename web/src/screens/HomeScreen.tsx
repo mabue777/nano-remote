@@ -260,6 +260,11 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
             {row.agentName} · {row.folder} · {row.updated}
           </span>
         </div>
+        {row.model !== undefined && (
+          <p class="muted small session-model" aria-label="Model">
+            {row.model}
+          </p>
+        )}
         {row.preview !== '' && <p class="preview muted small">{row.preview}</p>}
       </a>
     </li>

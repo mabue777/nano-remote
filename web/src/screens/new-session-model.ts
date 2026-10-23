@@ -3,6 +3,8 @@
 // first message, then session/start (spec 4, 6). With a first message the host starts the first turn
 // in the same round trip. A "Bypass approvals" switch (off by default, remembered per agent) starts the
 // session with settings.approvalMode "never": the agent runs everything without asking (spec 5.1).
+// Agents that reach many providers (pi) list hundreds of models, each with a `provider` (spec 4): the
+// picker groups them by provider and offers a search field once the list is long.
 import type {
   Agent,
   DirEntry,
@@ -45,7 +47,52 @@ export function foldersOf(entries: DirEntry[]): DirEntry[] {
     .sort((a, b) => Number(a.name.startsWith('.')) - Number(b.name.startsWith('.')) || a.name.localeCompare(b.name));
 }
 
-/** session/start params from the form; empty title and message are left out. */
+/** The model picker shows a search field from this many models on. */
+export const SEARCH_FROM = 12;
+
+/** Models under one provider; `provider` is undefined for models that name none (one-provider agents). */
+export interface ModelGroup {
+  provider: string | undefined;
+  models: ModelInfo[];
+}
+
+/**
+ * Models grouped by provider: the ones without a provider first (as one unnamed group), then one group per
+ * provider in alphabetical order; each group keeps the host's order. A filter keeps the models whose id,
+ * name or provider contains it (any case); the model `keep` (the current choice) always stays listed.
+ */
+export function groupModels(models: readonly ModelInfo[], filter = '', keep?: string): ModelGroup[] {
+  const needle = filter.trim().toLowerCase();
+  const matches = (m: ModelInfo): boolean =>
+    needle === '' || m.id === keep || [m.id, m.displayName, m.provider ?? ''].some((text) => text.toLowerCase().includes(needle));
+  const groups = new Map<string | undefined, ModelInfo[]>();
+  for (const model of models) {
+    if (!matches(model)) continue;
+    const provider = typeof model.provider === 'string' && model.provider !== '' ? model.provider : undefined;
+    const group = groups.get(provider);
+    if (group === undefined) groups.set(provider, [model]);
+    else group.push(model);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === undefined ? -1 : b === undefined ? 1 : a.localeCompare(b)))
+    .map(([provider, list]) => ({ provider, models: list }));
+}
+
+/**
+ * A model id as a short label for the session row and header. Ids of the form `provider/model` (pi, spec
+ * 4) read "model · provider"; any other id is shown as is.
+ */
+export function modelLabel(modelId: string): string {
+  const slash = modelId.indexOf('/');
+  if (slash <= 0 || slash === modelId.length - 1) return modelId;
+  return `${modelId.slice(slash + 1)} · ${modelId.slice(0, slash)}`;
+}
+
+/**
+ * session/start params from the form; empty title and message are left out. The model goes in
+ * settings.model when it is not the agent's default, or always with `pinModel` (a model with a provider:
+ * the session then records which one it runs on).
+ */
 export function startParams(form: {
   agentId: string;
   cwd: string;
@@ -54,11 +101,12 @@ export function startParams(form: {
   defaultModel: string | undefined;
   message: string;
   bypass?: boolean;
+  pinModel?: boolean;
 }): SessionStartParams {
   const params: SessionStartParams = { agentId: form.agentId, cwd: form.cwd };
   const title = form.title.trim();
   if (title !== '') params.title = title;
-  if (form.model !== undefined && form.model !== form.defaultModel) params.settings = { model: form.model };
+  if (form.model !== undefined && (form.model !== form.defaultModel || form.pinModel === true)) params.settings = { model: form.model };
   if (form.bypass === true) params.settings = { ...params.settings, approvalMode: 'never' };
   const message = form.message.trim();
   if (message !== '') params.input = [{ type: 'text', text: message }];
@@ -79,6 +127,8 @@ export class NewSessionModel extends Model {
   models: ModelInfo[] = [];
   modelId: string | undefined;
   modelsLoading = false;
+  /** The model search text (shown from SEARCH_FROM models on). */
+  modelFilter = '';
   projects: ProjectEntry[] = [];
   cwd: string | undefined;
   browser: Browser | undefined;
@@ -102,6 +152,20 @@ export class NewSessionModel extends Model {
 
   get agent(): Agent | undefined {
     return this.agents.find((agent) => agent.id === this.agentId);
+  }
+
+  /** The models to offer, grouped by provider and narrowed by the search text. */
+  get modelGroups(): ModelGroup[] {
+    return groupModels(this.models, this.modelFilter, this.modelId);
+  }
+
+  get model(): ModelInfo | undefined {
+    return this.models.find((m) => m.id === this.modelId);
+  }
+
+  /** True when the list is long enough to need the search field. */
+  get modelSearch(): boolean {
+    return this.models.length >= SEARCH_FROM;
   }
 
   get canSubmit(): boolean {
@@ -139,6 +203,7 @@ export class NewSessionModel extends Model {
     this.bypass = this.readBypass(agentId);
     this.models = [];
     this.modelId = undefined;
+    this.modelFilter = '';
     this.modelsLoading = true;
     const request = ++this.modelRequest;
     this.changed();
@@ -158,6 +223,11 @@ export class NewSessionModel extends Model {
   selectModel(modelId: string): void {
     if (!this.models.some((m) => m.id === modelId)) return;
     this.modelId = modelId;
+    this.changed();
+  }
+
+  setModelFilter(filter: string): void {
+    this.modelFilter = filter;
     this.changed();
   }
 
@@ -233,7 +303,16 @@ export class NewSessionModel extends Model {
     const defaultModel = (this.models.find((m) => m.default) ?? this.models[0])?.id;
     try {
       const result = await this.starter.startSession(
-        startParams({ agentId: this.agentId!, cwd: this.cwd!, title: this.title, model: this.modelId, defaultModel, message: this.message, bypass: this.bypass }),
+        startParams({
+          agentId: this.agentId!,
+          cwd: this.cwd!,
+          title: this.title,
+          model: this.modelId,
+          defaultModel,
+          message: this.message,
+          bypass: this.bypass,
+          pinModel: typeof this.model?.provider === 'string',
+        }),
       );
       return result.session.sessionId;
     } catch (error) {

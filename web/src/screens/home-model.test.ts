@@ -153,12 +153,35 @@ describe('home formatting', () => {
     );
     expect(row).toMatchObject({ agentName: 'Codex', folder: 'phone-test', pending: 3, preview: 'Done.', updated: '2 min ago', statusLabel: 'Idle' });
     expect(sessionRow(summary({ title: ' ', agentId: 'other' }), new Map(), NOW)).toMatchObject({ title: 'Untitled session', agentName: 'other', preview: '' });
+    expect(row.model).toBeUndefined();
+    expect(sessionRow(summary(), new Map(), NOW, 'llamacpp/bonsai-27b').model).toBe('bonsai-27b · llamacpp');
+    expect(sessionRow(summary(), new Map(), NOW, '').model).toBeUndefined();
     expect(folderOf('/')).toBe('/');
     expect(folderOf('/a/b/')).toBe('b');
   });
 });
 
 describe('HomeModel', () => {
+  it('a row shows the model the Replica knows from the opened session (pi: model · provider)', () => {
+    const client = new HomeTransport();
+    const settings: Record<string, { model?: string }> = { ses_pi: { model: 'openrouter/qwen/qwen3.5-coder' }, ses_plain: {} };
+    const replica = {
+      sessions: [summary({ sessionId: 'ses_pi', agentId: 'pi' }), summary({ sessionId: 'ses_plain' }), summary({ sessionId: 'ses_unopened' })],
+      sessionsNextCursor: undefined,
+      refreshSessions: async () => undefined,
+      loadMoreSessions: async () => false,
+      subscribe: () => () => undefined,
+      session: (id: string) => (id === 'ses_unopened' ? undefined : { session: { settings: settings[id]! } }),
+    };
+    const model = new HomeModel({ client, replica });
+    expect(Object.fromEntries(model.sessions.map((row) => [row.sessionId, row.model]))).toEqual({
+      ses_pi: 'qwen/qwen3.5-coder · openrouter',
+      ses_plain: undefined,
+      ses_unopened: undefined,
+    });
+    model.dispose();
+  });
+
   it('connecting, then connected with host and agents from initialize, then uptime from host/status', async () => {
     const { client, model } = setup();
     expect(model.connection.kind).toBe('connecting');

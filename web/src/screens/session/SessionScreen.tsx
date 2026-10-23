@@ -127,6 +127,11 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             </>
           )}
         </p>
+        {model.model !== undefined && (
+          <p class="muted small session-model" aria-label="Model">
+            {model.model}
+          </p>
+        )}
       </div>
       {model.needsDecision && (
         <div class="decision-banner" role="alert" aria-label="Needs your decision">

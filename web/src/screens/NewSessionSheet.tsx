@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'preact/hooks';
 
+import type { ModelInfo } from '../generated/methods';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { NewSessionModel } from './new-session-model';
@@ -58,23 +59,46 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
           </fieldset>
 
           {(model.modelsLoading || model.models.length > 0) && (
-            <label class="field">
-              <span>Model</span>
+            <div class="field model-field">
+              <label for="new-session-model">Model</label>
+              {model.modelSearch && (
+                <input
+                  type="search"
+                  name="model-search"
+                  class="model-search"
+                  placeholder={`Search ${model.models.length} models`}
+                  aria-label="Search models"
+                  autocomplete="off"
+                  value={model.modelFilter}
+                  onInput={(event) => model.setModelFilter(event.currentTarget.value)}
+                />
+              )}
               <select
+                id="new-session-model"
                 name="model"
                 value={model.modelId ?? ''}
                 disabled={model.modelsLoading}
                 onChange={(event) => model.selectModel(event.currentTarget.value)}
               >
                 {model.modelsLoading && <option value="">Loading…</option>}
-                {model.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.displayName}
-                    {m.default ? ' (default)' : ''}
-                  </option>
-                ))}
+                {model.modelGroups.map((group) =>
+                  group.provider === undefined ? (
+                    group.models.map((m) => <ModelOption key={m.id} model={m} />)
+                  ) : (
+                    <optgroup key={group.provider} label={group.provider}>
+                      {group.models.map((m) => (
+                        <ModelOption key={m.id} model={m} />
+                      ))}
+                    </optgroup>
+                  ),
+                )}
               </select>
-            </label>
+              {model.model?.provider !== undefined && (
+                <p class="small muted model-provider">
+                  via {model.model.provider}
+                </p>
+              )}
+            </div>
           )}
 
           <div class="field">
@@ -183,5 +207,14 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
         </form>
       </section>
     </div>
+  );
+}
+
+function ModelOption({ model }: { model: ModelInfo }) {
+  return (
+    <option value={model.id}>
+      {model.displayName}
+      {model.default ? ' (default)' : ''}
+    </option>
   );
 }
