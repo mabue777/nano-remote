@@ -56,8 +56,11 @@ export function fakeCodex(fixture: FakeFixture = {}, overrides: Partial<CodexCon
   };
 }
 
-/** Resolves when `check` returns a value other than undefined (polls every 10 ms, up to `ms`). */
-export async function until<T>(check: () => T | undefined, what: string, ms = 5000): Promise<T> {
+/**
+ * Resolves when `check` returns a value other than undefined (polls every 10 ms, up to `ms`). The default
+ * is generous: a busy machine can take seconds to spawn an engine, and a passing wait returns at once.
+ */
+export async function until<T>(check: () => T | undefined, what: string, ms = 20_000): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = check();

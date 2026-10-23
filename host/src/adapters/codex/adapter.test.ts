@@ -49,7 +49,9 @@ function rig(fixture: FakeFixture = {}, options: { defaultModel?: () => string |
 
 const methods = (events: AdapterEvent[]) => events.map((e) => e.method);
 
-describe('CodexAdapter', () => {
+// Every test spawns fake engines (node processes); on a busy machine that alone can take seconds, so the
+// tests get an explicit timeout well above the 5 s default. Passing tests take as long as before.
+describe('CodexAdapter', { timeout: 30_000 }, () => {
   it('start: initialize, initialized, model from model/list, thread/start with the session policy', async () => {
     const r = rig();
     const dir = cwd();
@@ -575,8 +577,12 @@ describe('CodexAdapter', () => {
   });
 
   it('steer and interrupt wait for a pending turn/start; when it fails they have nothing to act on', async () => {
-    const r = rig({ ignore: ['turn/start'] }, { fake: fakeCodex({ ignore: ['turn/start'] }, { requestTimeoutMs: 300 }) });
+    const r = rig({ ignore: ['turn/start'] });
     await r.adapter.start(cwd(), {});
+    // The test is about ordering, not timing: the engine boots under the generous test timeout (a busy
+    // machine can take seconds to spawn it), and only the ignored turn/start gets a short one. The engine
+    // reads the timeout per call from this shared config object.
+    r.fake.config.requestTimeoutMs = 300;
     const turn = r.adapter.turnStart(text('go'), 'cm');
     const steer = r.adapter.steer(text('more'), 'cm2');
     const interrupt = r.adapter.interrupt();

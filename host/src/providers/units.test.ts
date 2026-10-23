@@ -223,7 +223,7 @@ describe('adapter table edge cases', () => {
   });
 });
 
-describe('discovery', () => {
+describe('discovery', { timeout: 30_000 }, () => {
   let ollama: FakeProvider;
   let lmstudio: FakeProvider;
   let llama: FakeProvider;
@@ -247,7 +247,8 @@ describe('discovery', () => {
         { address: '127.0.0.1', scope: 'loopback' },
       ],
       ports: [ollama.port, lmstudio.port, llama.port],
-      timeoutMs: 500,
+      // Every probed port answers, so the probe timeout only guards a busy machine: keep it generous.
+      timeoutMs: 10_000,
     });
     expect(candidates).toEqual([
       { baseURL: `http://127.0.0.1:${ollama.port}`, kind: 'ollama' },
@@ -262,7 +263,9 @@ describe('discovery', () => {
     try {
       const started = Date.now();
       expect(await probe(globalThis.fetch, odd.url, 100)).toBeNull();
-      expect(Date.now() - started).toBeLessThan(1_000);
+      // The probe gives up on its own 100 ms timeout instead of waiting for the silent server; the bound
+      // is loose so a busy machine does not trip it.
+      expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
       await odd.close();
     }

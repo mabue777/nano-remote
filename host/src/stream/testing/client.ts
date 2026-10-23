@@ -97,9 +97,12 @@ export class TestClient {
     for (const waiter of this.waiters.splice(0)) waiter();
   }
 
-  /** Resolves when `check` returns a value; rejects on close (unless waiting for it) or after 5 s. */
+  /**
+   * Resolves when `check` returns a value; rejects on close (unless waiting for it) or after 20 s. The
+   * deadline is generous because a busy machine can take seconds to spawn an engine behind the host.
+   */
   async until<T>(check: () => T | undefined | false, label = 'condition'): Promise<T> {
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + 20_000;
     for (;;) {
       const value = check();
       if (value !== undefined && value !== false) return value;

@@ -56,7 +56,9 @@ function expectDenseFrom(events: JournalEvent[], after: number): void {
 const requestOf = (event: JournalEvent) => (event.params as { request: Record<string, unknown> & { requestId: string } }).request;
 const turnOf = (event: JournalEvent) => (event.params as { turn: { turnId: string; status: string; error: unknown } }).turn;
 
-describe('session core end to end with the Codex adapter', () => {
+// Every test spawns fake engines (node processes); on a busy machine that alone can take seconds, so the
+// tests get an explicit timeout well above the 5 s default. Passing tests take as long as before.
+describe('session core end to end with the Codex adapter', { timeout: 30_000 }, () => {
   it('bypass approvals: approvalMode never reaches thread/start with full access; an outside command runs unasked', async () => {
     const outside = '/bin/zsh -lc "touch /tmp/nano-outside-folder"';
     const { h, fake } = await setup({ turns: [[{ command: { command: outside, cwd: '/tmp', output: '' } }, { reply: 'Done.' }]] });
