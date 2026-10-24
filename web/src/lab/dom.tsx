@@ -1,35 +1,16 @@
-// DOM glue shared by the lab's screens: motion values read from lab.css, the FLIP hook, a cross-fading
-// label, the drag listener (touch events, non-passive so a drag can stop the page from scrolling), and the
-// shell that animates a box's height with transform only. Covered by the Playwright lab smoke; the rules
+// DOM glue shared by the lab's screens: the FLIP hook, a cross-fading label, and the shell that animates a
+// box's height with transform only. The motion tokens (motionOf), the drag listener (useDrag) and
+// scrolledAbove moved to src/ui/motion and are re-exported here. Covered by the Playwright lab smoke; the rules
 // they apply live in the tested .ts modules next to this file.
 import type { ComponentChildren, RefObject } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 
+import { motionOf, prefersReducedMotion } from '../ui/motion/motion';
 import { measure, play, type Box } from './flip';
-import { parseMs, prefersReducedMotion } from './viewport';
 
-export interface Motion {
-  fast: number;
-  moderate: number;
-  relaxed: number;
-  standard: string;
-  enter: string;
-  exit: string;
-}
-
-/** The motion values as lab.css defines them (`--duration-*`, `--ease-*`); defaults if the sheet is missing. */
-export function motionOf(element: Element | null): Motion {
-  const style = element === null ? null : getComputedStyle(element);
-  const read = (name: string) => style?.getPropertyValue(name).trim() ?? '';
-  return {
-    fast: parseMs(read('--duration-fast'), 150),
-    moderate: parseMs(read('--duration-moderate'), 200),
-    relaxed: parseMs(read('--duration-relaxed'), 300),
-    standard: read('--ease-standard') || 'cubic-bezier(0.4, 0, 0.2, 1)',
-    enter: read('--ease-enter') || 'cubic-bezier(0.23, 1, 0.32, 1)',
-    exit: read('--ease-exit') || 'cubic-bezier(0.4, 0, 1, 1)',
-  };
-}
+export { motionOf, type Motion } from '../ui/motion/motion';
+export { scrolledAbove } from '../ui/motion/motion';
+export { useDrag, type DragHandlers } from '../ui/motion/drag';
 
 export function reducedMotion(): boolean {
   return prefersReducedMotion(window);
@@ -111,59 +92,4 @@ export function CrossFade({ value, smooth, render }: { value: string; smooth: bo
       </span>
     </span>
   );
-}
-
-export interface DragHandlers {
-  /** A finger went down at (x, y) on `target`; return false to ignore this touch. */
-  start(x: number, y: number, target: EventTarget | null, time: number): boolean;
-  /** The finger moved; return true when the drag owns the move (the page must not scroll). */
-  move(x: number, y: number, time: number): boolean;
-  /** The finger lifted or the touch was cancelled. */
-  end(cancelled: boolean): void;
-}
-
-/** Touch listeners on `element` while `enabled`; touchmove is non-passive so a drag can call preventDefault. */
-export function useDrag(element: RefObject<HTMLElement>, enabled: boolean, handlers: DragHandlers): void {
-  const current = useRef(handlers);
-  current.current = handlers;
-  useEffect(() => {
-    const el = element.current;
-    if (!enabled || el === null) return;
-    let active = false;
-    const onStart = (event: TouchEvent) => {
-      const touch = event.touches[0];
-      active = event.touches.length === 1 && touch !== undefined && current.current.start(touch.clientX, touch.clientY, event.target, event.timeStamp);
-    };
-    const onMove = (event: TouchEvent) => {
-      const touch = event.touches[0];
-      if (!active || touch === undefined) return;
-      if (current.current.move(touch.clientX, touch.clientY, event.timeStamp) && event.cancelable) event.preventDefault();
-    };
-    const onEnd = (event: TouchEvent) => {
-      if (!active) return;
-      active = false;
-      current.current.end(event.type === 'touchcancel');
-    };
-    el.addEventListener('touchstart', onStart, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onEnd);
-    el.addEventListener('touchcancel', onEnd);
-    return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onEnd);
-      el.removeEventListener('touchcancel', onEnd);
-    };
-  }, [element, enabled]);
-}
-
-/** Whether `target` sits in something scrolled away from its top, between it and `stop`. */
-export function scrolledAbove(target: EventTarget | null, stop: Element): boolean {
-  let node = target instanceof Element ? target : null;
-  while (node !== null) {
-    if (node.scrollTop > 0) return true;
-    if (node === stop) return false;
-    node = node.parentElement;
-  }
-  return false;
 }

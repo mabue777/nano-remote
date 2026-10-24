@@ -6,39 +6,49 @@ import { isBackdropTap, Sheet, SheetHeader, useCloseOnEscape } from './Sheet';
 
 vi.mock('preact/hooks', async () => (await import('../../test/hook-host')).hooks);
 
-function sheet(props: Partial<Parameters<typeof Sheet>[0]> = {}): { tree: Node; onClose: ReturnType<typeof vi.fn> } {
+function sheet(props: Partial<Parameters<typeof Sheet>[0]> = {}): { tree: Node; onClose: ReturnType<typeof vi.fn>; unmount: () => void } {
   const onClose = vi.fn();
-  const tree = Sheet({ labelledBy: 'title-id', onClose, children: <p>Body</p>, ...props }) as Node;
-  return { tree, onClose };
+  const host = renderHook(() => Sheet({ labelledBy: 'title-id', onClose, children: <p>Body</p>, ...props }) as Node);
+  return { tree: host.value, onClose, unmount: () => host.unmount() };
 }
 
 describe('Sheet', () => {
-  it('is a backdrop holding a modal dialog named by the heading id, with the children inside', () => {
+  it('is a backdrop holding a dim layer and a modal dialog named by the heading id, with a grabber and the children inside', () => {
     const { tree } = sheet();
     expect(tree.type).toBe('div');
-    expect(tree.props.class).toBe('sheet-backdrop');
-    const [panel] = childNodes(tree);
+    expect(tree.props.class).toBe('sheet-backdrop layered');
+    const [scrim, panel] = childNodes(tree);
+    expect(scrim!.props).toMatchObject({ class: 'sheet-scrim', 'aria-hidden': 'true' });
     expect(panel!.type).toBe('section');
     expect(panel!.props).toMatchObject({ class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'title-id' });
+    const [grabber] = childNodes(panel!);
+    expect(grabber!.props).toMatchObject({ class: 'sheet-grabber', 'aria-hidden': 'true' });
     expect(text(panel!.props.children)).toBe('Body');
   });
 
   it('adds an extra class to the panel', () => {
     const { tree } = sheet({ class: 'detail-sheet' });
-    expect(childNodes(tree)[0]!.props.class).toBe('sheet detail-sheet');
+    expect(childNodes(tree)[1]!.props.class).toBe('sheet detail-sheet');
   });
 
-  it('closes on a tap on the backdrop itself', () => {
+  it('closes on a tap on the dim layer or the backdrop itself', () => {
     const { tree, onClose } = sheet();
-    fire(tree, 'onClick', { target: tree, currentTarget: tree });
+    fire(childNodes(tree)[0]!, 'onClick');
     expect(onClose).toHaveBeenCalledTimes(1);
+    fire(tree, 'onClick', { target: tree, currentTarget: tree });
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('stays open on a tap inside the panel, which reaches the backdrop by bubbling', () => {
     const { tree, onClose } = sheet();
-    const panel = childNodes(tree)[0]!;
+    const panel = childNodes(tree)[1]!;
     fire(tree, 'onClick', { target: panel, currentTarget: tree });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('mounts and unmounts without a page (no element to move, nothing to slide out)', () => {
+    const { unmount } = sheet();
+    expect(() => unmount()).not.toThrow();
   });
 
   it('tells a backdrop tap from a bubbled one', () => {

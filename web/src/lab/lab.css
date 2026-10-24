@@ -1,31 +1,10 @@
 /* The interaction lab (/lab) only: loaded with the lab's own chunk, never by the real screens.
-   Motion values are custom properties here so a later ticket can promote them to tokens.css as they are.
-   Values from docs/research/visual-gap-openai-2026-10.md (OpenAI: 150 ms default, 200 moderate,
-   300 relaxed, enter cubic-bezier(.23,1,.32,1), "Thinking" shimmer 2.8 s). Every Smooth rule is keyed on
-   the technique's data attribute on .lab, so Now renders exactly what the app renders today. */
-
-:root {
-  --duration-press: 90ms;
-  --duration-fast: 150ms;
-  --duration-moderate: 200ms;
-  --duration-relaxed: 300ms;
-  --duration-shimmer: 2.8s;
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
-  /* The sheet spring (stiffness 380, damping 33; spring.ts) as linear(); 520 ms to rest. */
-  --duration-spring: 520ms;
-}
+   The motion values (--duration-*, --ease-*) are tokens in styles/tokens.css, which the real app adopted
+   unchanged. Every Smooth rule is keyed on the technique's data attribute on .lab, so Now renders what the
+   app rendered before the adoption; where the app now has a Smooth behaviour of its own (press feedback),
+   a Now rule below switches it off again. */
 
 @media (prefers-reduced-motion: reduce) {
-  :root {
-    --duration-press: 1ms;
-    --duration-fast: 1ms;
-    --duration-moderate: 1ms;
-    --duration-relaxed: 1ms;
-    --duration-spring: 1ms;
-  }
-
   .lab *,
   .lab *::before,
   .lab *::after {
@@ -137,27 +116,28 @@
 }
 
 /* ---------- 1. Press feedback ---------- */
-.lab[data-press='smooth'],
-.lab[data-press='smooth'] a,
-.lab[data-press='smooth'] button {
-  -webkit-tap-highlight-color: transparent;
+/* Smooth is the app's own press feedback now (styles/base.css, .session:active in HomeScreen.css); Now
+   switches it off: the grey tap flash, no dim, no shrink, the old row colour. */
+.lab[data-press='now'],
+.lab[data-press='now'] * {
+  -webkit-tap-highlight-color: initial; /* Safari's default tap flash */
 }
 
-.lab[data-press='smooth'] :is(a, button) {
-  transition:
-    transform var(--duration-press) var(--ease-standard),
-    opacity var(--duration-press) var(--ease-standard);
+.lab[data-press='now'] :is(a, button) {
+  transition: none;
 }
 
-.lab[data-press='smooth'] :is(a, button:not(:disabled)):active {
-  transform: scale(0.97);
-  opacity: 0.7;
+.lab[data-press='now'] :is(a, button):active {
+  transform: none;
+  opacity: revert;
 }
 
-/* The row keeps its colour and dims with the rest instead of flashing to the page colour. */
-.lab[data-press='smooth'] .session:active {
-  background: var(--surface);
-  transform: scale(0.98);
+.lab[data-press='now'] .jump-pill:active {
+  transform: translateX(-50%);
+}
+
+.lab[data-press='now'] .session:active {
+  background: var(--bg);
 }
 
 /* ---------- 2. Page push and back swipe ---------- */

@@ -1,13 +1,13 @@
 // The lab's bottom sheet, with the real sheet's look (.sheet-backdrop, .sheet). Now: it appears and goes
-// at once, like ui/Sheet.tsx. Smooth: the panel slides up on a spring while the dim layer fades in; a drag
+// at once, like ui/Sheet.tsx did before it adopted Smooth (ui/motion/sheet-motion.ts). Smooth: the panel slides up on a spring while the dim layer fades in; a drag
 // down follows the finger (from anywhere while the content is scrolled to its top) and on release the
 // finger's speed decides between dismissing and springing back.
 import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
+import { lockAxis, rubberBand, settleDuration, shouldComplete, VelocityTracker } from '../ui/motion/gesture';
+import { SHEET_SPRING, springEasing } from '../ui/motion/spring';
 import { motionOf, scrolledAbove, useDrag } from './dom';
-import { lockAxis, rubberBand, settleDuration, shouldComplete, VelocityTracker } from './gesture';
-import { SHEET_SPRING, springEasing } from './spring';
 
 export interface LabSheetProps {
   /** Smooth sheet (slide, fade, drag to dismiss). */

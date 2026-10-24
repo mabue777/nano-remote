@@ -137,6 +137,32 @@ for (const mode of ['Now', 'Smooth'] as const) {
   });
 }
 
+test('press feedback: Now keeps the old press (no dim, no shrink, the tap flash), Smooth is the app\'s', async ({ page }) => {
+  await page.goto('/lab');
+  const button = page.getByRole('button', { name: 'New session' });
+  const look = () => button.evaluate((el) => ({ transform: getComputedStyle(el).transform, opacity: getComputedStyle(el).opacity, flash: getComputedStyle(el).getPropertyValue('-webkit-tap-highlight-color') }));
+  const hold = async () => {
+    const box = (await button.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+  };
+  const lift = async () => {
+    await page.mouse.move(5, 400); // off the button first: no click
+    await page.mouse.up();
+  };
+  for (const mode of ['Now', 'Smooth'] as const) {
+    await setAll(page, mode);
+    await hold();
+    if (mode === 'Now') {
+      await page.waitForTimeout(150); // longer than the 90 ms press: nothing should have moved
+      expect(await look()).toEqual({ transform: 'none', opacity: '1', flash: expect.not.stringMatching(/^rgba\(0, 0, 0, 0\)$/) });
+    } else {
+      await expect.poll(look).toEqual({ transform: 'matrix(0.97, 0, 0, 0.97, 0, 0)', opacity: '0.7', flash: 'rgba(0, 0, 0, 0)' });
+    }
+    await lift();
+  }
+});
+
 test('Smooth gestures: a sheet dragged down dismisses, a short drag springs back, an edge swipe goes back', async ({ page }) => {
   await page.goto('/lab?speed=8');
   await setAll(page, 'Smooth');

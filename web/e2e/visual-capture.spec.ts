@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+import { sheetsSettled } from './sheets';
+
 // Reference screenshots of six screens at 390 x 844 against the fake host, for before/after pixel
 // comparisons when styles change (the visual groundwork, and the redesign after it). Runs only when
 // VISUAL_OUT names a folder: `VISUAL_OUT=/tmp/shots pnpm exec playwright test visual-capture`.
@@ -38,7 +40,7 @@ async function pair(page: Page, request: APIRequestContext): Promise<void> {
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(400); // transitions (sheet slide-in, switch knob) settle
+  await sheetsSettled(page); // no sheet mid-slide; animations: 'disabled' finishes the switch knob
   await page.screenshot({ path: `${out}/${name}.png`, animations: 'disabled', caret: 'hide' });
 }
 

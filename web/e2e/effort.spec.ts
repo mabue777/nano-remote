@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { sheetsSettled } from './sheets';
+
 // The effort picker on the new-session sheet at 390 x 844 (spec 4 ModelInfo.efforts, 5.1 settings.effort):
 // shown for a model with levels and its default preselected, hidden for a model without, "Auto" for a
 // model without a default (Claude), the choice sent in session/start, remembered per agent, and named in
@@ -17,6 +19,7 @@ async function openSheet(page: Page): Promise<Locator> {
   const sheet = page.getByRole('dialog', { name: 'New session' });
   await expect(sheet.getByRole('radio', { name: 'Codex' })).toHaveAttribute('aria-checked', 'true');
   await expect(sheet.getByRole('combobox', { name: 'Model' })).toHaveValue('gpt-5.5-codex');
+  await sheetsSettled(page); // measured and photographed at rest
   return sheet;
 }
 
@@ -53,6 +56,7 @@ test('effort: default preselected, sent, remembered per agent, hidden without le
   await expect(effort.getByRole('radio', { name: 'XHigh' })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
+  await sheetsSettled(page); // the closed sheet's copy, with its own Effort group, has slid out
   expect((await lastParams(page, 'session/start'))?.settings).toEqual({ effort: 'xhigh' });
   await expect(page.getByLabel('Effort', { exact: true })).toHaveText('XHigh effort');
   for (const scheme of ['light', 'dark'] as const) {
@@ -85,6 +89,7 @@ test('effort: default preselected, sent, remembered per agent, hidden without le
   await page.emulateMedia({ colorScheme: 'light' });
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
+  await sheetsSettled(page);
   expect((await lastParams(page, 'session/start'))?.settings).toBeUndefined();
   await expect(page.getByLabel('Effort', { exact: true })).toHaveCount(0);
 });

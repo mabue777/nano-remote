@@ -54,6 +54,32 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Motion, from the interaction lab (docs/research/interaction-feel-prototype.md) and OpenAI's values
+     (docs/research/visual-gap-openai-2026-10.md): 150 ms default, 200 moderate, 300 relaxed, enter
+     cubic-bezier(.23,1,.32,1), "Thinking" shimmer 2.8 s. Animate transform and opacity only. */
+  --duration-press: 90ms;
+  --duration-fast: 150ms;
+  --duration-moderate: 200ms;
+  --duration-relaxed: 300ms;
+  --duration-shimmer: 2.8s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* The sheet spring (stiffness 380, damping 33; ui/motion/spring.ts). The sheet plays it as linear() with
+     the duration springCurve measures (471 ms to rest); this value is the lab's estimate, kept as it was. */
+  --duration-spring: 520ms;
+}
+
+/* Reduce Motion: every duration drops to 1 ms. Drags still follow the finger. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-press: 1ms;
+    --duration-fast: 1ms;
+    --duration-moderate: 1ms;
+    --duration-relaxed: 1ms;
+    --duration-spring: 1ms;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

@@ -5,6 +5,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import { BackHeader } from '../../ui/BackHeader';
+import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet, SheetHeader } from '../../ui/Sheet';
 import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
@@ -116,6 +117,7 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
           class="composer-form"
           onSubmit={(event) => {
             event.preventDefault();
+            if (model.canSend) hapticTick(); // inside the tap, where iOS allows it
             void model.send();
           }}
         >

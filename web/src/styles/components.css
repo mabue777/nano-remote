@@ -96,14 +96,43 @@
   z-index: 10;
 }
 
+/* The dim colour on its own layer, so it fades while the panel slides (ui/motion/sheet-motion.ts). */
+.sheet-backdrop.layered {
+  background: transparent;
+}
+
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.4);
+}
+
+/* The copy of a closed sheet that slides out; taps reach the page under it. */
+.sheet-ghost {
+  pointer-events: none;
+}
+
 .sheet {
+  position: relative;
   width: 100%;
   max-width: 560px;
   max-height: 92dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  will-change: transform;
   background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0;
   padding: var(--space-8) calc(var(--safe-right) + var(--space-8)) calc(var(--safe-bottom) + var(--space-10)) calc(var(--safe-left) + var(--space-8));
+}
+
+/* The handle at the top of the panel: it can be pulled down. */
+.sheet-grabber {
+  flex: none;
+  width: 36px;
+  height: 5px;
+  margin: calc(-1 * var(--space-4)) auto var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
 }
 
 .sheet-head {

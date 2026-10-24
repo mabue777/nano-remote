@@ -74,10 +74,11 @@ not whether they run smoothly.
 All of it is in `web/src/lab/`. It loads in its own chunk, so the real screens never load its code or styles.
 
 - Tested logic, at 100% coverage under the 90% threshold for `src/lab/**`: the stream buffer and fade pieces
-  (`pacer.ts`), finger speed, release decision, settle time and rubber band (`gesture.ts`), the spring as a CSS
-  `linear()` easing (`spring.ts`), FLIP and leaving rows (`flip.ts`), the auto-scroll follower
-  (`autoscroll.ts`), the visible viewport, reduced motion and the haptic trick (`viewport.ts`), the switches
-  (`settings.ts`), and the seeded fake stream (`fake-stream.ts`).
+  (`pacer.ts`), FLIP and leaving rows (`flip.ts`), the auto-scroll follower (`autoscroll.ts`), the visible
+  viewport (`viewport.ts`), the switches (`settings.ts`), and the seeded fake stream (`fake-stream.ts`). Finger
+  speed, release decision, settle time and rubber band (`gesture.ts`), the spring as a CSS `linear()` easing
+  (`spring.ts`), reduced motion and CSS times (`motion.ts`), the drag listener (`drag.ts`) and the haptic trick
+  (`haptic.ts`) moved to `src/ui/motion/` when the app adopted them (see below); the lab imports them from there.
 - Screens, covered by the Playwright smoke `web/e2e/lab.spec.ts`: `Lab.tsx` (the shell, list, panel and
   sheets' content), `LabSession.tsx` (session and composer), `LabSheet.tsx`, and `dom.tsx` (shared DOM glue).
   They reuse the real classes, `BackHeader` and `SheetHeader`, so the lab looks like today's app.
@@ -111,3 +112,24 @@ All of it is in `web/src/lab/`. It loads in its own chunk, so the real screens n
   under the session, which also keeps its scroll position.
 - **The service worker caches the lab chunk** with the rest of the app shell (about 14 KB gzipped), so /lab
   also works offline in the installed app. The real screens do not load it.
+
+## Adopted in the app
+
+Part 1 of 3 (2026-10-24): the motion tokens, press feedback (1), sheets (3) and the haptic tick (10) run in the
+real app as in the lab's Smooth mode.
+
+- **Tokens.** The custom properties from `lab.css` are in `web/src/styles/tokens.css`, unchanged, with their
+  reduced-motion overrides.
+- **Press feedback.** `base.css` dims every button and link to 70% and shrinks it to 97% while pressed (90 ms),
+  with no tap flash; session rows shrink to 98% and keep their colour; full-width bars only dim. `main.tsx`
+  adds the passive touchstart listener iOS needs for `:active`.
+- **Sheets.** `ui/Sheet.tsx` with `ui/motion/sheet-motion.ts`: the spring entrance, the dim layer's fade, the
+  drag down (not from a text field, not in content scrolled away from its top), and the slide-out. The
+  slide-out plays on every close path because the sheet leaves an inert copy of itself (`.sheet-ghost`) on the
+  page when its owner removes it; the e2e helpers in `web/e2e/sheets.ts` wait for it.
+- **Haptic tick.** Accept (and Accept for session) on approval cards, Send/Steer/Queue in the session composer,
+  Send in local chat. The tick gives the focus back to the field that had it, so Send keeps the keyboard up.
+- The lab's Now mode switches the app's press feedback off again (`lab.css`), so the comparison still works.
+- The spring comes to rest after 471 ms by `springCurve`, not the 520 ms the lab's notes estimated; the sheet
+  plays the measured duration.
+

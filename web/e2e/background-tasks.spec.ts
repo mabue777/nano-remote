@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+import { sheetsSettled } from './sheets';
+
 // Background tasks on the phone (spec 5.1 Session.backgroundTasks, userMessage `queued`) against the fake
 // host (test/e2e-server.ts) at 390 x 844: the home row's "N background tasks" badge, the session's strip
 // (title, elapsed time, status; a tap shows the latest activity), a message that waits behind the tasks
@@ -185,7 +187,7 @@ test('screenshots, light and dark: home badge, strip with a queued message, Stop
   await pair(page, request);
   const shot = async (name: string) => {
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(400); // the sheet slide-in settles
+    await sheetsSettled(page); // no sheet mid-slide; animations: 'disabled' finishes the switch knob
     await page.screenshot({ path: `${out}/${name}.png`, animations: 'disabled', caret: 'hide' });
   };
   for (const scheme of ['light', 'dark'] as const) {

@@ -6,15 +6,16 @@ import type { RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { defaultStorage, type StorageLike } from '../replica/storage';
+import { lockAxis, settleDuration, shouldComplete, VelocityTracker } from '../ui/motion/gesture';
+import { hapticTick } from '../ui/motion/haptic';
 import { SheetHeader } from '../ui/Sheet';
 import { CrossFade, motionOf, reducedMotion, useDrag, useFlip } from './dom';
 import { ACTIVITY, CHANGES, DIFF_LINES, SESSIONS, type LabSession as Session } from './fixtures';
 import { drop, withLeaving, type Shown } from './flip';
-import { lockAxis, settleDuration, shouldComplete, VelocityTracker } from './gesture';
 import { LabSession } from './LabSession';
 import { LabSheet } from './LabSheet';
 import { allAt, loadSettings, saveSettings, TECHNIQUES, type LabSettings, type Mode, type TechniqueId } from './settings';
-import { hapticTick, watchViewport } from './viewport';
+import { watchViewport } from './viewport';
 import './lab.css';
 
 type View = 'list' | 'session';

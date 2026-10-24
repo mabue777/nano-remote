@@ -14,6 +14,9 @@ if (!root) {
 // Only the build ships sw.js (web/build/pwa.ts); the dev server never registers a worker.
 const updates: UpdateSignal | null =
   import.meta.env.PROD && 'serviceWorker' in navigator ? startUpdates(navigator.serviceWorker, document, () => window.location.reload()) : null;
+// Press feedback: iOS Safari applies :active (styles/base.css) only while the page has a touchstart listener.
+// Passive and empty, so it never delays a scroll.
+document.addEventListener('touchstart', () => undefined, { passive: true });
 const router = new Router(window);
 // A tapped notification while the app is open: the worker posts the session's path (web/src/pwa/navigate.ts).
 if (updates !== null) listenForNavigate(navigator.serviceWorker, window.location.origin, (path) => router.navigate(path));

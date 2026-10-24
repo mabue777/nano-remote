@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs';
 
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
+import { sheetsSettled } from './sheets';
+
 // Changing the model and effort of an open session at 390 x 844 (spec 6 session/settings/update): the
 // header's model line opens a sheet with the New session sheet's grouped model picker and effort control;
 // Save sends what changed and the header shows it; while a turn runs the sheet says "Applies after this
@@ -34,6 +36,7 @@ async function saveAndExpectSent(page: Page, request: APIRequestContext, sheet: 
   expect(await lastParams(request, 'session/settings/update')).toBeNull();
   await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(sheet).toHaveCount(0);
+  await sheetsSettled(page); // the copy sliding out still has its own Model and Effort labels
   await expect.poll(() => lastParams(request, 'session/settings/update')).toEqual({ sessionId: shownSession(page), settings });
 }
 
@@ -49,12 +52,14 @@ async function startSession(page: Page, agent: string, model: string): Promise<v
   await sheet.getByRole('combobox', { name: 'Model' }).selectOption(model);
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
+  await sheetsSettled(page);
 }
 
 async function openSettings(page: Page): Promise<Locator> {
   await page.getByTitle('Change model and effort').click();
   const sheet = page.getByRole('dialog', { name: 'Model and effort' });
   await expect(sheet).toBeVisible();
+  await sheetsSettled(page);
   return sheet;
 }
 
@@ -104,6 +109,7 @@ test('Codex: switch the model, then pick an effort the new model offers; the hea
   await expect(sheet.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio', { name: 'High', exact: true })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: 'Cancel' }).click();
   await expect(sheet).toHaveCount(0);
+  await sheetsSettled(page);
 });
 
 test('a running turn: the sheet says the change applies after it, and the turn goes on', async ({ page, request }) => {

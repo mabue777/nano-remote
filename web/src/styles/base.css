@@ -108,6 +108,32 @@ button.link {
   padding: 0 0 0 var(--space-3);
 }
 
+/* Press feedback (interaction lab technique 1): a button, link or row dims and shrinks to 97% the moment a
+   finger lands and springs back when it lifts; no grey tap flash. iOS Safari shows :active only while the
+   page has a touchstart listener (main.tsx adds one). Only transform and opacity animate; an element with a
+   transform of its own (the centred jump pill) repeats it in its :active rule. Inline text links cannot
+   scale and only dim. Text fields get nothing. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a,
+button {
+  transition:
+    transform var(--duration-press) var(--ease-standard),
+    opacity var(--duration-press) var(--ease-standard);
+}
+
+:is(a, button:not(:disabled)):active {
+  transform: scale(0.97);
+  opacity: 0.7;
+}
+
+/* Full-width bars and rows only dim: shrinking them would pull their edges in from the page's. */
+:root :is(.archived-toggle, .bg-task-row, .diff-file-row, .dir, .candidate, .picker-models .choice, .session-model-button, .file-chip, .form > button):active {
+  transform: none;
+}
+
 input,
 select,
 textarea {

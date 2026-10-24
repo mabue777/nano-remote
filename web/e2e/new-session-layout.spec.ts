@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { sheetsSettled } from './sheets';
+
 // The bypass row on the new-session sheet at 390 x 844 (operator phone check 2026-10-22): the label sits on
 // one line, the switch at the row's right edge, and the row does not overlap the folder suggestion above or
 // the title label below, with the switch off and on. The warning shows below the row when on.
@@ -16,6 +18,7 @@ async function openSheet(page: Page, code: string): Promise<Locator> {
   const sheet = page.getByRole('dialog', { name: 'New session' });
   await expect(sheet.getByRole('radio', { name: 'Codex' })).toHaveAttribute('aria-checked', 'true');
   await expect(sheet.getByRole('list', { name: 'Recent folders' })).toBeVisible();
+  await sheetsSettled(page); // measured at rest, not mid-slide
   return sheet;
 }
 

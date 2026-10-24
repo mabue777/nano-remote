@@ -5,7 +5,8 @@
 //
 // then `renderHook(() => useSomething(...))` calls the hook once; a state setter re-renders synchronously, and
 // `host.value` is the latest return value. Effects run after each render whose deps changed; a cleanup runs
-// before its effect runs again and on `unmount()`. Only useState, useRef and useEffect are provided.
+// before its effect runs again and on `unmount()`. Only useState, useRef, useEffect and useLayoutEffect (run
+// like useEffect: there is no paint to come before) are provided.
 
 interface Effect {
   deps: readonly unknown[] | undefined;
@@ -94,6 +95,9 @@ export const hooks = {
       host.effects.add(index);
       record.cleanup = effect();
     });
+  },
+  useLayoutEffect(effect: () => (() => void) | void, deps?: readonly unknown[]): void {
+    hooks.useEffect(effect, deps);
   },
 };
 

@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 
 import type { Replica } from '../../replica/replica';
 import { BackHeader } from '../../ui/BackHeader';
+import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
@@ -639,6 +640,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         class="composer-form"
         onSubmit={(event) => {
           event.preventDefault();
+          if (model.canSend) hapticTick(); // Send, Steer or Queue; inside the tap, where iOS allows it
           model.send();
         }}
       >

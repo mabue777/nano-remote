@@ -1,6 +1,7 @@
 // Approval cards, question forms and "answered elsewhere" notices (spec 5.3). All state and rules live in
 // ApprovalsModel; these components render it. Inline cards sit at the end of the conversation; blocking
 // questions are pinned above the composer.
+import { hapticTick } from '../../../ui/motion/haptic';
 import type { ApprovalsModel, ApprovalCardState, Notice, QuestionCardState, QuestionView } from './approvals-model';
 
 /** Approval cards, non-blocking questions and notices, at the end of the conversation. */
@@ -97,7 +98,10 @@ function ApprovalCard({ card, model }: { card: ApprovalCardState; model: Approva
             title={button.hint}
             disabled={card.sending !== undefined}
             data-decision={button.decision}
-            onClick={() => void model.decide(card.requestId, button.decision)}
+            onClick={() => {
+              if (button.decision === 'accept' || button.decision === 'acceptForSession') hapticTick();
+              void model.decide(card.requestId, button.decision);
+            }}
           >
             {card.sending === button.decision ? 'Sending…' : button.label}
           </button>

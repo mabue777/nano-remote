@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import { longPress, swipeLeft } from './gestures';
+import { sheetsSettled } from './sheets';
 
 // Archive and delete sessions from the phone (spec 6) against the fake host: a swipe on a Home row shows
 // Archive and Delete, a long-press opens the same actions in a sheet; Archive moves the row to the
@@ -183,7 +184,7 @@ test('screenshots, light and dark: swipe actions, actions sheet, confirmation, A
   const out = process.env.SESSION_DELETE_OUT;
   test.skip(out === undefined || out === '', 'set SESSION_DELETE_OUT to capture');
   const shot = async (name: string) => {
-    await page.waitForTimeout(300);
+    await sheetsSettled(page); // no sheet mid-slide; animations: 'disabled' finishes the switch knob
     await page.screenshot({ path: `${out}/${name}.png`, animations: 'disabled', caret: 'hide' });
   };
   for (const scheme of ['light', 'dark'] as const) {
