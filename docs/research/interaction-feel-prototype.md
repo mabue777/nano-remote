@@ -133,3 +133,11 @@ real app as in the lab's Smooth mode.
 - The spring comes to rest after 471 ms by `springCurve`, not the 520 ms the lab's notes estimated; the sheet
   plays the measured duration.
 
+## New look prototype
+
+The lab now has a **Look: Now / New** switch at the top of its panel. New shows the redesign from the visual-gap
+study (neutral palette, grey bubble, line icons, floating composer, flat tool rows, quiet cards, centred header,
+flat list) on the same mini app, and combines with every switch above. Sending (6), expand and collapse (9) and the
+keyboard (7) work inside it. What each change is, its tokens, its effort, the real components it touches and the
+adoption order interleaved with motion parts 2 and 3: `docs/research/new-look-prototype.md`.
+

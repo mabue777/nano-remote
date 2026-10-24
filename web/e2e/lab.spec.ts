@@ -51,7 +51,7 @@ test('the lab opens without pairing; the panel switches every technique and reme
   const lab = page.locator('.lab');
 
   const panel = await openPanel(page);
-  await expect(panel.getByRole('group')).toHaveCount(TECHNIQUES.length);
+  await expect(panel.locator('.lab-techniques').getByRole('group')).toHaveCount(TECHNIQUES.length);
   for (const name of TECHNIQUES) {
     const row = panel.getByRole('group', { name });
     await expect(row.getByRole('button', { name: 'Now' })).toHaveAttribute('aria-pressed', 'true');

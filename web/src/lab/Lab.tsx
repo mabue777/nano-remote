@@ -1,9 +1,11 @@
 // The interaction lab at /lab: a mini copy of the app (session list -> session -> sheets, plus the
 // composer) on fake data, with a floating "Lab" button that opens one Now/Smooth switch per technique. Now
 // is today's behaviour; Smooth is the proposal. Nothing here touches the host or the real screens; the
-// router loads this file only for /lab. Motion values live in lab.css as custom properties.
+// router loads this file only for /lab. Motion values live in lab.css as custom properties. A "Look" switch at
+// the top of the panel shows the same mini app in today's look (Now) or the redesign (New, NewLook.tsx and
+// new-look.css, scoped under data-look="new"); it combines freely with every technique switch.
 import type { RefObject } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { defaultStorage, type StorageLike } from '../replica/storage';
 import { lockAxis, settleDuration, shouldComplete, VelocityTracker } from '../ui/motion/gesture';
@@ -14,12 +16,15 @@ import { ACTIVITY, CHANGES, DIFF_LINES, SESSIONS, type LabSession as Session } f
 import { drop, withLeaving, type Shown } from './flip';
 import { LabSession } from './LabSession';
 import { LabSheet } from './LabSheet';
+import { ALL_HOSTS, hostsOf, loadLook, onHost, saveLook, type Look } from './look';
+import { AddBody, NewList, SessionDetailsBody } from './NewLook';
 import { allAt, loadSettings, saveSettings, TECHNIQUES, type LabSettings, type Mode, type TechniqueId } from './settings';
 import { watchViewport } from './viewport';
 import './lab.css';
+import './new-look.css';
 
 type View = 'list' | 'session';
-type SheetName = 'changes' | 'new' | null;
+type SheetName = 'changes' | 'new' | 'details' | 'add' | null;
 
 const keyOf = (s: Session) => s.id;
 /** A back swipe starts this close to the left edge (px). */
@@ -29,6 +34,10 @@ type ViewTransitionDocument = Document & { startViewTransition?: (update: () => 
 
 export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | null }) {
   const [settings, setSettings] = useState<LabSettings>(() => loadSettings(storage));
+  const [look, setLook] = useState<Look>(() => loadLook(storage));
+  const [host, setHost] = useState(ALL_HOSTS);
+  const [task, setTask] = useState('Running');
+  const onStatus = useCallback((next: string) => setTask(next), []);
   const [reduced] = useState(reducedMotion);
   const [view, setView] = useState<View>('list');
   const [sheet, setSheet] = useState<SheetName>(null);
@@ -47,6 +56,10 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
     saveSettings(storage, next);
   };
   const choose = (id: TechniqueId, mode: Mode) => set({ ...settings, [id]: mode });
+  const chooseLook = (next: Look) => {
+    setLook(next);
+    saveLook(storage, next);
+  };
 
   const pageSmooth = settings.page === 'smooth';
   const animatePages = pageSmooth && !reduced;
@@ -214,30 +227,48 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
 
   const sheetSmooth = settings.sheet === 'smooth';
   const listVisible = view === 'list' || (pageSmooth && (peek || sliding));
-  const listNode = (
-    <LabList
-      sessions={sessions}
-      listRef={listRef}
-      smooth={listSmooth}
-      onOpen={() => navigate('session')}
-      onNew={() => setSheet('new')}
-      onSimulate={simulate}
-      onDropped={dropRow}
-    />
-  );
+  const listNode =
+    look === 'new' ? (
+      <NewList
+        sessions={onHost(sessions, host, (s) => s.item.host)}
+        hosts={hostsOf(SESSIONS)}
+        host={host}
+        listRef={listRef}
+        smooth={listSmooth}
+        onHost={(next) => flipList(() => setHost(next))}
+        onOpen={() => navigate('session')}
+        onNew={() => setSheet('new')}
+        onSimulate={simulate}
+        onDropped={dropRow}
+      />
+    ) : (
+      <LabList
+        sessions={sessions}
+        listRef={listRef}
+        smooth={listSmooth}
+        onOpen={() => navigate('session')}
+        onNew={() => setSheet('new')}
+        onSimulate={simulate}
+        onDropped={dropRow}
+      />
+    );
   const sessionNode = (
     <LabSession
       key={`${replay}-${settings.stream}`}
       settings={settings}
+      look={look}
       reduced={reduced}
       onBack={() => navigate('list')}
       onOpenChanges={() => setSheet('changes')}
+      onOpenDetails={() => setSheet('details')}
+      onOpenAdd={() => setSheet('add')}
       onHaptic={haptic}
+      onStatus={onStatus}
     />
   );
 
   return (
-    <div class="lab" ref={root} {...Object.fromEntries(TECHNIQUES.map((t) => [`data-${t.id}`, settings[t.id]]))}>
+    <div class="lab" ref={root} data-look={look} {...Object.fromEntries(TECHNIQUES.map((t) => [`data-${t.id}`, settings[t.id]]))}>
       {staged ? (
         <div class={`lab-stage${keyboardSmooth ? ' lab-keyboard' : ''}`} ref={stage}>
           {(pageSmooth || view === 'list') && (
@@ -267,6 +298,16 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
           {(close) => <NewSessionBody onClose={close} />}
         </LabSheet>
       )}
+      {sheet === 'details' && (
+        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-details-title" onClosed={() => setSheet(null)}>
+          {(close) => <SessionDetailsBody status={task} onChanges={() => setSheet('changes')} onClose={close} />}
+        </LabSheet>
+      )}
+      {sheet === 'add' && (
+        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-add-title" onClosed={() => setSheet(null)}>
+          {(close) => <AddBody onClose={close} />}
+        </LabSheet>
+      )}
 
       <button type="button" class="lab-fab" aria-haspopup="dialog" onClick={() => setPanel(true)}>
         Lab
@@ -274,7 +315,9 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
       {panel && (
         <LabPanel
           settings={settings}
+          look={look}
           reduced={reduced}
+          onLook={chooseLook}
           onChoose={choose}
           onAll={(mode) => set(allAt(mode))}
           onReplay={() => {
@@ -427,7 +470,9 @@ function NewSessionBody({ onClose }: { onClose: () => void }) {
 
 interface LabPanelProps {
   settings: LabSettings;
+  look: Look;
   reduced: boolean;
+  onLook: (look: Look) => void;
   onChoose: (id: TechniqueId, mode: Mode) => void;
   onAll: (mode: Mode) => void;
   onReplay: () => void;
@@ -435,7 +480,7 @@ interface LabPanelProps {
 }
 
 /** The switches. Always plain (no motion), so the panel itself never colours the comparison. */
-function LabPanel({ settings, reduced, onChoose, onAll, onReplay, onClose }: LabPanelProps) {
+function LabPanel({ settings, look, reduced, onLook, onChoose, onAll, onReplay, onClose }: LabPanelProps) {
   return (
     <div class="sheet-backdrop lab-panel-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <section class="sheet lab-panel" role="dialog" aria-modal="true" aria-labelledby="lab-panel-title">
@@ -445,6 +490,19 @@ function LabPanel({ settings, reduced, onChoose, onAll, onReplay, onClose }: Lab
             Reduce Motion is on, so Smooth shows no animations. Turn it off in Settings › Accessibility › Motion to compare.
           </p>
         )}
+        <div class="lab-technique lab-look" role="group" aria-label="Look">
+          <div class="lab-technique-text">
+            <strong>Look</strong>
+            <span class="muted small">Now is today's design; New is the redesign. Works with every switch below.</span>
+          </div>
+          <div class="segmented lab-mode">
+            {(['now', 'new'] as const).map((value) => (
+              <button key={value} type="button" class={look === value ? 'selected' : undefined} aria-pressed={look === value} onClick={() => onLook(value)}>
+                {value === 'now' ? 'Now' : 'New'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div class="actions lab-panel-all">
           <button type="button" class="small" onClick={() => onAll('now')}>
             All Now

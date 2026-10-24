@@ -1,0 +1,940 @@
+/* The lab's New look (/lab, Look: New): the redesign from docs/research/visual-gap-openai-2026-10.md, items 1-9,
+   13 and 14. Loaded with the lab's chunk only, and every rule is keyed on data-look="new" on .lab, so nothing
+   reaches the real screens or the lab's Now look. The custom properties below are named as the future tokens in
+   styles/tokens.css would be: the existing names (--bg, --surface, --text, --muted, --line, --accent) get the
+   neutral values, the new ones (--fill, --text-tertiary, --primary, ...) are added. Colours and sizes are the
+   measured iOS values; no OpenAI CSS or assets. Motion uses the shared tokens (--duration-*, --ease-*). */
+
+/* ---------- Tokens (item 1 palette, item 9 type roles, item 14 radii and shadows) ---------- */
+/* body:has(...) lets the page behind the lab (overscroll, below short screens) take the new page colour too;
+   .lab[data-look='new'] alone covers browsers without :has. */
+.lab[data-look='new'],
+body:has(.lab[data-look='new']) {
+  /* Colour, light. */
+  --bg: #ffffff; /* page */
+  --surface: #ffffff; /* boxes on the page; inner boxes in grey cards */
+  --surface-raised: #ffffff; /* sheets, the composer (with --shadow-lg) */
+  --fill: #f3f3f3; /* user bubble, cards, chips, grouped rows */
+  --fill-strong: #e8e8e8; /* pressed rows, the selected chip's ring */
+  --text: #0d0d0d;
+  --muted: #5d5d5d; /* secondary text */
+  --text-tertiary: #8f8f8f; /* placeholder, chevrons, meta */
+  --line: rgb(0 0 0 / 0.1); /* translucent hairline */
+  --line-subtle: rgb(0 0 0 / 0.05);
+  --primary: #0d0d0d; /* the main action of a screen: ink */
+  --primary-text: #ffffff;
+  --accent: #3a83f7; /* links and the running indicator only */
+  --accent-text: #ffffff;
+  --busy: var(--accent);
+  --ok: #00692a;
+  --error: #e02e2a;
+  --warn: #d25e28;
+  --warn-text: #d25e28; /* status pairs (item 10), only "Awaiting approval" uses one here */
+  --warn-bg: #fdf5f1;
+  --diff-add: #00a240;
+  --diff-del: #ba2623;
+  --diff-add-bg: rgb(0 162 64 / 0.15);
+  --diff-del-bg: rgb(186 38 35 / 0.15);
+
+  /* Type roles (item 9): size/line height; titles tighten by --tracking-title. Open system fonts only. */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-code: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+  --type-large-title: 700 34px / 41px var(--font-ui);
+  --type-nav-title: 600 17px / 22px var(--font-ui);
+  --type-headline: 600 17px / 22px var(--font-ui);
+  --type-body: 400 17px / 24px var(--font-ui);
+  --type-callout: 400 15px / 20px var(--font-ui);
+  --type-footnote: 400 13px / 18px var(--font-ui);
+  --type-caption: 400 12px / 16px var(--font-ui);
+  --type-code: 400 13px / 18px var(--font-code);
+  --tracking-title: -0.02em;
+
+  /* Radii (item 14) beside the existing --radius-*: the named shapes the redesign needs. */
+  --radius-inner: 12px; /* boxes inside cards, tool output */
+  --radius-bubble: 18px;
+  --radius-card: 20px; /* approval and question cards */
+  --radius-sheet: 20px; /* sheet top corners */
+  --radius-composer: 26px;
+
+  /* Shadows (item 14), the desktop Codex values. */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 8px 16px -4px rgb(0 0 0 / 0.12);
+  --shadow-card: 0 4px 16px rgb(0 0 0 / 0.05);
+  --shadow-ring: 0 0 0 0.5px rgb(0 0 0 / 0.1);
+
+  font-family: var(--font-ui);
+}
+
+@media (prefers-color-scheme: dark) {
+  .lab[data-look='new'],
+  body:has(.lab[data-look='new']) {
+    --bg: #0d0d0d;
+    --surface: #212121;
+    --surface-raised: #212121;
+    --fill: #303030;
+    --fill-strong: #414141;
+    --text: #ffffff;
+    --muted: #cdcdcd;
+    --text-tertiary: #afafaf;
+    --line: rgb(255 255 255 / 0.15);
+    --line-subtle: rgb(255 255 255 / 0.1);
+    --primary: #ffffff;
+    --primary-text: #0d0d0d;
+    --accent: #539af8;
+    --accent-text: #0d0d0d;
+    --ok: #04b84c;
+    --error: #f38884;
+    --warn: #f1a275;
+    --warn-text: #f1a275;
+    --warn-bg: #45240d;
+    --diff-add: #40c977;
+    --diff-del: #fa423e;
+    --diff-add-bg: rgb(64 201 119 / 0.23);
+    --diff-del-bg: rgb(250 66 62 / 0.23);
+    --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.5);
+    --shadow-ring: 0 0 0 0.5px rgb(255 255 255 / 0.15);
+  }
+}
+
+/* ---------- Shared controls ---------- */
+.lab[data-look='new'] .screen {
+  background: var(--bg);
+}
+
+.lab[data-look='new'] .lab-icon {
+  flex: none;
+  display: block;
+}
+
+.lab[data-look='new'] .lab-nl-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Round icon buttons: back, more, +, the list's New session. */
+.lab[data-look='new'] .lab-nl-round {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--fill);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.lab[data-look='new'] .lab-nl-round-primary {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.lab[data-look='new'] .lab-nl-text-button {
+  min-height: var(--touch);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: var(--type-callout);
+}
+
+/* Primary actions are ink (item 1), pills (item 14). */
+.lab[data-look='new'] button {
+  border-color: transparent;
+  background: var(--fill);
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+}
+
+.lab[data-look='new'] button.primary,
+.lab[data-look='new'] .lab-nl-pill-button.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+  font-weight: 600;
+}
+
+.lab[data-look='new'] button.ghost {
+  background: transparent;
+}
+
+.lab[data-look='new'] .sheet-head button.ghost {
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0 var(--space-2);
+}
+
+.lab[data-look='new'] input,
+.lab[data-look='new'] textarea {
+  border-color: transparent;
+  background: var(--fill);
+  border-radius: var(--radius-inner);
+}
+
+.lab[data-look='new'] input::placeholder,
+.lab[data-look='new'] textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.lab[data-look='new'] .choice.selected {
+  border-color: var(--primary);
+  box-shadow: none;
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.lab[data-look='new'] .segmented {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+}
+
+.lab[data-look='new'] .segmented button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.lab[data-look='new'] .segmented button.selected {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-md), var(--shadow-ring);
+}
+
+.lab[data-look='new'] .lab-nl-chevron {
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.lab[data-look='new'] .lab-nl-chevron.open {
+  transform: rotate(90deg);
+}
+
+.lab[data-look='new'] .lab-nl-previous .lab-nl-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* The Lab button: the New look centres the title in the top bar, so the button moves to the right edge. */
+.lab[data-look='new'] .lab-fab {
+  top: 42%;
+  left: auto;
+  right: 0;
+  margin: 0;
+  width: 40px;
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+  font-size: var(--font-xs);
+}
+
+/* ---------- Session list (item 6) ---------- */
+.lab[data-look='new'] .lab-nl-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  min-height: 52px; /* one-off: the large title's bar */
+}
+
+.lab-nl-large-title {
+  font: var(--type-large-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.lab[data-look='new'] .lab-nl-chips {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  margin: var(--space-6) calc(-1 * var(--space-8)) 0;
+  padding: 0 var(--space-8);
+  scrollbar-width: none;
+}
+
+.lab[data-look='new'] .lab-nl-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 36px;
+  padding: 0 var(--space-7);
+  font: var(--type-callout);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.lab[data-look='new'] .lab-nl-chip[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.lab-nl-online {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--diff-add);
+}
+
+.lab[data-look='new'] .lab-nl-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-10);
+}
+
+.lab-nl-section {
+  font: var(--type-headline);
+  letter-spacing: var(--tracking-title);
+}
+
+.lab[data-look='new'] .lab-nl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lab[data-look='new'] .lab-nl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 60px; /* one-off: a two-line row */
+  padding: var(--space-5) 0;
+  border-bottom: 0.5px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.lab[data-look='new'] .lab-nl-row:active {
+  transform: none; /* a full-width row only dims (as in base.css) */
+}
+
+.lab-nl-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-nl-row-title {
+  font: var(--type-body);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lab-nl-row-meta {
+  font: var(--type-footnote);
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lab-nl-pill {
+  display: inline-block;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lab-nl-indicator.busy {
+  color: var(--accent);
+}
+
+.lab-nl-indicator.attention {
+  color: var(--warn-text);
+}
+
+.lab-nl-indicator.error {
+  color: var(--error);
+}
+
+.lab-nl-indicator-none {
+  display: block;
+  width: 20px;
+}
+
+.lab-nl-spin {
+  animation: lab-nl-spin 0.9s linear infinite;
+}
+
+@keyframes lab-nl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Session header (item 8) ---------- */
+.lab[data-look='new'] .lab-nl-nav {
+  display: grid;
+  grid-template-columns: var(--touch) 1fr var(--touch);
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+
+.lab-nl-nav-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.lab-nl-nav-title h1 {
+  font: var(--type-nav-title);
+  letter-spacing: var(--tracking-title);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lab-nl-nav-title p {
+  margin: 0;
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+/* ---------- Transcript (items 2, 4) ---------- */
+.lab[data-look='new'] .turns {
+  gap: var(--space-12);
+}
+
+.lab[data-look='new'] .turn {
+  gap: var(--space-5);
+}
+
+.lab[data-look='new'] .msg {
+  font: var(--type-body);
+}
+
+.lab[data-look='new'] .msg.user {
+  background: var(--fill);
+  color: var(--text);
+  padding: var(--space-4) var(--space-7);
+  border-radius: var(--radius-bubble);
+}
+
+.lab[data-look='new'] .msg.agent {
+  padding: var(--space-2) 0;
+}
+
+.lab[data-look='new'] .lab-nl-tool {
+  display: flex;
+  flex-direction: column;
+}
+
+.lab[data-look='new'] .lab-nl-tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: var(--type-callout);
+  text-align: left;
+}
+
+.lab[data-look='new'] .lab-nl-tool-row:active,
+.lab[data-look='new'] .lab-nl-previous:active,
+.lab[data-look='new'] .lab-nl-changes:active,
+.lab[data-look='new'] .lab-nl-group-row:active,
+.lab[data-look='new'] .lab-nl-menu-row:active {
+  transform: none; /* full-width rows only dim */
+}
+
+.lab-nl-tool-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lab-nl-tool-target {
+  color: var(--text);
+}
+
+.lab-nl-tool-failed {
+  flex: none;
+  font: var(--type-footnote);
+  color: var(--error);
+}
+
+.lab[data-look='new'] .lab-nl-output {
+  margin: var(--space-2) 0 var(--space-4) 28px; /* one-off: under the text, past the 18 px icon and gap */
+  padding: var(--space-5) var(--space-6);
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--radius-inner);
+  background: var(--fill);
+  color: var(--text);
+  font: var(--type-code);
+  white-space: pre-wrap;
+}
+
+.lab[data-look='new'] .lab-nl-previous {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: var(--type-callout);
+}
+
+/* "Worked for 3m 12s" with a hairline to the right. */
+.lab-nl-worked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-2) 0;
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+}
+
+.lab-nl-worked::after {
+  content: '';
+  flex: 1;
+  border-top: 0.5px solid var(--line);
+}
+
+/* "Thinking": grey, at body size; Streaming on Smooth adds the shimmer (lab.css .lab-thinking). */
+.lab[data-look='new'] .lab-thinking,
+.lab[data-look='new'] .lab-nl-thinking {
+  font: var(--type-body);
+  font-weight: 500;
+}
+
+.lab[data-look='new'] .lab-nl-thinking {
+  color: var(--text-tertiary);
+}
+
+.lab[data-look='new'] .lab-thinking {
+  background-image: linear-gradient(90deg, var(--text-tertiary) 0 35%, var(--text) 50%, var(--text-tertiary) 65% 100%);
+}
+
+.lab[data-look='new'] .lab-nl-changes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 52px;
+  padding: 0 var(--space-7);
+  border: 0.5px solid var(--line);
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  color: var(--text);
+  font: var(--type-callout);
+  text-align: left;
+}
+
+.lab-nl-changes-text {
+  flex: 1;
+}
+
+.lab-nl-counts,
+.lab[data-look='new'] .diff-counts {
+  font: var(--type-footnote);
+  font-weight: 600;
+}
+
+.lab[data-look='new'] .plus {
+  color: var(--diff-add);
+}
+
+.lab[data-look='new'] .minus {
+  color: var(--diff-del);
+}
+
+.lab[data-look='new'] .jump-pill {
+  width: 40px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-lg), var(--shadow-ring);
+}
+
+/* ---------- Approval and question cards (items 5, 13) ---------- */
+.lab[data-look='new'] .lab-nl-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  border-radius: var(--radius-card);
+  background: var(--fill);
+  overflow-wrap: anywhere;
+}
+
+/* Expand and collapse on Smooth: the grey background is the shell that scales (lab.css .lab-shell). */
+.lab[data-look='new'] .lab-nl-card.lab-shelled {
+  background: none;
+}
+
+.lab[data-look='new'] .lab-nl-card > .lab-shell {
+  inset: 0;
+  border: 0;
+  background: var(--fill);
+}
+
+.lab[data-look='new'] .lab-nl-card.answered {
+  padding: var(--space-6) var(--space-8);
+}
+
+.lab-nl-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.lab-nl-card-title {
+  flex: 1;
+  min-width: 0;
+  font: var(--type-headline);
+}
+
+.lab-nl-answer {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--type-callout);
+}
+
+.lab-nl-answer.ok {
+  color: var(--ok);
+}
+
+.lab-nl-answer.muted {
+  color: var(--muted);
+}
+
+.lab-nl-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-7);
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+}
+
+.lab-nl-command {
+  font: var(--type-code);
+  font-size: 14px; /* one-off: the command is the card's subject */
+}
+
+.lab-nl-inner-meta {
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.lab-nl-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.lab[data-look='new'] .lab-nl-pill-button {
+  min-height: var(--touch);
+  padding: 0 var(--space-10);
+  border: 0;
+  background: var(--surface);
+  color: var(--text);
+  font: var(--type-callout);
+  font-weight: 600;
+}
+
+.lab[data-look='new'] .lab-nl-more {
+  margin-left: auto;
+}
+
+.lab[data-look='new'] .lab-nl-more-menu {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.lab[data-look='new'] .lab-nl-menu-row {
+  min-height: var(--touch);
+  padding: 0 var(--space-7);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: var(--type-callout);
+  text-align: left;
+}
+
+.lab[data-look='new'] .lab-nl-menu-row + .lab-nl-menu-row {
+  border-top: 0.5px solid var(--line);
+}
+
+.lab[data-look='new'] .lab-nl-menu-row.danger {
+  color: var(--error);
+}
+
+.lab-nl-options {
+  gap: 0;
+  padding: 0;
+}
+
+.lab-nl-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 52px;
+  padding: var(--space-3) var(--space-7);
+}
+
+.lab-nl-option + .lab-nl-option {
+  border-top: 0.5px solid var(--line);
+}
+
+/* The native radio stays for keyboard and screen readers, drawn by .lab-nl-radio. */
+.lab-nl-option input[type='radio'] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.lab-nl-radio {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-round);
+  border: 1.5px solid var(--text-tertiary);
+}
+
+.lab-nl-option.selected .lab-nl-radio {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.lab-nl-option:has(input:focus-visible) .lab-nl-radio {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lab-nl-option-text {
+  display: flex;
+  flex-direction: column;
+  font: var(--type-callout);
+}
+
+.lab[data-look='new'] .lab-nl-other {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) 0;
+  background: none;
+  border: 0;
+  font-size: 16px; /* below 16 px iOS zooms on focus */
+}
+
+/* ---------- Composer (item 3) ---------- */
+.lab[data-look='new'] .lab-nl-composer-bar {
+  border-top: 0;
+  background: linear-gradient(to bottom, transparent, var(--bg) 30%); /* one-off: text fades under the card */
+  padding: var(--space-4) var(--space-6) calc(var(--safe-bottom) + var(--space-6));
+}
+
+.lab-nl-composer-hint {
+  margin: 0 var(--space-6) var(--space-3);
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.lab[data-look='new'] .lab-nl-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-composer);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg), var(--shadow-ring);
+}
+
+.lab[data-look='new'] .lab-nl-composer textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 40dvh;
+  resize: none;
+  padding: var(--space-5) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: var(--type-body);
+  outline: none;
+}
+
+.lab[data-look='new'] .lab-nl-composer textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lab[data-look='new'] .lab-nl-add {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin: var(--space-1);
+  color: var(--muted);
+}
+
+.lab[data-look='new'] .lab-nl-send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.lab[data-look='new'] .lab-nl-send:disabled {
+  opacity: 1;
+  background: var(--fill);
+  color: var(--text-tertiary);
+}
+
+/* ---------- Sheets ---------- */
+.lab[data-look='new'] .sheet {
+  background: var(--surface-raised);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+}
+
+.lab[data-look='new'] .sheet-head h2 {
+  font: var(--type-nav-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.lab[data-look='new'] .lab-grabber {
+  background: var(--fill-strong);
+}
+
+.lab[data-look='new'] .field > span,
+.lab[data-look='new'] .field > legend {
+  font: var(--type-footnote);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lab[data-look='new'] .form > button.primary {
+  min-height: 50px;
+}
+
+/* Grouped rows (details and + sheets): one rounded group, inset hairlines. */
+.lab[data-look='new'] .lab-nl-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-inner);
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.lab[data-look='new'] .lab-nl-group > li + li {
+  border-top: 0.5px solid var(--line);
+}
+
+.lab[data-look='new'] .lab-nl-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-7);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: var(--type-body);
+  text-align: left;
+}
+
+.lab[data-look='new'] .lab-nl-group-row > .lab-icon:first-child {
+  color: var(--muted);
+}
+
+.lab-nl-value {
+  margin-left: auto;
+  color: var(--muted);
+  font: var(--type-callout);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* The Changes sheet: grey kind words instead of coloured badges, the Codex diff colours (item 11, as needed). */
+.lab[data-look='new'] .diff-file-row {
+  background: var(--fill);
+  border-radius: var(--radius-inner);
+}
+
+.lab[data-look='new'] .file-kind {
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.lab[data-look='new'] .diff-path {
+  font: var(--type-callout);
+}
+
+.lab[data-look='new'] .lab-diff {
+  background: var(--fill);
+  border-radius: var(--radius-inner);
+  font: var(--type-code);
+}
+
+.lab[data-look='new'] .diff-line.add {
+  background: var(--diff-add-bg);
+}
+
+.lab[data-look='new'] .diff-line.del {
+  background: var(--diff-del-bg);
+}
+
+/* The Lab panel's own Look row sits apart from the technique list. */
+.lab-look {
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--line);
+}

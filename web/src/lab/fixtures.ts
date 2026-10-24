@@ -13,14 +13,16 @@ export interface LabSession {
   folder: string;
   updated: string;
   preview: string;
+  /** The Mac the session runs on (the New look's host chips). */
+  host: string;
 }
 
 export const SESSIONS: readonly LabSession[] = [
-  { id: 'fix-tests', title: 'Fix the failing parser test', status: 'Working', tone: 'busy', pending: 0, agent: 'Codex', folder: 'nano-remote', updated: 'now', preview: 'Running npm test…' },
-  { id: 'readme', title: 'Sketch the README', status: 'Needs approval', tone: 'attention', pending: 1, agent: 'Claude Code', folder: 'docs', updated: '2 min', preview: 'Wants to run git push origin readme' },
-  { id: 'hello', title: 'Create hello.txt and list files', status: 'Finished', tone: 'ok', pending: 0, agent: 'Claude Code', folder: 'scratch', updated: '14 min', preview: 'Created hello.txt. The folder now has 3 files.' },
-  { id: 'deps', title: 'Update the dependencies', status: 'Finished', tone: 'ok', pending: 0, agent: 'Codex', folder: 'host', updated: '1 h', preview: 'Bumped vite to 7.1 and vitest to 4.1; all tests pass.' },
-  { id: 'icons', title: 'Draw the app icons', status: 'Idle', tone: 'muted', pending: 0, agent: 'Claude Code', folder: 'web', updated: 'yesterday', preview: 'Waiting for a message.' },
+  { id: 'fix-tests', title: 'Fix the failing parser test', status: 'Working', tone: 'busy', pending: 0, agent: 'Codex', folder: 'nano-remote', updated: 'now', preview: 'Running npm test…', host: 'Mac mini' },
+  { id: 'readme', title: 'Sketch the README', status: 'Needs approval', tone: 'attention', pending: 1, agent: 'Claude Code', folder: 'docs', updated: '2 min', preview: 'Wants to run git push origin readme', host: 'MacBook Pro' },
+  { id: 'hello', title: 'Create hello.txt and list files', status: 'Finished', tone: 'ok', pending: 0, agent: 'Claude Code', folder: 'scratch', updated: '14 min', preview: 'Created hello.txt. The folder now has 3 files.', host: 'Mac mini' },
+  { id: 'deps', title: 'Update the dependencies', status: 'Finished', tone: 'ok', pending: 0, agent: 'Codex', folder: 'host', updated: '1 h', preview: 'Bumped vite to 7.1 and vitest to 4.1; all tests pass.', host: 'Mac mini' },
+  { id: 'icons', title: 'Draw the app icons', status: 'Needs your input', tone: 'attention', pending: 1, agent: 'Claude Code', folder: 'web', updated: 'yesterday', preview: 'Asks which icon sizes to export.', host: 'MacBook Pro' },
 ];
 
 /** One step of fake list activity: the next list of sessions. */
@@ -36,6 +38,7 @@ const NEW_SESSION: LabSession = {
   folder: 'web',
   updated: 'now',
   preview: 'Reading eslint output…',
+  host: 'MacBook Pro',
 };
 
 function update(sessions: readonly LabSession[], id: string, change: Partial<LabSession>, toTop = false): LabSession[] {
@@ -62,6 +65,8 @@ export interface ToolRow {
   state: string;
   tone: Tone;
   summary: string;
+  /** The New look's one-line row: "<verb> <summary>" (Ran npm test, Edited src/parser.ts). */
+  verb: 'Ran' | 'Edited';
   output: string;
 }
 
@@ -73,6 +78,7 @@ export const TOOL_ROWS: readonly ToolRow[] = [
     state: 'Failed',
     tone: 'error',
     summary: 'npm test -- parser',
+    verb: 'Ran',
     output: [
       '> vitest run parser',
       '',
@@ -89,6 +95,7 @@ export const TOOL_ROWS: readonly ToolRow[] = [
     state: 'Done',
     tone: 'ok',
     summary: 'sed -n 1,40p src/parser.ts',
+    verb: 'Ran',
     output: ['export function parseList(text: string): string[] {', "  return text.split(',').map((s) => s.trim());", '}'].join('\n'),
   },
   {
@@ -96,6 +103,7 @@ export const TOOL_ROWS: readonly ToolRow[] = [
     state: 'Changed',
     tone: 'ok',
     summary: 'src/parser.ts',
+    verb: 'Edited',
     output: ['-  return text.split(\',\').map((s) => s.trim());', "+  if (text.trim() === '') return [];", "+  return text.split(',').map((s) => s.trim());"].join('\n'),
   },
 ];
@@ -118,6 +126,15 @@ export const REPLY = [
 ].join('');
 
 export const APPROVAL = { title: 'Run a command?', command: 'git push origin lab-fix', cwd: '~/code/nano-remote', reason: 'Push the fix so CI runs on it.' };
+
+/** The question the agent asks at the end of the first reply you send (one choice, or your own words). */
+export const QUESTION = {
+  title: 'Which branch should I push to?',
+  options: [
+    { label: 'lab-fix', description: 'The branch with the fix' },
+    { label: 'main', description: 'Straight to the default branch' },
+  ],
+};
 
 export interface ChangedFile {
   path: string;
