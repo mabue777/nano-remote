@@ -18,6 +18,7 @@ import {
   sendErrorText,
   SessionModel,
   elapsedText,
+  TASK_LINGER_S,
   queuedText,
   stopConfirmText,
   taskStateOf,
@@ -852,14 +853,14 @@ describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
     const tasks = [
       task('a', { title: 'Review the parser', lastActivity: 'Running Read parser.ts' }),
       task('b', { title: '  ', status: 'finished', endedAt: T0 + 30 }),
-      task('c', { status: 'cancelled', endedAt: T0 + 5 }),
-      task('d', { status: 'failed' }),
+      task('c', { status: 'cancelled', endedAt: T0 + 10 }),
+      task('d', { status: 'failed', startedAt: T0 + 40 }),
     ];
     const { model, changes } = await setup({ over: withTasks(tasks), now: () => now });
     expect(model.backgroundTasks.map((r) => [r.id, r.title, r.elapsed, r.state, r.tone, r.activity])).toEqual([
       ['a', 'Review the parser', '1 min 5 s', 'Running', 'busy', 'Running Read parser.ts'],
       ['b', 'Background task', '30 s', 'Finished', 'ok', undefined],
-      ['c', 'Task c', '5 s', 'Cancelled', 'muted', undefined],
+      ['c', 'Task c', '10 s', 'Cancelled', 'muted', undefined],
       ['d', 'Task d', '0 s', 'Failed', 'error', undefined],
     ]);
     expect(model.runningTasks).toBe(1);
@@ -868,12 +869,47 @@ describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
     expect(model.backgroundTasks[0]!.expanded).toBe(true);
     model.toggleTask('a');
     expect(model.backgroundTasks[0]!.expanded).toBe(false);
-    // The clock moves the running row only.
+    // The clock moves the running row only, and takes the one that ended 60 s ago away.
     now += 10_000;
     const before = changes.mock.calls.length;
     model.tick();
     expect(changes.mock.calls.length).toBe(before + 1);
-    expect(model.backgroundTasks.map((r) => r.elapsed)).toEqual(['1 min 15 s', '30 s', '5 s', '0 s']);
+    expect(model.backgroundTasks.map((r) => [r.id, r.elapsed])).toEqual([
+      ['a', '1 min 15 s'],
+      ['b', '30 s'],
+      ['d', '0 s'],
+    ]);
+  });
+
+  it('an ended task leaves the strip 60 s after it ended, also while the turn goes on; a running one stays', async () => {
+    let now = (T0 + 100) * 1000;
+    const tasks = [task('run'), task('stop', { status: 'cancelled', endedAt: T0 + 100 }), task('done', { status: 'finished', endedAt: T0 + 120 })];
+    const turns = [turn('t1')];
+    const { model, changes } = await setup({ turns, over: withTasks(tasks, { status: 'running' }), now: () => now });
+    now = (T0 + 159) * 1000;
+    expect(model.backgroundTasks.map((r) => r.id)).toEqual(['run', 'stop', 'done']);
+    now = (T0 + 160) * 1000;
+    const before = changes.mock.calls.length;
+    model.tick();
+    expect(changes.mock.calls.length).toBe(before + 1);
+    expect(model.backgroundTasks.map((r) => r.id)).toEqual(['run', 'done']);
+    now = (T0 + 3600) * 1000;
+    expect(model.backgroundTasks.map((r) => [r.id, r.state])).toEqual([['run', 'Running']]);
+    expect(TASK_LINGER_S).toBe(60);
+  });
+
+  it('a session whose agent stopped (error) shows no task running: "Ended", muted, not counted, no clock', async () => {
+    const tasks = [task('a', { lastActivity: 'Running Read' }), task('b', { status: 'finished', endedAt: T0 + 2 })];
+    const { model, live } = await setup({ over: withTasks(tasks, { status: 'error' }), now: () => (T0 + 30) * 1000 });
+    live(1, [['status/changed', { status: 'error' }]]);
+    expect(model.backgroundTasks.map((r) => [r.id, r.status, r.state, r.tone, r.elapsed])).toEqual([
+      ['a', 'ended', 'Ended', 'muted', ''],
+      ['b', 'finished', 'Finished', 'ok', '2 s'],
+    ]);
+    expect(model.runningTasks).toBe(0);
+    // Idle is not stopped: Claude Code runs background tasks between turns.
+    live(2, [['status/changed', { status: 'idle' }]]);
+    expect(model.backgroundTasks[0]).toMatchObject({ id: 'a', status: 'running', state: 'Running' });
   });
 
   it('follows session/changed; nothing shows without tasks, once closed, or from the list row of an unopened session', async () => {

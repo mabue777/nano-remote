@@ -55,10 +55,11 @@ _Avoid_: job, task ("task" belongs to the issue tracker), run
 
 **Background task**:
 A helper an agent runs beside its turns: a background subagent, a background
-command, a monitor (Claude Code). The host lists them in
-`Session.backgroundTasks` while they run and until the next turn starts, a
-message sent while they run is marked queued until the agent takes it, and
-stopping a turn cancels them.
+command, a monitor (Claude Code). A command that merely runs long in the
+foreground is not one. The host lists them in `Session.backgroundTasks` while
+they run and until the next turn starts (the phone drops an ended one a minute
+after it ended), a message sent while they run is marked queued until the agent
+takes it, and stopping a turn, stopping the host or a host restart cancels them.
 _Avoid_: job, worker; plain "task" (the issue tracker's word)
 
 **Local chat**:

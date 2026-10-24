@@ -161,6 +161,8 @@ describe('home formatting', () => {
     expect(row.backgroundTasks).toBe(0);
     const tasks = (['running', 'finished', 'running', 'cancelled'] as const).map((status, n) => ({ id: `t${n}`, title: 't', status, startedAt: 1 }));
     expect(sessionRow(summary({ backgroundTasks: tasks }), new Map(), NOW).backgroundTasks).toBe(2);
+    // A session whose agent stopped runs nothing, whatever its list still says.
+    expect(sessionRow(summary({ status: 'error', backgroundTasks: tasks }), new Map(), NOW).backgroundTasks).toBe(0);
     expect(backgroundTasksText(1)).toBe('1 background task');
     expect(backgroundTasksText(2)).toBe('2 background tasks');
     expect(folderOf('/')).toBe('/');

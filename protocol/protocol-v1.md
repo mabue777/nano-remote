@@ -269,6 +269,13 @@ hands out (`session/list`, `session/updated`, `session/open`); with none, or for
 session lists any (the engines are gone), and archiving or deleting a session ends its running helpers as
 `cancelled`. Stopping a turn (`turn/interrupt`) cancels them too: Claude Code ends its background
 subagents on interrupt, and they are then listed `cancelled`. Clients ask before Stop while any runs.
+Every end is journaled, so a client replaying the Journal never keeps a helper running: a host shutdown
+journals the running ones `cancelled` before the engines stop, an engine that dies ends them `failed`, and
+on start the host journals a `session/changed` listing as `cancelled` the helpers that the session's last
+journaled list still showed running (a host that died without shutting down). Clients drop an ended helper
+60 s after its `endedAt` even while the turn goes on, count only running ones in badges, and show none as
+running while the session's `status` is `error` (its agent stopped; `idle` is not enough, since helpers run
+between turns).
 
 **Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model`, `approvalMode` and `effort`).
 `approvalMode` (additive within v1) may be set in `session/start` settings and is reported back as in effect.
@@ -653,9 +660,9 @@ by a raw SDK repro (in the Claude adapter's header comment) and by the adapter's
 
 | Protocol | Claude Code | Codex, Pi |
 |---|---|---|
-| task launched | an `Agent`/`Task` call with `run_in_background`, a `Bash` call that went to the background (`backgroundTaskId` in its result), or a `Monitor` call, once its tool result confirms the launch; `id` is the tool_use id, `title` the tool input's `description` | not reported (`capabilities.backgroundTasks` false) |
+| task launched | the engine's task events: `system/task_started` with `is_backgrounded: true`; a task started in the foreground (`is_backgrounded: false`, which a `Bash` call running past about 3 s gets) only once `system/task_updated {patch: {is_backgrounded: true}}` or `system/background_tasks_changed` (the engine's whole live set) says it moved to the background. Fallback when the engine sent none of these: an `Agent`/`Task` call with `run_in_background`, a `Bash` result naming `backgroundTaskId`, or a `Monitor` call, once its tool result confirms the launch. `id` is the tool_use id (the task id while unknown), `title` the tool input's `description` | not reported (`capabilities.backgroundTasks` false) |
 | `lastActivity` | `system/task_progress` of that tool_use id: its `summary` when present, else its `description` ("Running <the subagent's tool description>"), one per subagent tool call | |
-| task ended | `system/task_notification`: `completed` is `finished`, `failed` is `failed`, `stopped` is `cancelled`; a run that dies ends its running tasks `failed` (`cancelled` when an unanswered Stop ended it) | |
+| task ended | `system/task_updated` with `patch.status` `completed`, `failed` or `killed`, or `system/task_notification` (`completed` is `finished`, `failed` is `failed`, `stopped` is `cancelled`); a running task that `system/background_tasks_changed` no longer lists is `cancelled` (a later notification's status replaces that). A run that dies ends its running tasks `failed` (`cancelled` when an unanswered Stop ended it), one the host stops ends them `cancelled`. The notification of a task that never left the foreground is not shown as a `background task` item | |
 | `queued` cleared | the first top-level assistant message or stream event whose `user_message_uuid` is the message's `clientMessageId` (sent as the SDK message `uuid`) | |
 
 Codex and Pi report none yet. The Codex app-server does have the idea as background terminals: requests

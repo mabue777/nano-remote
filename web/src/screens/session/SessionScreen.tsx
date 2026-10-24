@@ -61,13 +61,13 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   }, [model]);
   useEffect(() => () => requests.dispose(), [requests]);
   useEffect(() => onOpened?.(sessionId), [sessionId, onOpened]);
-  // Elapsed times of running background tasks count up every second.
-  const tasksRunning = model.runningTasks > 0;
+  // While the background-task strip shows, elapsed times count up and ended tasks leave on time.
+  const tasksShown = model.backgroundTasks.length > 0;
   useEffect(() => {
-    if (!tasksRunning) return undefined;
+    if (!tasksShown) return undefined;
     const timer = setInterval(() => model.tick(), 1000);
     return () => clearInterval(timer);
-  }, [model, tasksRunning]);
+  }, [model, tasksShown]);
 
   const scroller = useRef<HTMLElement>(null);
   const landed = useRef(false);

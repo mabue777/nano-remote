@@ -216,6 +216,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/background':
               host.setBackgroundTasks(body.sessionId, body.tasks ?? []);
               return json(200, { ok: true });
+            case '/test/status':
+              host.setStatus(body.sessionId, body.status);
+              return json(200, { ok: true });
             case '/test/take-queued':
               host.takeQueued(body.sessionId, body.reply);
               return json(200, { ok: true });

@@ -15,6 +15,7 @@ import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
 import { attachmentFixture, PNG_BYTES } from '../shared/testing/attachments.js';
 import { bundledExecutable, ClaudeAdapter, executablePath, HUNG, Inbox, loadQuery, type QueryFn } from './adapter.js';
 import { CANCEL_MESSAGE, DECLINE_MESSAGE } from './mapping.js';
+import { BRAINSTORM_BACKGROUND, BRAINSTORM_FOREGROUND, BRAINSTORM_TURN } from './testing/brainstorm-fixture.js';
 import { FakeClaude, until, type FakeClaudeOptions } from './testing/fake-query.js';
 
 const adapters: ClaudeAdapter[] = [];
@@ -1041,6 +1042,217 @@ describe('ClaudeAdapter: background tasks for the phone (background/changed, inp
     await played;
     await find(events, 'input/taken');
     expect(events.filter((e) => e.method === 'input/taken').map((e) => e.params)).toEqual([{ clientMessageId: id }]);
+  });
+});
+
+describe("ClaudeAdapter: background tasks from the engine's own task events (task_started, task_updated, background_tasks_changed)", () => {
+  const assistant = (content: unknown[]) => ({ message: { type: 'assistant', message: { id: `msg_${Math.random()}`, content }, parent_tool_use_id: null } });
+  const result = (id: string, toolUseResult: unknown, content = 'ok') => ({
+    message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content }] }, parent_tool_use_id: null, tool_use_result: toolUseResult },
+  });
+  const system = (subtype: string, fields: Record<string, unknown>) => ({ type: 'system', subtype, uuid: randomUUID(), session_id: 's', ...fields });
+  const step = (subtype: string, fields: Record<string, unknown>) => ({ message: system(subtype, fields) });
+  const changes = (events: AdapterEvent[]) =>
+    events.filter((e): e is Extract<AdapterEvent, { method: 'background/changed' }> => e.method === 'background/changed').map((e) => e.params.tasks);
+  const latest = (events: AdapterEvent[]) => changes(events).at(-1) ?? [];
+  const brief = (events: AdapterEvent[]) => latest(events).map((t) => [t.id, t.status]);
+  const output = { stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false };
+  const taskItems = (events: AdapterEvent[]) =>
+    events.flatMap((e) => (e.method === 'item/completed' && String((e.params.item as { tool?: string }).tool ?? '').startsWith('background task') ? [e.params.item] : []));
+
+  it('an auto-backgrounded Bash (task_started is_backgrounded, no run_in_background, no backgroundTaskId) is listed and ends on its notification', async () => {
+    const { fake, adapter, events, cwd } = rig({
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_b', name: 'Bash', input: { command: 'npm run build', description: 'Build the app' } }]),
+          step('task_started', { task_id: 'bash_1', tool_use_id: 'toolu_b', description: 'Build the app', is_backgrounded: true, task_type: 'local_bash' }),
+          result('toolu_b', output),
+          { text: 'Building.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('build'), 'c1');
+    await turnEnd(events);
+    expect(latest(events)).toEqual([{ id: 'toolu_b', title: 'Build the app', status: 'running', startedAt: expect.any(Number) }]);
+    fake.last.send(system('task_notification', { task_id: 'bash_1', tool_use_id: 'toolu_b', status: 'completed', output_file: '', summary: 'Build the app' }));
+    await until(() => (brief(events)[0]?.[1] === 'finished' ? true : undefined), 'the end');
+    expect(latest(events)).toEqual([expect.objectContaining({ id: 'toolu_b', status: 'finished', endedAt: expect.any(Number) })]);
+  });
+
+  it('a Bash registered in the foreground is not listed, and its notification is no chat item; moved to the background it is listed', async () => {
+    const { fake, adapter, events, cwd } = rig({
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_f', name: 'Bash', input: { command: 'sleep 5', description: 'Wait a bit' } }]),
+          step('task_started', { task_id: 'bash_f', tool_use_id: 'toolu_f', description: 'Wait a bit', is_backgrounded: false, task_type: 'local_bash' }),
+          step('task_notification', { task_id: 'bash_f', tool_use_id: 'toolu_f', status: 'completed', output_file: '', summary: 'Wait a bit' }),
+          result('toolu_f', output),
+          assistant([{ type: 'tool_use', id: 'toolu_m', name: 'Bash', input: { command: 'sleep 500', description: 'Wait long' } }]),
+          step('task_started', { task_id: 'bash_m', tool_use_id: 'toolu_m', description: 'Wait long', is_backgrounded: false, task_type: 'local_bash' }),
+          step('task_updated', { task_id: 'bash_m', patch: { is_backgrounded: true } }),
+          { text: 'Waiting.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('wait'), 'c1');
+    await turnEnd(events);
+    expect(changes(events).map((tasks) => tasks.map((t) => [t.id, t.status]))).toEqual([[['toolu_m', 'running']]]);
+    expect(taskItems(events)).toEqual([]);
+    // A finishing background task is still reported in the chat (in the turn it wakes).
+    await fake.last.engineTurn([{ text: 'It finished.' }], { task_id: 'bash_m', tool_use_id: 'toolu_m', status: 'completed', summary: 'Wait long' });
+    await until(() => (taskItems(events).length > 0 ? true : undefined), 'the background task item');
+    expect(brief(events)).toEqual([]);
+  });
+
+  it('TaskStop: task_updated killed, then task_notification stopped and an empty live set, ends it cancelled', async () => {
+    const { fake, adapter, events, cwd } = rig({
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_s', name: 'Bash', input: { command: 'find /', description: 'Search everything', timeout: 3000 } }]),
+          step('background_tasks_changed', { tasks: [{ task_id: 'bash_s', task_type: 'local_bash', description: 'Search everything' }] }),
+          step('task_started', { task_id: 'bash_s', tool_use_id: 'toolu_s', description: 'Search everything', is_backgrounded: true, task_type: 'local_bash' }),
+          result('toolu_s', { ...output, backgroundTaskId: 'bash_s', timedOutAfterMs: 3000 }, 'moved to the background'),
+          { text: 'Searching.' },
+        ],
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_stop', name: 'TaskStop', input: { task_id: 'bash_s' } }]),
+          step('task_updated', { task_id: 'bash_s', patch: { status: 'killed', end_time: Date.now() } }),
+          step('task_notification', { task_id: 'bash_s', tool_use_id: 'toolu_s', status: 'stopped', output_file: '/tmp/x', summary: 'Search everything' }),
+          step('background_tasks_changed', { tasks: [] }),
+          result('toolu_stop', { message: 'Successfully stopped task: bash_s', task_id: 'bash_s', task_type: 'local_bash' }),
+          { text: 'Stopped.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('search'), 'c1');
+    await turnEnd(events);
+    // Named by its launch from the first message on: the live set came before task_started.
+    expect(changes(events).map((tasks) => tasks.map((t) => [t.id, t.title, t.status]))).toEqual([[['toolu_s', 'Search everything', 'running']]]);
+    const from = events.length;
+    await adapter.turnStart(text('stop it'), 'c2');
+    await turnEnd(events, from);
+    expect(changes(events.slice(from)).map((tasks) => tasks.map((t) => [t.id, t.status]))).toEqual([[['toolu_s', 'cancelled']]]);
+  });
+
+  it('background_tasks_changed is authoritative: a running task it no longer lists ends cancelled; a later notification corrects the status', async () => {
+    const { fake, adapter, events, cwd } = rig({
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_a', name: 'Agent', input: { description: 'Review the parser', prompt: 'x', run_in_background: true } }]),
+          step('task_started', { task_id: 'agent_a', tool_use_id: 'toolu_a', description: 'Review the parser', is_backgrounded: true, task_type: 'local_agent' }),
+          result('toolu_a', { status: 'async_launched', agentId: 'agent_a' }),
+          assistant([{ type: 'tool_use', id: 'toolu_b', name: 'Agent', input: { description: 'Check the docs', prompt: 'y', run_in_background: true } }]),
+          step('task_started', { task_id: 'agent_b', tool_use_id: 'toolu_b', description: 'Check the docs', is_backgrounded: true, task_type: 'local_agent' }),
+          result('toolu_b', { status: 'async_launched', agentId: 'agent_b' }),
+          { text: 'Launched two.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    expect(brief(events)).toEqual([
+      ['toolu_a', 'running'],
+      ['toolu_b', 'running'],
+    ]);
+    // The engine's level signal drops both without any bookend (a missed notification).
+    fake.last.send(system('background_tasks_changed', { tasks: [{ task_id: 'agent_b', task_type: 'local_agent', description: 'Check the docs' }] }));
+    await until(() => (brief(events).length === 2 && brief(events)[0]![0] === 'toolu_b' ? true : undefined), 'toolu_a ended');
+    expect(brief(events)).toEqual([
+      ['toolu_b', 'running'],
+      ['toolu_a', 'cancelled'],
+    ]);
+    fake.last.send(system('background_tasks_changed', { tasks: [] }));
+    await until(() => (brief(events).every((t) => t[1] !== 'running') ? true : undefined), 'toolu_b ended');
+    // Its notification arrives late: it says finished, so it is listed finished.
+    fake.last.send(system('task_notification', { task_id: 'agent_b', tool_use_id: 'toolu_b', status: 'completed', output_file: '', summary: 'done' }));
+    await until(() => (brief(events).some((t) => t[1] === 'finished') ? true : undefined), 'the correction');
+    expect(brief(events)).toEqual([
+      ['toolu_a', 'cancelled'],
+      ['toolu_b', 'finished'],
+    ]);
+    // A late live set that still names an ended task does not bring it back.
+    const count = changes(events).length;
+    fake.last.send(system('background_tasks_changed', { tasks: [{ task_id: 'agent_b', task_type: 'local_agent', description: 'Check the docs' }] }));
+    fake.last.send(system('task_progress', { task_id: 'agent_b', tool_use_id: 'toolu_b', description: 'Running Read', usage: {} }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(changes(events)).toHaveLength(count);
+  });
+
+  it('a task only the live set names is listed; its task_started gives it the tool_use id; subagent and ambient tasks are not listed', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[{ text: 'Idle.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('hi'), 'c1');
+    await turnEnd(events);
+    fake.last.send(
+      system('background_tasks_changed', {
+        tasks: [
+          { task_id: 'mon_1', task_type: 'monitor', description: '  Watch   the log ' },
+          { task_id: 'sub_1', task_type: 'local_bash', description: 'inner', parent_task_id: 'agent_x' },
+          { task_id: 'amb_1', task_type: 'monitor', description: 'housekeeping', ambient: true },
+        ],
+      }),
+    );
+    await until(() => (latest(events).length > 0 ? true : undefined), 'the listed task');
+    expect(latest(events)).toEqual([{ id: 'mon_1', title: 'Watch the log', status: 'running', startedAt: expect.any(Number) }]);
+    fake.last.send(system('task_started', { task_id: 'mon_1', tool_use_id: 'toolu_mon', description: 'Watch the log', is_backgrounded: true }));
+    await until(() => (latest(events)[0]?.id === 'toolu_mon' ? true : undefined), 'the tool_use id');
+    // task_started of a subagent's task or a hidden one adds nothing; a repeat changes nothing.
+    const count = changes(events).length;
+    fake.last.send(system('task_started', { task_id: 'sub_2', tool_use_id: 'toolu_sub', description: 'x', is_backgrounded: true, parent_task_id: 'agent_x' }));
+    fake.last.send(system('task_started', { task_id: 'amb_2', description: 'y', is_backgrounded: true, skip_transcript: true }));
+    fake.last.send(system('task_started', { task_id: 'mon_1', tool_use_id: 'toolu_mon', description: 'Watch the log', is_backgrounded: true }));
+    fake.last.send(system('task_updated', { task_id: 'nobody', patch: { is_backgrounded: true } }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(changes(events)).toHaveLength(count);
+    // task_updated with a final status ends it, without waiting for the notification.
+    fake.last.send(system('task_updated', { task_id: 'mon_1', patch: { status: 'failed', error: 'boom' } }));
+    await until(() => (brief(events)[0]?.[1] === 'failed' ? true : undefined), 'the end');
+    expect(brief(events)).toEqual([['toolu_mon', 'failed']]);
+  });
+
+  it('kill(): running tasks are reported cancelled before the adapter goes silent', async () => {
+    const { adapter, events, cwd } = rig({
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_a', name: 'Agent', input: { description: 'Review the parser', prompt: 'x', run_in_background: true } }]),
+          step('task_started', { task_id: 'agent_a', tool_use_id: 'toolu_a', description: 'Review the parser', is_backgrounded: true }),
+          result('toolu_a', { status: 'async_launched', agentId: 'agent_a' }),
+          { text: 'Launched.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    expect(brief(events)).toEqual([['toolu_a', 'running']]);
+    await adapter.kill();
+    expect(latest(events)).toEqual([expect.objectContaining({ id: 'toolu_a', status: 'cancelled', endedAt: expect.any(Number) })]);
+    expect(events.at(-1)!.method).toBe('background/changed');
+    // A second kill reports nothing more.
+    const count = events.length;
+    await adapter.kill();
+    expect(events).toHaveLength(count);
+  });
+
+  it('the Brainstorm-BROCODE turn replayed: its one background task is listed and ends cancelled; the five foreground tasks are not listed; nothing is left running', async () => {
+    const { adapter, events, cwd } = rig({ turns: [BRAINSTORM_TURN] }, {}, undefined);
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('Use mattcopock skills to brainstorm'), 'c1');
+    await turnEnd(events);
+    const listed = new Set(changes(events).flatMap((tasks) => tasks.map((t) => t.id)));
+    expect([...listed]).toEqual([BRAINSTORM_BACKGROUND.toolUseId]);
+    expect(changes(events).map((tasks) => tasks.map((t) => [t.id, t.title, t.status]))).toEqual([
+      [[BRAINSTORM_BACKGROUND.toolUseId, BRAINSTORM_BACKGROUND.title, 'running']],
+      [[BRAINSTORM_BACKGROUND.toolUseId, BRAINSTORM_BACKGROUND.title, 'cancelled']],
+    ]);
+    // The chat shows the stopped background task once, and no "background task" items for the foreground calls.
+    expect(taskItems(events).map((item) => (item as unknown as { arguments: { taskId: string } }).arguments.taskId)).toEqual([BRAINSTORM_BACKGROUND.taskId]);
+    expect(BRAINSTORM_FOREGROUND).toHaveLength(5);
+    for (const task of BRAINSTORM_FOREGROUND) expect(listed.has(task.toolUseId) || listed.has(task.taskId)).toBe(false);
   });
 });
 

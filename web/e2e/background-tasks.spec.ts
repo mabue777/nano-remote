@@ -3,7 +3,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 // Background tasks on the phone (spec 5.1 Session.backgroundTasks, userMessage `queued`) against the fake
 // host (test/e2e-server.ts) at 390 x 844: the home row's "N background tasks" badge, the session's strip
 // (title, elapsed time, status; a tap shows the latest activity), a message that waits behind the tasks
-// ("Queued: waiting for N background tasks to finish"), and Stop asking first because it cancels them.
+// ("Queued: waiting for N background tasks to finish"), Stop asking first because it cancels them, an
+// ended task leaving the strip 60 s after it ended (fake clock), and a stopped session showing none running.
 // With BG_TASKS_OUT set, the last test also writes light and dark screenshots there.
 
 const SESSION = 'ses_fake_1';
@@ -30,7 +31,7 @@ async function seedTasks(request: APIRequestContext): Promise<void> {
       tasks: [
         { id: 'toolu_a', title: 'Review the parser for edge cases', status: 'running', startedAt: now - 125, lastActivity: 'Running Read src/parser.ts' },
         { id: 'toolu_b', title: 'Check the docs for broken links', status: 'running', startedAt: now - 40 },
-        { id: 'toolu_c', title: 'npm test', status: 'finished', startedAt: now - 300, endedAt: now - 250 },
+        { id: 'toolu_c', title: 'npm test', status: 'finished', startedAt: now - 70, endedAt: now - 20 },
       ],
     },
   });
@@ -124,6 +125,49 @@ test('Stop asks first while tasks run: "Keep running" stops nothing, "Stop anywa
   const strip = page.getByRole('region', { name: /Background tasks/ });
   await expect(strip.getByRole('heading')).toHaveText('Background tasks');
   await expect(strip.getByText('Cancelled')).toHaveCount(2);
+});
+
+test('an ended task leaves the strip 60 s after it ended, during the same turn; a running one stays (fake clock)', async ({ page, request }) => {
+  const now = Math.floor(Date.now() / 1000);
+  await page.clock.install({ time: now * 1000 });
+  await request.post('/test/background', {
+    data: {
+      sessionId: SESSION,
+      tasks: [
+        { id: 'toolu_run', title: 'Watch the build', status: 'running', startedAt: now - 10 },
+        { id: 'toolu_stop', title: 'Search everything', status: 'cancelled', startedAt: now - 30, endedAt: now - 5 },
+      ],
+    },
+  });
+  await pair(page, request);
+  await openSession(page);
+  const strip = page.getByRole('region', { name: /Background tasks/ });
+  const rows = strip.getByRole('listitem');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1)).toContainText('Search everything');
+  await expect(rows.nth(1)).toContainText('Cancelled');
+  // 45 s after the stop it is still shown; past 60 s it is gone without a new turn or a reload.
+  await page.clock.fastForward(40_000);
+  await expect(rows).toHaveCount(2);
+  await page.clock.fastForward(25_000);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toContainText('Watch the build');
+  await expect(rows.nth(0)).toContainText('Running');
+});
+
+test('a session whose agent stopped never shows a task running: "Ended" in the strip, no home badge', async ({ page, request }) => {
+  await seedTasks(request);
+  await request.post('/test/status', { data: { sessionId: SESSION, status: 'error' } });
+  await pair(page, request);
+  const row = page.getByRole('list', { name: 'Sessions' }).getByRole('link', { name: new RegExp(TITLE) });
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/background task/)).toHaveCount(0);
+  await openSession(page);
+  const strip = page.getByRole('region', { name: /Background tasks/ });
+  await expect(strip.getByRole('heading')).toHaveText('Background tasks');
+  await expect(strip.getByText('Ended')).toHaveCount(2);
+  await expect(strip.getByText('Running', { exact: true })).toHaveCount(0);
+  await expect(strip.getByText('Finished')).toHaveCount(1);
 });
 
 test('Stop without running tasks stops at once', async ({ page, request }) => {

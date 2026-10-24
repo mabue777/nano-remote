@@ -184,7 +184,8 @@ export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<stri
     updatedAt: summary.updatedAt,
     updated: formatAgo(summary.updatedAt, nowMs),
     finishedWhileAway: false,
-    backgroundTasks: (summary.backgroundTasks ?? []).filter((task) => task.status === 'running').length,
+    // Running ones only; none while the agent is stopped (they cannot still run).
+    backgroundTasks: summary.status === 'error' ? 0 : (summary.backgroundTasks ?? []).filter((task) => task.status === 'running').length,
   };
   if (modelId !== undefined && modelId !== '') row.model = modelLabel(modelId);
   return row;

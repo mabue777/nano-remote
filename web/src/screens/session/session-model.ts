@@ -19,7 +19,10 @@
 // Without capabilities (an older host) the rules above apply unchanged.
 //
 // Background tasks (spec 5.1 Session.backgroundTasks): the strip lists the agent's helpers with their
-// elapsed time and status, a tap shows the latest activity line. A turn whose message the host marks
+// elapsed time and status, a tap shows the latest activity line. An ended task (finished, cancelled,
+// failed) leaves the strip TASK_LINGER_S after it ended, or with the next turn when the host drops it
+// first. In a session whose agent stopped (status `error`) nothing can still run: a task the list still
+// says is running shows "Ended", muted, and does not count as running. A turn whose message the host marks
 // `queued` says it waits for the running tasks instead of "Working…". Stop asks first while tasks run,
 // because stopping the turn also cancels them (Claude Code ends its background subagents on interrupt).
 import type { RequestError } from '../../stream/client';
@@ -88,12 +91,16 @@ export interface TurnRow {
   queued?: boolean;
 }
 
+/** How long an ended background task stays in the strip after it ended, in seconds. */
+export const TASK_LINGER_S = 60;
+
 /** One background task of the session, for the strip. */
 export interface BackgroundTaskRow {
   id: string;
   title: string;
-  status: BackgroundTask['status'];
-  /** "Running", "Finished", "Cancelled", "Failed". */
+  /** `ended`: listed as running in a session whose agent stopped. */
+  status: BackgroundTask['status'] | 'ended';
+  /** "Running", "Finished", "Cancelled", "Failed", "Ended". */
   state: string;
   tone: Tone;
   /** Time since it started, or how long it ran: "45 s", "2 min 5 s", "1 h 3 min". */
@@ -111,6 +118,9 @@ const TASK_STATE: Record<BackgroundTask['status'], { state: string; tone: Tone }
   cancelled: { state: 'Cancelled', tone: 'muted' },
   failed: { state: 'Failed', tone: 'error' },
 };
+
+/** A task listed as running in a session whose agent stopped: it cannot still run. */
+const STALE_STATE = { state: 'Ended', tone: 'muted' as Tone };
 
 /** Whole seconds as "45 s", "2 min 5 s", "1 h 3 min". */
 export function elapsedText(seconds: number): string {
@@ -576,22 +586,30 @@ export class SessionModel extends Model {
     return this.pending.total > 0;
   }
 
-  /** The session's background tasks (spec 5.1), running first as the host lists them; none once closed. */
+  /**
+   * The session's background tasks (spec 5.1), running first as the host lists them; none once closed.
+   * Ended ones go TASK_LINGER_S after they ended; in a session whose agent stopped none shows running.
+   */
   get backgroundTasks(): BackgroundTaskRow[] {
     if (this.closed) return [];
     const nowSeconds = Math.floor(this.now() / 1000);
-    return (this.taskList ?? []).map((task) => {
-      const end = task.endedAt ?? (task.status === 'running' ? nowSeconds : task.startedAt);
+    const stopped = this.statusInputs.status === 'error';
+    return (this.taskList ?? []).flatMap((task) => {
+      const running = task.status === 'running' || !(task.status in TASK_STATE);
+      if (!running && nowSeconds - (task.endedAt ?? task.startedAt) >= TASK_LINGER_S) return [];
+      const stale = running && stopped;
+      const end = task.endedAt ?? (running ? nowSeconds : task.startedAt);
       const row: BackgroundTaskRow = {
         id: task.id,
         title: task.title.trim() === '' ? 'Background task' : task.title,
-        status: task.status,
-        ...(TASK_STATE[task.status] ?? TASK_STATE.running),
-        elapsed: elapsedText(end - task.startedAt),
+        status: stale ? 'ended' : running ? 'running' : task.status,
+        ...(stale ? STALE_STATE : running ? TASK_STATE.running : TASK_STATE[task.status]),
+        // How long a stale task ran is unknown.
+        elapsed: stale ? '' : elapsedText(end - task.startedAt),
         expanded: this.openTasks.has(task.id),
       };
       if (task.lastActivity !== undefined && task.lastActivity !== '') row.activity = task.lastActivity;
-      return row;
+      return [row];
     });
   }
 
@@ -611,9 +629,9 @@ export class SessionModel extends Model {
     this.changed();
   }
 
-  /** Re-renders the elapsed times (the screen calls it every second while tasks run). */
+  /** Re-renders the strip: elapsed times count up, ended tasks leave (the screen calls it every second while it shows). */
   tick(): void {
-    if (this.runningTasks > 0) this.changed();
+    if (this.backgroundTasks.length > 0) this.changed();
   }
 
   get turns(): TurnRow[] {

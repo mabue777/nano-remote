@@ -272,6 +272,9 @@ export class Journal {
       eventsAfter: p(
         'SELECT seq, method, params FROM events WHERE session_id = ? AND seq > ? AND seq <= ? ORDER BY seq LIMIT ?',
       ),
+      lastEvent: p(
+        'SELECT seq, method, params FROM events WHERE session_id = ? AND method = ? ORDER BY seq DESC LIMIT 1',
+      ),
       session: p('SELECT * FROM sessions WHERE session_id = ?'),
       setSessionInfo: p(
         'UPDATE sessions SET agent_id = ?, title = ?, cwd = ?, settings = ? WHERE session_id = ?',
@@ -487,6 +490,12 @@ export class Journal {
     const events = this.sql.eventsAfter!.all(sessionId, cursor, head, max).map((r) => this.toEvent(sessionId, r));
     const last = events.length > 0 ? events[events.length - 1]!.params.seq : cursor;
     return { events, cursor: last, complete: last === head };
+  }
+
+  /** The newest event of `method` the Journal still holds for the session, if any. */
+  lastEvent(sessionId: string, method: JournalEvent['method']): JournalEvent | undefined {
+    const row = this.sql.lastEvent!.get(sessionId, method);
+    return row ? this.toEvent(sessionId, row) : undefined;
   }
 
   private toEvent(sessionId: string, row: Row): JournalEvent {

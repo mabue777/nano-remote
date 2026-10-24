@@ -10,8 +10,11 @@
 // Background tasks (spec 5.1): for an agent with `capabilities.backgroundTasks` the adapter's
 // `background/changed` list is held in memory and published as Session.backgroundTasks through
 // `session/changed` (and in every summary the host hands out). It is live state, not history: after a
-// host restart no engine runs, so no session reports any. A user message journaled while tasks run is
-// marked `queued` until the adapter reports `input/taken` (or its turn ends).
+// host restart no engine runs, so no session reports any, and the start journals the tasks the last
+// list still showed running as `cancelled` (clients replaying the Journal would show them running
+// forever otherwise). A host shutdown kills the adapters while still listening, so the end they report
+// is journaled too. A user message journaled while tasks run is marked `queued` until the adapter
+// reports `input/taken` (or its turn ends).
 import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -346,14 +349,19 @@ export class SessionManager {
     await this.attachments?.deleteSession(sessionId);
   }
 
-  /** Host shutdown: stops every engine without journaling; the next start recovers running turns. */
+  /**
+   * Host shutdown: stops every engine; the next start recovers running turns. The adapters stay attached
+   * while they are killed, so the background tasks they end (spec 5.1) are journaled.
+   */
   async close(): Promise<void> {
-    const adapters: Adapter[] = [];
-    for (const live of this.live.values()) {
-      if (live.adapter) adapters.push(live.adapter);
-      this.detach(live);
-    }
-    await Promise.all(adapters.map((adapter) => this.kill(adapter)));
+    const lives = [...this.live.values()];
+    await Promise.all(
+      lives.map(async (live) => {
+        const adapter = live.adapter;
+        if (adapter) await this.kill(adapter);
+      }),
+    );
+    for (const live of lives) this.detach(live);
   }
 
   // ---- turns -----------------------------------------------------------------------------------
@@ -901,6 +909,7 @@ export class SessionManager {
    */
   private recover(): void {
     for (const summary of this.everySession()) {
+      this.recoverTasks(summary.sessionId);
       const busy = summary.status === 'running' || summary.status === 'waiting_approval' || summary.status === 'waiting_input';
       if (!busy && summary.pending.approvals + summary.pending.inputs === 0) continue;
       const sessionId = summary.sessionId;
@@ -924,7 +933,28 @@ export class SessionManager {
       if (busy) this.setStatus(sessionId, 'idle');
     }
   }
+
+  /**
+   * After a restart the engines and their helpers are gone: when the session's last journaled list still
+   * shows running tasks, a session/changed lists them `cancelled` (spec 5.1). Summaries list none.
+   */
+  private recoverTasks(sessionId: string): void {
+    if (this.store.get(sessionId).deleted) return;
+    const last = this.journal.lastEvent(sessionId, 'session/changed');
+    const tasks = last?.method === 'session/changed' ? (last.params.session.backgroundTasks ?? []) : [];
+    if (!tasks.some((task) => task.status === 'running')) return;
+    const now = this.now();
+    const ended = tasks.map((task) => (task.status === 'running' ? { ...task, status: 'cancelled' as const, endedAt: Math.max(task.startedAt, now) } : { ...task }));
+    const session: Session = {
+      ...this.journal.session(sessionId)!,
+      backgroundTasks: ended,
+      updatedAt: now,
+      lastSeq: this.journal.head(sessionId) + 1,
+    };
+    this.append(sessionId, { method: 'session/changed', params: { session } });
+  }
 }
+
 
 /**
  * `settings` without an `approvalMode` the agent does not honour (spec 5.1): the session then neither

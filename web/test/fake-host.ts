@@ -963,6 +963,13 @@ export class FakeHost {
     this.broadcast('session/updated', { summary: { ...session.summary } });
   }
 
+  /** The session's status changes by itself (an agent that stopped: `error`): journaled, list row updated. */
+  setStatus(sessionId: string, status: string): void {
+    const session = this.session(sessionId);
+    this.emit(sessionId, 'status/changed', { status });
+    this.broadcast('session/updated', { summary: { ...session.summary } });
+  }
+
   private runningTasks(session: FakeSession): number {
     return ((session.summary.backgroundTasks ?? []) as Json[]).filter((t) => t.status === 'running').length;
   }

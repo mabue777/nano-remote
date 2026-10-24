@@ -40,27 +40,31 @@
 // - the watchdog: from a user message handed to the engine until the turn's `result`, requestTimeoutMs of
 //   silence (no engine message of any kind) ends the run, unless the silence is expected: a tool is in
 //   progress (long tools are quiet for minutes) or an approval or question waits on the user. While a
-//   background task the engine launched (an Agent/Task call, a run_in_background Bash, an armed Monitor)
-//   has not reported in, the limit is backgroundQuietMs instead (default 10 minutes): such a task can keep
-//   the engine busy for a while, but a session with a long-lived Monitor must not lose hang detection.
+//   background task the engine runs has not reported in, the limit is backgroundQuietMs instead (default
+//   10 minutes): such a task can keep the engine busy for a while, but a session with a long-lived
+//   Monitor must not lose hang detection.
 //   A live repro (2026-10-24, SDK 0.3.308, Claude Code 2.1.308) answered a message sent while background
 //   subagents ran and the main thread was idle in 1-2 s, and folded one sent during a turn in at the next
 //   tool boundary; the earlier belief that Claude Code holds such a message silently did not reproduce.
 //   Before the first system/init of a query, the init timeout owns the wait instead;
 // - interrupt(): Query.interrupt() gets requestTimeoutMs to answer; without an answer the turn ends
 //   interrupted and the run ends, so Stop always settles.
-// Background tasks are tracked by the launching tool_use id and the task id its tool result names (the
-// Agent tool's agentId, the Bash tool's backgroundTaskId, the Monitor tool's taskId);
-// system/task_notification carries both.
 //
-// The same set is what the phone sees (capabilities.backgroundTasks, `background/changed`): a task is
-// published once its tool result confirms the launch, titled by the tool input's description, with the
-// latest system/task_progress line of the same tool_use id as its activity; system/task_notification ends
-// it (completed: finished, failed: failed, stopped: cancelled). Query.interrupt() stops the background
-// subagents too (live run below), and their notifications then say stopped. A run that ends with tasks
-// still running ends them as failed, or as cancelled when Stop ended it. Ended tasks stay listed until the
-// next turn starts. Every user message carries its clientMessageId as the SDK uuid; the first top-level
-// reply stamped with it as user_message_uuid is `input/taken`.
+// Background tasks (capabilities.backgroundTasks, `background/changed`; the hang watchdog reads the same
+// set) come from the engine's own task events: system/task_started with is_backgrounded true adds a task
+// (id: its tool_use id, title: the launching tool input's description); one registered in the foreground
+// (is_backgrounded false) joins once task_updated {is_backgrounded: true} or the live set says it moved;
+// task_updated with a final status (completed, failed, killed) or system/task_notification (completed:
+// finished, failed: failed, stopped: cancelled) ends it; system/background_tasks_changed, the engine's
+// full live set, adds a task it lists and ends a running one it no longer lists (cancelled, corrected by a
+// notification that comes later). Pairing a launching call with its result (an Agent/Task call with
+// run_in_background, a Bash result naming backgroundTaskId, a Monitor's taskId) is only the fallback for
+// a task none of these announced. The latest system/task_progress line of a task is its activity.
+// Query.interrupt() stops the background subagents too (live run below), and their notifications then
+// say stopped. A run that ends reports its running tasks ended before it is cleared: cancelled on kill()
+// or when Stop ended it, failed when it was lost. Ended tasks stay listed until the next turn starts.
+// Every user message carries its clientMessageId as the SDK uuid; the first top-level reply stamped with
+// it as user_message_uuid is `input/taken`.
 //
 // SDK behaviors (0.3.308, Claude Code 2.1.x on the operator's Mac):
 // Verified by the host-drive spike: system/init (carrying session_id) arrives only after the first user
@@ -96,6 +100,16 @@
 //   it is folded in at the next tool boundary (4.3 s in the repro), so a long foreground tool holds it;
 // - Query.interrupt() with the main thread idle answered in 23 ms and killed the background subagent
 //   (task_updated status killed, task_notification status stopped); the next message ran normally;
+// Verified by raw query() repros of Bash calls (2026-10-24, same versions, haiku; the cases of the
+// "Brainstorm-BROCODE" session, testing/brainstorm-fixture.ts):
+// - a Bash call without run_in_background that runs past about 3 s: task_started (is_backgrounded false,
+//   task_type local_bash) and, when it finishes in the foreground, task_notification completed just
+//   before its ordinary tool result; no background_tasks_changed. Such a call is no background task, and
+//   its notification is not shown as one;
+// - one that runs past its timeout: background_tasks_changed listing it, task_updated {is_backgrounded:
+//   true} (or, timing out before the 3 s registration, task_started is_backgrounded true), then the tool
+//   result naming backgroundTaskId;
+// - TaskStop of it: task_updated {status: killed}, task_notification stopped, background_tasks_changed [];
 // - priority 'now' on a user message aborts a running main turn (result success, empty) and answers the
 //   message at once; the adapter does not use it.
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -252,8 +266,14 @@ interface Run {
   watchdog: NodeJS.Timeout | undefined;
   /** Agent/Task/Bash/Monitor tool calls waiting for their result, by tool_use id. */
   launching: Map<string, Launch>;
-  /** Background tasks launched and not reported settled, by launching tool_use id. */
-  background: Map<string, RunningTask>;
+  /** Background tasks running, in the order they joined. */
+  background: RunningTask[];
+  /** Tasks the engine registered in the foreground (task_started is_backgrounded false), by task id. */
+  foreground: Map<string, RunningTask>;
+  /** Task ids and tool_use ids of the tasks that ended in this run: never listed again. */
+  settled: Set<string>;
+  /** Tasks ended because the live set no longer listed them, by task id: a later notification corrects them. */
+  reconciled: Map<string, BackgroundTask>;
 }
 
 /** A tool call that may launch a background task, until its result says. */
@@ -268,6 +288,8 @@ interface Launch {
 interface RunningTask {
   /** The engine's task id ('' while unknown). */
   taskId: string;
+  /** The launching tool_use id ('' while unknown): the protocol id, else the task id. */
+  toolUseId: string;
   title: string;
   startedAt: number;
   lastActivity?: string;
@@ -438,6 +460,8 @@ export class ClaudeAdapter implements Adapter {
   }
 
   async kill(): Promise<void> {
+    // Its background tasks end with it, reported while the host still listens (spec 5.1).
+    if (!this.killed && this.run) this.endAll(this.run, 'cancelled');
     this.killed = true;
     this.listeners.clear();
     await this.opening?.catch(() => {});
@@ -505,7 +529,10 @@ export class ClaudeAdapter implements Adapter {
       watching: false,
       watchdog: undefined,
       launching: new Map(),
-      background: new Map(),
+      background: [],
+      foreground: new Map(),
+      settled: new Set(),
+      reconciled: new Map(),
     };
     const { permissionMode } = sessionPolicy(this.settings);
     const canUseTool: CanUseTool = (toolName, input, context) =>
@@ -602,13 +629,13 @@ export class ClaudeAdapter implements Adapter {
    */
   private lost(run: Run, reason: string, tasks: 'failed' | 'cancelled' = 'failed'): void {
     if (run.gone !== undefined) return;
-    const running = [...run.background.entries()];
+    const current = this.run === run && !this.killed;
+    // Reported before the run is cleared, so the host journals the end.
+    if (current) this.endAll(run, tasks);
     void this.end(run, reason);
-    if (this.run !== run || this.killed) return;
+    if (!current) return;
     this.run = undefined;
-    for (const [id, task] of running) this.ended.push(endedTask(id, task, tasks));
     this.untaken.clear();
-    this.publish(undefined);
     this.denyAll(CANCEL_MESSAGE);
     this.turn = undefined;
     this.emit({ method: 'status/changed', params: { status: 'error' } });
@@ -620,7 +647,8 @@ export class ClaudeAdapter implements Adapter {
     run.gone ??= reason;
     clearTimeout(run.watchdog);
     run.watchdog = undefined;
-    run.background.clear();
+    run.background.length = 0;
+    run.foreground.clear();
     for (const waiter of run.initWaiters.splice(0)) waiter.reject(unavailable(run.gone));
     run.inbox.close();
     try {
@@ -644,6 +672,9 @@ export class ClaudeAdapter implements Adapter {
   private onMessage(run: Run, message: Json): void {
     // Any output shows the engine alive; a `result` ends the wait for the user message.
     if (message.type === 'result') run.watching = false;
+    // A Bash call that runs a few seconds is registered as a task without leaving the foreground; its
+    // notification is no background task's report (the command item already shows the result).
+    const foregroundOnly = message.type === 'system' && message.subtype === 'task_notification' && run.foreground.has(str(message.task_id));
     // After trackBackground: the silence limit depends on the background tasks this message leaves.
     this.trackBackground(run, message);
     this.touch(run);
@@ -651,7 +682,7 @@ export class ClaudeAdapter implements Adapter {
     switch (message.type) {
       case 'system':
         if (message.subtype === 'init') this.onInit(run, message);
-        else if (message.subtype === 'task_notification') this.onTaskNotification(message);
+        else if (message.subtype === 'task_notification' && !foregroundOnly) this.onTaskNotification(message);
         return;
       case 'stream_event':
         if (message.parent_tool_use_id == null) this.onStreamEvent(obj(message.event));
@@ -700,7 +731,7 @@ export class ClaudeAdapter implements Adapter {
    * nothing in the foreground is pending (a foreground tool or a request re-arms at requestTimeoutMs).
    */
   private silenceLimit(run: Run): number {
-    if (this.quietReason() === undefined && run.background.size > 0) return this.config.backgroundQuietMs;
+    if (this.quietReason() === undefined && run.background.length > 0) return this.config.backgroundQuietMs;
     return this.config.requestTimeoutMs;
   }
 
@@ -714,7 +745,7 @@ export class ClaudeAdapter implements Adapter {
       this.touch(run);
       return;
     }
-    const tasks = run.background.size > 0 ? ` while ${run.background.size} background task(s) run` : '';
+    const tasks = run.background.length > 0 ? ` while ${run.background.length} background task(s) run` : '';
     const reason = `${HUNG}: no output for ${seconds(limit)} after a message${tasks}`;
     this.log(`claude ${reason}`);
     this.lost(run, reason);
@@ -728,9 +759,13 @@ export class ClaudeAdapter implements Adapter {
   }
 
   /**
-   * Keeps run.background: an Agent/Task call or a Bash call whose result says it went to the background
-   * (or whose input asked for it), or a Monitor call, adds a task; its system/task_notification ends it;
-   * system/task_progress of its tool_use id updates its activity. Every change is published.
+   * Keeps run.background from the engine's own task events (SDK 0.3.308): system/task_started with
+   * is_backgrounded adds a task (one started in the foreground joins once task_updated or the live set
+   * says it moved to the background); task_updated with a final status or task_notification ends it;
+   * system/background_tasks_changed, the engine's full live set, adds what it lists and ends what it no
+   * longer lists. Launch pairing (an Agent/Task call with run_in_background or a Bash or Monitor call whose
+   * result says it went to the background) is the fallback for a task the engine announced in none of
+   * these. system/task_progress of a task updates its activity. Every change is published.
    */
   private trackBackground(run: Run, message: Json): void {
     if (message.parent_tool_use_id != null) return;
@@ -743,53 +778,176 @@ export class ClaudeAdapter implements Adapter {
         run.launching.set(str(block.id), { asked: ALWAYS_BACKGROUND.has(name) || input.run_in_background === true, title: taskTitle(name, input), startedAt: nowSeconds() });
       }
     } else if (message.type === 'user') {
-      const results = list(obj(message.message).content).map(obj).filter((b) => b.type === 'tool_result');
-      const output = obj(message.tool_use_result);
-      let changed = false;
-      for (const block of results) {
-        const id = str(block.tool_use_id);
-        const launch = run.launching.get(id);
-        if (launch === undefined) continue;
-        run.launching.delete(id);
-        // tool_use_result belongs to the message's tool result; with several, only the input tells.
-        const taskId = results.length === 1 ? str(output.agentId) || str(output.backgroundTaskId) || str(output.taskId) : '';
-        const launched = output.status === 'async_launched' || str(output.backgroundTaskId) !== '';
-        if ((launch.asked || (results.length === 1 && launched)) && block.is_error !== true) {
-          run.background.set(id, { taskId, title: launch.title, startedAt: launch.startedAt });
-          changed = true;
+      this.pairLaunches(run, message);
+    } else if (message.type === 'system') {
+      switch (message.subtype) {
+        case 'task_started':
+          return this.onTaskStarted(run, message);
+        case 'task_updated':
+          return this.onTaskUpdated(run, message);
+        case 'task_notification':
+          return this.settle(run, str(message.task_id), str(message.tool_use_id), TASK_END[str(message.status)] ?? 'finished');
+        case 'background_tasks_changed':
+          return this.onLiveSet(run, list(message.tasks).map(obj));
+        case 'task_progress': {
+          const task = this.taskOf(run, str(message.task_id), str(message.tool_use_id));
+          const activity = oneLine(str(message.summary) || str(message.description));
+          if (task === undefined || activity === '' || task.lastActivity === activity) return;
+          task.lastActivity = activity;
+          this.publish(run);
+          return;
         }
+        default:
+          return;
       }
-      if (changed) this.publish(run);
-    } else if (message.type === 'system' && message.subtype === 'task_progress') {
-      const task = this.taskOf(run, message);
-      const activity = oneLine(str(message.summary) || str(message.description));
-      if (task === undefined || activity === '' || task[1].lastActivity === activity) return;
-      task[1].lastActivity = activity;
-      this.publish(run);
-    } else if (message.type === 'system' && message.subtype === 'task_notification') {
-      const task = this.taskOf(run, message);
-      if (task === undefined) return;
-      run.background.delete(task[0]);
-      this.ended.push(endedTask(task[0], task[1], TASK_END[str(message.status)] ?? 'finished'));
-      this.publish(run);
     }
   }
 
-  /** The background task a task_* message is about: by its tool_use id, else by its task id. */
-  private taskOf(run: Run, message: Json): [string, RunningTask] | undefined {
-    const toolUseId = str(message.tool_use_id);
-    const byTool = toolUseId === '' ? undefined : run.background.get(toolUseId);
-    if (byTool !== undefined) return [toolUseId, byTool];
+  /** The fallback: a launching call's result confirms a background task the engine did not announce. */
+  private pairLaunches(run: Run, message: Json): void {
+    const results = list(obj(message.message).content).map(obj).filter((b) => b.type === 'tool_result');
+    const output = obj(message.tool_use_result);
+    let changed = false;
+    for (const block of results) {
+      const id = str(block.tool_use_id);
+      const launch = run.launching.get(id);
+      if (launch === undefined) continue;
+      run.launching.delete(id);
+      // tool_use_result belongs to the message's tool result; with several, only the input tells.
+      const taskId = results.length === 1 ? str(output.agentId) || str(output.backgroundTaskId) || str(output.taskId) : '';
+      const launched = output.status === 'async_launched' || str(output.backgroundTaskId) !== '';
+      if (!(launch.asked || (results.length === 1 && launched)) || block.is_error === true) continue;
+      // Already listed from the engine's own events, or already ended.
+      if (run.settled.has(id) || (taskId !== '' && run.settled.has(taskId)) || this.taskOf(run, taskId, id) !== undefined) continue;
+      const registered = taskId === '' ? undefined : run.foreground.get(taskId);
+      run.foreground.delete(taskId);
+      run.background.push({ taskId, toolUseId: id, title: launch.title, startedAt: registered?.startedAt ?? launch.startedAt });
+      changed = true;
+    }
+    if (changed) this.publish(run);
+  }
+
+  /** system/task_started: a background task joins; a foreground one is remembered until it moves there. */
+  private onTaskStarted(run: Run, message: Json): void {
     const taskId = str(message.task_id);
-    if (taskId === '') return undefined;
-    for (const entry of run.background) if (entry[1].taskId === taskId) return entry;
-    return undefined;
+    const toolUseId = str(message.tool_use_id);
+    if (taskId === '' || !ownTask(message) || run.settled.has(taskId)) return;
+    const known = this.taskOf(run, taskId, toolUseId);
+    if (known !== undefined) {
+      // Listed from the live set (or the fallback) before: now it has both ids.
+      if (known.toolUseId !== '' && known.taskId !== '') return;
+      known.toolUseId ||= toolUseId;
+      known.taskId ||= taskId;
+      this.publish(run);
+      return;
+    }
+    const launch = run.launching.get(toolUseId);
+    const task: RunningTask = {
+      taskId,
+      toolUseId,
+      title: launch?.title ?? (oneLine(str(message.description)) || str(message.task_type) || 'Background task'),
+      startedAt: launch?.startedAt ?? nowSeconds(),
+    };
+    if (message.is_backgrounded !== true) {
+      run.foreground.set(taskId, task);
+      return;
+    }
+    run.background.push(task);
+    this.publish(run);
+  }
+
+  /** system/task_updated: a final status ends the task; is_backgrounded moves a foreground one to the list. */
+  private onTaskUpdated(run: Run, message: Json): void {
+    const taskId = str(message.task_id);
+    const patch = obj(message.patch);
+    const status = UPDATE_END[str(patch.status)];
+    if (status !== undefined) return this.settle(run, taskId, '', status);
+    const registered = run.foreground.get(taskId);
+    if (patch.is_backgrounded !== true || registered === undefined) return;
+    run.foreground.delete(taskId);
+    run.background.push(registered);
+    this.publish(run);
+  }
+
+  /**
+   * system/background_tasks_changed: the engine's whole live set. A task it lists joins (named by its
+   * pending launch when one call carries the same title); a running task it no longer lists has ended,
+   * as cancelled unless its notification says otherwise later.
+   */
+  private onLiveSet(run: Run, entries: Json[]): void {
+    const live = new Set(entries.map((entry) => str(entry.task_id)).filter((id) => id !== ''));
+    let changed = false;
+    for (const entry of entries) {
+      const taskId = str(entry.task_id);
+      if (taskId === '' || !ownTask(entry) || run.settled.has(taskId) || run.background.some((t) => t.taskId === taskId)) continue;
+      const registered = run.foreground.get(taskId);
+      run.foreground.delete(taskId);
+      const title = oneLine(str(entry.description));
+      const launches = [...run.launching].filter(([id, launch]) => launch.title === title && !run.background.some((t) => t.toolUseId === id));
+      const [toolUseId, launch] = launches.length === 1 ? launches[0]! : ['', undefined];
+      run.background.push(
+        registered ?? { taskId, toolUseId, title: title || str(entry.task_type) || 'Background task', startedAt: launch?.startedAt ?? nowSeconds() },
+      );
+      changed = true;
+    }
+    for (const task of [...run.background]) {
+      if (task.taskId === '' || live.has(task.taskId)) continue;
+      run.background.splice(run.background.indexOf(task), 1);
+      const ended = endedTask(task, 'cancelled');
+      this.ended.push(ended);
+      run.reconciled.set(task.taskId, ended);
+      this.markSettled(run, task);
+      changed = true;
+    }
+    if (changed) this.publish(run);
+  }
+
+  /** A task ended (task_updated, task_notification): out of the list's running part, into its ended part. */
+  private settle(run: Run, taskId: string, toolUseId: string, status: BackgroundTask['status']): void {
+    if (taskId !== '') run.foreground.delete(taskId);
+    const task = this.taskOf(run, taskId, toolUseId);
+    if (task === undefined) {
+      // Ended by the live set before its notification came: the notification's status wins.
+      const ended = run.reconciled.get(taskId);
+      run.reconciled.delete(taskId);
+      if (ended === undefined || ended.status === status) return;
+      ended.status = status;
+      this.publish(run);
+      return;
+    }
+    run.background.splice(run.background.indexOf(task), 1);
+    this.markSettled(run, task);
+    this.ended.push(endedTask(task, status));
+    this.publish(run);
+  }
+
+  /** Every running task of the run ends with `status` (the run is going away), and the list is reported. */
+  private endAll(run: Run, status: BackgroundTask['status']): void {
+    for (const task of run.background.splice(0)) {
+      this.markSettled(run, task);
+      this.ended.push(endedTask(task, status));
+    }
+    run.foreground.clear();
+    this.publish(run);
+  }
+
+  private markSettled(run: Run, task: RunningTask): void {
+    if (task.taskId !== '') run.settled.add(task.taskId);
+    if (task.toolUseId !== '') run.settled.add(task.toolUseId);
+  }
+
+  /** The running background task with this tool_use id, else with this task id. */
+  private taskOf(run: Run, taskId: string, toolUseId: string): RunningTask | undefined {
+    return (
+      (toolUseId === '' ? undefined : run.background.find((t) => t.toolUseId === toolUseId)) ??
+      (taskId === '' ? undefined : run.background.find((t) => t.taskId === taskId))
+    );
   }
 
   /** Reports the background tasks (running ones of `run`, then the ended ones) when they changed. */
   private publish(run: Run | undefined): void {
-    const running: BackgroundTask[] = [...(run?.background ?? new Map<string, RunningTask>()).entries()].map(([id, task]) => {
-      const out: BackgroundTask = { id, title: task.title, status: 'running', startedAt: task.startedAt };
+    const running: BackgroundTask[] = (run?.background ?? []).map((task) => {
+      const out: BackgroundTask = { id: taskIdOf(task), title: task.title, status: 'running', startedAt: task.startedAt };
       if (task.lastActivity !== undefined) out.lastActivity = task.lastActivity;
       return out;
     });
@@ -1033,6 +1191,14 @@ const ALWAYS_BACKGROUND = new Set(['Monitor']);
 
 /** How a task_notification status ends a task. */
 const TASK_END: Record<string, BackgroundTask['status']> = { completed: 'finished', failed: 'failed', stopped: 'cancelled' };
+/** How a task_updated patch.status ends a task. */
+const UPDATE_END: Record<string, BackgroundTask['status']> = { completed: 'finished', failed: 'failed', killed: 'cancelled' };
+
+/** A task's protocol id: its launching tool_use id, else the engine's task id. */
+const taskIdOf = (task: RunningTask): string => task.toolUseId || task.taskId;
+
+/** A task of the session's own (not a subagent's launch, not housekeeping the engine hides). */
+const ownTask = (message: Json): boolean => message.ambient !== true && message.skip_transcript !== true && str(message.parent_task_id) === '';
 
 /** A protocol clientMessageId (spec 7): a UUID, which the SDK takes as the message's uuid. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1053,8 +1219,8 @@ function taskTitle(tool: string, input: Json): string {
   return oneLine(str(input.description)) || oneLine(str(input.command)) || oneLine(str(input.prompt)) || tool;
 }
 
-function endedTask(id: string, task: RunningTask, status: BackgroundTask['status']): BackgroundTask {
-  const out: BackgroundTask = { id, title: task.title, status, startedAt: task.startedAt, endedAt: Math.max(task.startedAt, nowSeconds()) };
+function endedTask(task: RunningTask, status: BackgroundTask['status']): BackgroundTask {
+  const out: BackgroundTask = { id: taskIdOf(task), title: task.title, status, startedAt: task.startedAt, endedAt: Math.max(task.startedAt, nowSeconds()) };
   if (task.lastActivity !== undefined) out.lastActivity = task.lastActivity;
   return out;
 }

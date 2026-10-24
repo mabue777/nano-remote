@@ -102,6 +102,67 @@ describe('background tasks end to end with the Claude adapter (spec 5.1 backgrou
     const ended = await waitEvent(phone, 'session/changed', (p) => (p.session as { backgroundTasks?: { status: string }[] }).backgroundTasks?.[0]?.status === 'finished');
     expect(tasksOf(ended)).toEqual([['toolu_a', 'finished']]);
   });
+
+  it('host shutdown journals the running tasks cancelled; the next start lists none and journals nothing more for them', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-claude-bg-close-'));
+    const file = path.join(dir, 'journal.sqlite');
+    const fake = new FakeClaude({ turns: [launch] });
+    const first = await setup({}, { fake, journal: new Journal({ path: file }), store: new SessionStore(file) });
+    const phone = await first.h.connect();
+    const sessionId = await newSession(first.h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: text('Review the parser in the background'), clientMessageId: randomUUID() });
+    await waitEvent(phone, 'turn/completed');
+    await first.h.close();
+    harness = undefined;
+
+    const journal = new Journal({ path: file });
+    const changed = () => journal.since(sessionId, 0).events.filter((e) => e.method === 'session/changed');
+    expect(changed().map(tasksOf).at(-1)).toEqual([['toolu_a', 'cancelled']]);
+    const count = changed().length;
+    const second = await setup({}, { fake, journal, store: new SessionStore(file) });
+    expect(changed()).toHaveLength(count);
+    const back = await second.h.connect();
+    const { sessions } = await rpc<{ sessions: { sessionId: string; backgroundTasks?: unknown[] }[] }>(back, 'session/list', {});
+    expect(sessions.find((s) => s.sessionId === sessionId)?.backgroundTasks).toBeUndefined();
+  });
+
+  it('host restart after a crash: the start journals the tasks the last list showed running as cancelled', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-claude-bg-crash-'));
+    const file = path.join(dir, 'journal.sqlite');
+    const crashed = new Journal({ path: file });
+    const store = new SessionStore(file);
+    // What a host that died without shutting down leaves behind: a list with running tasks.
+    const sessionId = 'ses_crashed';
+    crashed.append(sessionId, {
+      method: 'session/changed',
+      params: { session: { sessionId, agentId: 'claude', title: 'Crashed', cwd: dir, status: 'idle', createdAt: 1, updatedAt: 1, lastSeq: 1, pending: { approvals: 0, inputs: 0 }, settings: {} } },
+    });
+    crashed.append(sessionId, {
+      method: 'session/changed',
+      params: {
+        session: {
+          sessionId, agentId: 'claude', title: 'Crashed', cwd: dir, status: 'idle', createdAt: 1, updatedAt: 2, lastSeq: 2, pending: { approvals: 0, inputs: 0 }, settings: {},
+          backgroundTasks: [
+            { id: 'toolu_a', title: 'Review the parser', status: 'running', startedAt: 2, lastActivity: 'Running Read' },
+            { id: 'toolu_b', title: 'npm test', status: 'finished', startedAt: 2, endedAt: 3 },
+          ],
+        },
+      },
+    });
+    crashed.close();
+    const journal = new Journal({ path: file });
+    const before = journal.head(sessionId);
+    await setup({}, { journal, store });
+    const recovered = journal.since(sessionId, before).events;
+    expect(recovered.map((e) => e.method)).toEqual(['session/changed']);
+    const tasks = (recovered[0]!.params as { session: { backgroundTasks: Record<string, unknown>[] } }).session.backgroundTasks;
+    expect(tasks).toEqual([
+      { id: 'toolu_a', title: 'Review the parser', status: 'cancelled', startedAt: 2, endedAt: expect.any(Number), lastActivity: 'Running Read' },
+      { id: 'toolu_b', title: 'npm test', status: 'finished', startedAt: 2, endedAt: 3 },
+    ]);
+    expect(tasks[0]!.endedAt as number).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) - 5);
+  });
 });
 
 describe('session core end to end with the Claude adapter', () => {
