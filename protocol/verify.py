@@ -246,6 +246,13 @@ NEGATIVE = [
     ("attachment capabilities without files are rejected", "common.json#/$defs/Agent",
      {"id": "pi", "name": "Pi", "status": "ready",
       "capabilities": {"steer": True, "diff": True, "approvalModes": [], "attachments": {"images": True}}}),
+    ("background task with an unknown status is rejected", "common.json#/$defs/BackgroundTask",
+     {"id": "toolu_1", "title": "Run the tests", "status": "paused", "startedAt": 1760930100}),
+    ("background task without startedAt is rejected", "common.json#/$defs/BackgroundTask",
+     {"id": "toolu_1", "title": "Run the tests", "status": "running"}),
+    ("userMessage with a non-boolean queued is rejected", "common.json#/$defs/Item",
+     {"itemId": "itm_1", "type": "userMessage", "turnId": "trn_1", "status": "completed",
+      "content": [{"type": "text", "text": "hi"}], "queued": "yes"}),
 ]
 
 

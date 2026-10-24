@@ -493,6 +493,19 @@ describe('Replica: session list', () => {
     expect((await replica.refreshSessions())[0]).toMatchObject({ status: 'error', lastSeq: 99 });
   });
 
+  it('the row of an open session takes its background tasks from the session, and drops them when it has none', async () => {
+    const tasks = [{ id: 'toolu_a', title: 'Review', status: 'running', startedAt: 1 }];
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary({ lastSeq: 4, backgroundTasks: tasks })] }));
+    await replica.refreshSessions();
+    expect(replica.sessions[0]!.backgroundTasks).toEqual(tasks);
+    await openAt(client, replica, 4);
+    // The snapshot's session has none (the host restarted, say): the row follows it.
+    expect(replica.sessions[0]!.backgroundTasks).toBeUndefined();
+    client.notify('session/changed', ev(5, 'session/changed', { session: session({ lastSeq: 5, backgroundTasks: tasks }) }).params);
+    expect(replica.sessions[0]!.backgroundTasks).toEqual(tasks);
+  });
+
   it('loadMoreSessions fetches the next page by cursor and appends rows until there is none', async () => {
     const { client, replica } = setup();
     expect(await replica.loadMoreSessions()).toBe(false);

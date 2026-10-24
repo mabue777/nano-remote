@@ -79,6 +79,13 @@ export interface SessionRow {
   updated: string;
   /** Its turn ended while the app was hidden or offline, and it has not been opened since. */
   finishedWhileAway: boolean;
+  /** Background tasks of its agent still running (Session.backgroundTasks, spec 5.1). */
+  backgroundTasks: number;
+}
+
+/** "1 background task", "3 background tasks". */
+export function backgroundTasksText(count: number): string {
+  return `${count} background task${count === 1 ? '' : 's'}`;
 }
 
 export function connectionOf(state: ClientState, reconnectAt: number | undefined, now: number): Connection {
@@ -177,6 +184,7 @@ export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<stri
     updatedAt: summary.updatedAt,
     updated: formatAgo(summary.updatedAt, nowMs),
     finishedWhileAway: false,
+    backgroundTasks: (summary.backgroundTasks ?? []).filter((task) => task.status === 'running').length,
   };
   if (modelId !== undefined && modelId !== '') row.model = modelLabel(modelId);
   return row;

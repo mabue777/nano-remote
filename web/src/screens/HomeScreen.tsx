@@ -6,7 +6,7 @@ import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
 import { Switch } from '../ui/Switch';
-import { HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
+import { backgroundTasksText, HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
 import { NewSessionSheet } from './NewSessionSheet';
 import { useModel } from './use-model';
 
@@ -251,6 +251,11 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
         <div class="session-meta small">
           <span class={`status ${row.tone}`}>{row.statusLabel}</span>
           {row.finishedWhileAway && <span class="away-mark">Finished while away</span>}
+          {row.backgroundTasks > 0 && (
+            <span class="tasks-mark" data-count={row.backgroundTasks}>
+              {backgroundTasksText(row.backgroundTasks)}
+            </span>
+          )}
           <span class="muted">
             {row.agentName} · {row.folder} · {row.updated}
           </span>

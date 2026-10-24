@@ -1,0 +1,17 @@
+{
+  "$expect": {"schema": "events.json#/$defs/item~1started", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 32,
+  "message": {
+    "method": "item/started",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 905,
+      "turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC",
+      "item": {"itemId": "itm_01JFQ3QB9V6H1K3ZP5RC8WF2XB", "type": "userMessage", "turnId": "trn_01JFQ3KA0ZP8W1N6HE2Y4RT7XC", "status": "completed",
+               "content": [{"type": "text", "text": "How is the review going?"}], "clientMessageId": "6f1c2a9e-3b7d-4c51-9a2e-8d4f0b6c7e13", "queued": true}
+    }
+  }
+}

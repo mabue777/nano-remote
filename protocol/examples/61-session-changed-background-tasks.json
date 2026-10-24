@@ -1,0 +1,22 @@
+{
+  "$expect": {"schema": "events.json#/$defs/session~1changed", "at": "params"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 31,
+  "message": {
+    "method": "session/changed",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D",
+      "seq": 902,
+      "session": {"sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D", "agentId": "claude", "title": "Review the parser", "cwd": "/Users/me/Desktop/phone-test",
+                  "status": "idle", "createdAt": 1760930000, "updatedAt": 1760930460, "lastSeq": 902, "pending": {"approvals": 0, "inputs": 0},
+                  "lastTurnStatus": "completed", "settings": {"model": "opus", "approvalMode": "default"},
+                  "backgroundTasks": [
+                    {"id": "toolu_01KSAAKEWX8H2maGnYkpDhGh", "title": "Review the parser for edge cases", "status": "running", "startedAt": 1760930400,
+                     "lastActivity": "Running Read parser.ts"},
+                    {"id": "toolu_01VvESWegs7LC1xkqDJeDJbu", "title": "Run the test suite", "status": "finished", "startedAt": 1760930405, "endedAt": 1760930450}
+                  ]}
+    }
+  }
+}

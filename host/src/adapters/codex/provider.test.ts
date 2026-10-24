@@ -9,7 +9,7 @@ describe('CodexAgent', () => {
     const agent = new CodexAgent();
     expect(agent.config.binary).toBe(process.env.NANO_CODEX_BIN || DEFAULT_CODEX_BINARY);
     expect(['ready', 'unavailable']).toContain(agent.state().status);
-    expect(agent.capabilities).toEqual({ steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true } });
+    expect(agent.capabilities).toEqual({ steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true }, backgroundTasks: false });
   });
 
   it('shares one model/list engine between concurrent callers and caches the result', async () => {

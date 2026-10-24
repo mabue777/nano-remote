@@ -4,6 +4,12 @@
 // stream_event deltas then the complete assistant block, tool_use then canUseTool then tool_result, and a
 // `result` with usage at the end of every turn (`error_during_execution` after an interrupt).
 //
+// Background tasks as the background-task repro saw them (adapter.ts): a tool result whose
+// tool_use_result says async_launched (or names a backgroundTaskId, or a Monitor's taskId) starts a
+// background task; interrupt() stops every one still running with task_updated killed and
+// task_notification stopped, as Query.interrupt() did live. The first top-level assistant message after
+// a user message with a uuid carries it as user_message_uuid.
+//
 // With `spawn` (the default) it asks the adapter's spawnClaudeCodeProcess for a real child (an idle node
 // process), so process groups, exits and kills are real; the query fails when that child dies, like the SDK.
 //
@@ -134,6 +140,10 @@ export class FakeQuery implements ClaudeQuery {
   private engineBusy = false;
   /** User messages the engine took mid-turn (during an engine-initiated turn). */
   readonly midTurn: SDKUserMessage[] = [];
+  /** Background tasks running: task id by launching tool_use id. */
+  readonly background = new Map<string, string>();
+  /** The uuid of the user message the next top-level assistant message answers. */
+  private answering: string | undefined;
 
   constructor(fake: FakeClaude, prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.fake = fake;
@@ -214,6 +224,11 @@ export class FakeQuery implements ClaudeQuery {
   async interrupt(): Promise<undefined> {
     this.interrupts += 1;
     if (this.fake.options.interruptHangs) return new Promise<never>(() => {});
+    // Stop ends the background subagents and commands too (the live repro).
+    for (const [toolUseId, taskId] of [...this.background]) {
+      this.send({ type: 'system', subtype: 'task_updated', task_id: taskId, patch: { status: 'killed' } });
+      this.send({ type: 'system', subtype: 'task_notification', task_id: taskId, tool_use_id: toolUseId, status: 'stopped', output_file: '', summary: '' });
+    }
     this.interrupted = true;
     this.abort?.abort();
     const holding = this.holding;
@@ -248,14 +263,37 @@ export class FakeQuery implements ClaudeQuery {
 
   private push(message: SDKMessage): void {
     if (this.ended || this.failure) return;
+    this.observe(message as unknown as Json);
     this.out.push(message);
     this.wake?.();
+  }
+
+  /** Keeps `background` and stamps the reply to a user message, as the engine does. */
+  private observe(message: Json): void {
+    if (message.parent_tool_use_id != null) return;
+    if (message.type === 'assistant' && this.answering !== undefined) {
+      message.user_message_uuid = this.answering;
+      this.answering = undefined;
+    }
+    if (message.type === 'user') {
+      const output = (message.tool_use_result ?? {}) as Json;
+      const taskId = String(output.agentId ?? output.backgroundTaskId ?? output.taskId ?? '');
+      const block = ((message.message as Json | undefined)?.content as Json[] | undefined)?.[0];
+      const launched = output.status === 'async_launched' || output.backgroundTaskId !== undefined || output.taskId !== undefined;
+      if (launched && taskId !== '' && block?.type === 'tool_result') this.background.set(String(block.tool_use_id), taskId);
+    }
+    if (message.type === 'system' && message.subtype === 'task_notification') {
+      for (const [toolUseId, taskId] of [...this.background]) {
+        if (toolUseId === message.tool_use_id || taskId === message.task_id) this.background.delete(toolUseId);
+      }
+    }
   }
 
   private async consume(prompt: AsyncIterable<SDKUserMessage>): Promise<void> {
     for await (const message of prompt) {
       if (this.ended || this.failure) return;
       this.userMessages.push(message);
+      if (typeof message.uuid === 'string') this.answering = message.uuid;
       const content = message.message.content;
       const text = typeof content === 'string' ? content : '';
       // An engine that never accepts: no init, no turn.

@@ -133,7 +133,7 @@ export class HostCore {
       this.log(`journal observer failed on ${event.method}`, error);
     }
     if (NOT_SUMMARY_CHANGES.has(event.method)) return;
-    const summary = this.journal.summary(event.params.sessionId);
+    const summary = this.sessions.summary(event.params.sessionId);
     if (summary && !this.sessions.store.get(summary.sessionId).deleted) this.broadcast('session/updated', { summary });
   }
 

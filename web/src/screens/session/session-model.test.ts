@@ -17,6 +17,9 @@ import {
   oneLine,
   sendErrorText,
   SessionModel,
+  elapsedText,
+  queuedText,
+  stopConfirmText,
   taskStateOf,
   turnRow,
   unwrapShell,
@@ -29,7 +32,9 @@ function command(over: Record<string, unknown> = {}): any {
   return { itemId: 'c1', type: 'command', turnId: 't1', status: 'inProgress', command: '/bin/zsh -lc "echo hello > hello.txt"', cwd: '/w', output: '', ...over };
 }
 
-async function setup(options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource; attachments?: AttachmentServices } = {}) {
+async function setup(
+  options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource; attachments?: AttachmentServices; now?: () => number } = {},
+) {
   const client = new FakeTransport();
   client.rule('session/list', () => ({ sessions: [summary({ title: 'Listed title', cwd: '/Users/me/Desktop/phone-test' })] }));
   client.rule('session/close', () => ({ ok: true }));
@@ -42,6 +47,7 @@ async function setup(options: { open?: boolean; turns?: any[]; over?: Record<str
     replica,
     ...(options.agents ? { agents: options.agents } : {}),
     ...(options.attachments ? { attachments: options.attachments } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
   const changes = vi.fn();
   model.subscribe(changes);
@@ -814,5 +820,125 @@ describe('SessionModel: attachments (spec 8.1)', () => {
       { type: 'text', text: 'later' },
       { type: 'file', url: `/v1/blob/blb_${'1'.padStart(22, '0')}`, name: 'n.txt', mediaType: 'text/plain' },
     ]);
+  });
+});
+
+describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
+  const T0 = 1_760_930_400;
+  const task = (id: string, over: Record<string, unknown> = {}): any => ({ id, title: `Task ${id}`, status: 'running', startedAt: T0, ...over });
+  const withTasks = (tasks: any[], over: Record<string, unknown> = {}) => ({ session: session({ lastSeq: 10, backgroundTasks: tasks, ...over }) });
+  const queuedItem = (itemId: string, turnId: string): any => ({ ...userItem(itemId, turnId, 'cm-q'), queued: true });
+
+  it('helpers: elapsed time, the queued notice and the Stop question', () => {
+    expect(elapsedText(-3)).toBe('0 s');
+    expect(elapsedText(45)).toBe('45 s');
+    expect(elapsedText(125)).toBe('2 min 5 s');
+    expect(elapsedText(3 * 3600 + 7 * 60 + 9)).toBe('3 h 7 min');
+    expect(queuedText(1)).toBe('Queued: waiting for 1 background task to finish');
+    expect(queuedText(3)).toBe('Queued: waiting for 3 background tasks to finish');
+    expect(queuedText(0)).toBe('Queued: waiting for the agent');
+    expect(stopConfirmText(2)).toBe('This also cancels 2 background tasks. Stop anyway?');
+  });
+
+  it('the strip: one row per task with title, elapsed time and status; a tap shows the latest activity', async () => {
+    let now = (T0 + 65) * 1000;
+    const tasks = [
+      task('a', { title: 'Review the parser', lastActivity: 'Running Read parser.ts' }),
+      task('b', { title: '  ', status: 'finished', endedAt: T0 + 30 }),
+      task('c', { status: 'cancelled', endedAt: T0 + 5 }),
+      task('d', { status: 'failed' }),
+    ];
+    const { model, changes } = await setup({ over: withTasks(tasks), now: () => now });
+    expect(model.backgroundTasks.map((r) => [r.id, r.title, r.elapsed, r.state, r.tone, r.activity])).toEqual([
+      ['a', 'Review the parser', '1 min 5 s', 'Running', 'busy', 'Running Read parser.ts'],
+      ['b', 'Background task', '30 s', 'Finished', 'ok', undefined],
+      ['c', 'Task c', '5 s', 'Cancelled', 'muted', undefined],
+      ['d', 'Task d', '0 s', 'Failed', 'error', undefined],
+    ]);
+    expect(model.runningTasks).toBe(1);
+    expect(model.backgroundTasks[0]!.expanded).toBe(false);
+    model.toggleTask('a');
+    expect(model.backgroundTasks[0]!.expanded).toBe(true);
+    model.toggleTask('a');
+    expect(model.backgroundTasks[0]!.expanded).toBe(false);
+    // The clock moves the running row only.
+    now += 10_000;
+    const before = changes.mock.calls.length;
+    model.tick();
+    expect(changes.mock.calls.length).toBe(before + 1);
+    expect(model.backgroundTasks.map((r) => r.elapsed)).toEqual(['1 min 15 s', '30 s', '5 s', '0 s']);
+  });
+
+  it('follows session/changed; nothing shows without tasks, once closed, or from the list row of an unopened session', async () => {
+    const { model, live, changes } = await setup({ now: () => (T0 + 1) * 1000 });
+    expect(model.backgroundTasks).toEqual([]);
+    model.tick(); // nothing running: no re-render
+    const calls = changes.mock.calls.length;
+    model.tick();
+    expect(changes.mock.calls.length).toBe(calls);
+    live(1, [['session/changed', withTasks([task('a')])]]);
+    expect(model.backgroundTasks.map((r) => r.id)).toEqual(['a']);
+    live(2, [['session/changed', { session: session({ lastSeq: 2 }) }]]);
+    expect(model.backgroundTasks).toEqual([]);
+    live(3, [['session/changed', withTasks([task('a')])], ['session/closed', { reason: 'archived' }]]);
+    expect(model.backgroundTasks).toEqual([]);
+
+    const unopened = await setup({ open: false });
+    expect(unopened.model.backgroundTasks).toEqual([]);
+  });
+
+  it('a queued message: the running turn says it waits for the background tasks instead of "Working…"', async () => {
+    const turns = [{ ...turn('t1'), items: [queuedItem('u1', 't1')] }];
+    const { model, live } = await setup({ turns, over: withTasks([task('a'), task('b')]) });
+    expect(model.turns[0]).toMatchObject({ label: 'Queued: waiting for 2 background tasks to finish', tone: 'muted', queued: true });
+    // The engine took it: the host journals the item again without the flag.
+    live(11, [['item/completed', { turnId: 't1', item: userItem('u1', 't1', 'cm-q') }]]);
+    expect(model.turns[0]).toMatchObject({ label: 'Working…', tone: 'busy' });
+    expect(model.turns[0]!.queued).toBeUndefined();
+  });
+
+  it('a finished turn with a stale flag shows no notice', async () => {
+    const turns = [{ ...turn('t1', { status: 'completed' }), items: [queuedItem('u1', 't1')] }];
+    const { model } = await setup({ turns, over: withTasks([task('a')]) });
+    expect(model.turns[0]).toMatchObject({ label: '' });
+    expect(model.turns[0]!.queued).toBeUndefined();
+  });
+
+  it('Stop while tasks run asks first: "Keep running" stops nothing, "Stop anyway" interrupts', async () => {
+    const turns = [{ ...turn('t1'), items: [queuedItem('u1', 't1')] }];
+    const { client, model, changes } = await setup({ turns, over: withTasks([task('a'), task('b'), task('c', { status: 'finished', endedAt: T0 })]) });
+    expect(model.stopQuestion).toBeUndefined();
+    model.requestStop();
+    expect(client.count('turn/interrupt')).toBe(0);
+    expect(model.confirmingStop).toBe(true);
+    expect(model.stopQuestion).toBe('This also cancels 2 background tasks. Stop anyway?');
+    model.cancelStop();
+    expect(model.stopQuestion).toBeUndefined();
+    expect(client.count('turn/interrupt')).toBe(0);
+    const calls = changes.mock.calls.length;
+    model.cancelStop(); // already closed
+    model.confirmStop(); // nothing to confirm
+    expect(changes.mock.calls.length).toBe(calls);
+    expect(client.count('turn/interrupt')).toBe(0);
+
+    model.requestStop();
+    model.confirmStop();
+    expect(model.confirmingStop).toBe(false);
+    expect(client.count('turn/interrupt')).toBe(1);
+    expect(client.last('turn/interrupt').params).toEqual({ sessionId: SID, turnId: 't1' });
+    model.requestStop(); // already stopping
+    expect(model.confirmingStop).toBe(false);
+  });
+
+  it('Stop without running tasks stops at once; a question whose tasks ended meanwhile still asks plainly', async () => {
+    const { client, model } = await setup({ turns: [turn('t1')], over: withTasks([task('a', { status: 'finished', endedAt: T0 })]) });
+    model.requestStop();
+    expect(model.confirmingStop).toBe(false);
+    expect(client.count('turn/interrupt')).toBe(1);
+
+    const other = await setup({ turns: [turn('t1')], over: withTasks([task('a')]) });
+    other.model.requestStop();
+    other.live(11, [['session/changed', withTasks([task('a', { status: 'finished', endedAt: T0 })])]]);
+    expect(other.model.stopQuestion).toBe('Stop the turn?');
   });
 });

@@ -2,6 +2,7 @@
 // message sequences of the spike and the live test, approvals and questions with every decision,
 // interrupts, child exits and kills.
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -837,6 +838,166 @@ describe('ClaudeAdapter: supervision', () => {
   });
 });
 
+describe('ClaudeAdapter: background tasks for the phone (background/changed, input/taken)', () => {
+  const assistant = (content: unknown[], parent: string | null = null) => ({
+    message: { type: 'assistant', message: { id: `msg_${Math.random()}`, content }, parent_tool_use_id: parent },
+  });
+  const launch = (id: string, name: string, input: Record<string, unknown>, toolUseResult: unknown) => [
+    assistant([{ type: 'tool_use', id, name, input }]),
+    { message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'launched' }] }, parent_tool_use_id: null, tool_use_result: toolUseResult } },
+  ];
+  const agent = (id: string, description: string, agentId: string) =>
+    launch(id, 'Agent', { description, prompt: 'do it', run_in_background: true }, { isAsync: true, status: 'async_launched', agentId });
+  const changes = (events: AdapterEvent[]) =>
+    events.filter((e): e is Extract<AdapterEvent, { method: 'background/changed' }> => e.method === 'background/changed').map((e) => e.params.tasks);
+  const latest = (events: AdapterEvent[]) => changes(events).at(-1);
+  const system = (subtype: string, fields: Record<string, unknown>) => ({ type: 'system', subtype, uuid: randomUUID(), session_id: 's', ...fields });
+  const notification = (fields: Record<string, unknown>) => system('task_notification', { output_file: '/tmp/x', summary: '', ...fields });
+
+  it('launch: published once the result confirms it, titled by the description, with the start time', async () => {
+    const before = Math.floor(Date.now() / 1000);
+    const { adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review   the parser', 'agent_1'), { text: 'Launched.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    expect(changes(events)).toHaveLength(1);
+    const [task] = latest(events)!;
+    expect(task).toEqual({ id: 'toolu_a', title: 'Review the parser', status: 'running', startedAt: expect.any(Number) });
+    expect(task!.startedAt).toBeGreaterThanOrEqual(before);
+    // The launch is reported before the turn's end.
+    expect(methods(events).indexOf('background/changed')).toBeLessThan(methods(events).indexOf('turn/completed'));
+  });
+
+  it('progress: the latest task_progress line of its tool_use id is the activity; repeats and strangers change nothing', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review the parser', 'agent_1'), { text: 'Launched.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    fake.last.send(system('task_progress', { task_id: 'agent_1', tool_use_id: 'toolu_a', description: 'Running Read parser.ts', last_tool_name: 'Read', usage: {} }));
+    await until(() => latest(events)?.[0]?.lastActivity, 'the activity');
+    expect(latest(events)).toEqual([{ id: 'toolu_a', title: 'Review the parser', status: 'running', startedAt: expect.any(Number), lastActivity: 'Running Read parser.ts' }]);
+    const count = changes(events).length;
+    fake.last.send(system('task_progress', { task_id: 'agent_1', tool_use_id: 'toolu_a', description: 'Running Read parser.ts', usage: {} }));
+    fake.last.send(system('task_progress', { task_id: 'agent_9', tool_use_id: 'toolu_other', description: 'Running elsewhere', usage: {} }));
+    // A summary (agentProgressSummaries) wins over the description; matched by the task id alone.
+    fake.last.send(system('task_progress', { task_id: 'agent_1', description: 'Running Grep', summary: 'Checking the  error paths', usage: {} }));
+    await until(() => (latest(events)?.[0]?.lastActivity === 'Checking the error paths' ? true : undefined), 'the summary');
+    expect(changes(events)).toHaveLength(count + 1);
+  });
+
+  it('end: the notification marks it finished, failed or cancelled with endedAt; ended tasks go when the next turn starts', async () => {
+    const { fake, adapter, events, cwd } = rig({
+      turns: [
+        [
+          ...agent('toolu_a', 'Review the parser', 'agent_1'),
+          ...launch('toolu_b', 'Bash', { command: 'npm test   --watch', run_in_background: true }, { stdout: '', backgroundTaskId: 'bash_2' }),
+          ...launch('toolu_m', 'Monitor', { command: 'tail -f log', description: 'watch the log' }, { taskId: 'mon_3', timeoutMs: 180000, persistent: false }),
+          { text: 'Started three.' },
+        ],
+        [{ text: 'Next.' }],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    await turnEnd(events);
+    expect(latest(events)!.map((t) => [t.id, t.title, t.status])).toEqual([
+      ['toolu_a', 'Review the parser', 'running'],
+      ['toolu_b', 'npm test --watch', 'running'],
+      ['toolu_m', 'watch the log', 'running'],
+    ]);
+    // A subagent's own background launch is not a task of the session.
+    fake.last.send(assistant([{ type: 'tool_use', id: 'toolu_inner', name: 'Bash', input: { command: 'x', run_in_background: true } }], 'toolu_a').message);
+    fake.last.send(notification({ task_id: 'agent_1', tool_use_id: 'toolu_a', status: 'completed', summary: 'DONE' }));
+    fake.last.send(notification({ task_id: 'bash_2', status: 'failed', summary: 'exit 1' }));
+    fake.last.send(notification({ task_id: 'mon_3', tool_use_id: 'toolu_m', status: 'stopped' }));
+    await until(() => (latest(events)!.every((t) => t.status !== 'running') ? true : undefined), 'all ended');
+    const ended = latest(events)!;
+    expect(ended.map((t) => [t.id, t.status])).toEqual([
+      ['toolu_a', 'finished'],
+      ['toolu_b', 'failed'],
+      ['toolu_m', 'cancelled'],
+    ]);
+    for (const task of ended) expect(task.endedAt).toBeGreaterThanOrEqual(task.startedAt);
+    const from = events.length;
+    await adapter.turnStart(text('next'), 'c2');
+    await turnEnd(events, from);
+    expect(latest(events)).toEqual([]);
+  });
+
+  it('an engine-initiated turn also starts a new list: the task that woke the engine is dropped from it', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review the parser', 'agent_1'), { text: 'Launched.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    const from = events.length;
+    await fake.last.engineTurn([{ text: 'The review is done.' }], { task_id: 'agent_1', tool_use_id: 'toolu_a', status: 'completed', summary: 'found 2 bugs' });
+    await turnEnd(events, from);
+    expect(changes(events.slice(from)).map((tasks) => tasks.map((t) => t.status))).toEqual([['finished'], []]);
+  });
+
+  it('cancel by interrupt: Stop ends the turn and the engine reports the background subagent stopped: cancelled', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review the parser', 'agent_1'), { text: 'Launched.' }], [{ hold: true }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    const from = events.length;
+    await adapter.turnStart(text('status?'), 'c2');
+    await until(() => (fake.last.holdingNow ? true : undefined), 'the hold');
+    await adapter.interrupt();
+    expect((await turnEnd(events, from)).params).toEqual({ status: 'interrupted' });
+    expect(latest(events)).toEqual([expect.objectContaining({ id: 'toolu_a', status: 'cancelled', endedAt: expect.any(Number) })]);
+  });
+
+  it('a run that dies takes its running tasks with it: failed, reported before agent/exited', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review the parser', 'agent_1'), { text: 'Launched.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    fake.last.child!.kill('SIGKILL');
+    await find(events, 'agent/exited');
+    expect(latest(events)).toEqual([expect.objectContaining({ id: 'toolu_a', status: 'failed' })]);
+    expect(methods(events).lastIndexOf('background/changed')).toBeLessThan(methods(events).indexOf('agent/exited'));
+  });
+
+  it('queued flag: a message carries its clientMessageId as the SDK uuid; the first reply stamped with it is input/taken', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[{ text: 'one' }], [{ text: 'two' }]] });
+    await adapter.start(cwd, {});
+    const id = randomUUID();
+    await adapter.turnStart(text('hello'), id);
+    await turnEnd(events);
+    expect(fake.last.userMessages[0]!.uuid).toBe(id);
+    expect(events.filter((e) => e.method === 'input/taken').map((e) => e.params)).toEqual([{ clientMessageId: id }]);
+    // Taken before the reply text is shown.
+    expect(methods(events).indexOf('input/taken')).toBeLessThan(methods(events).indexOf('item/completed'));
+    // An id that is not a UUID is not sent as one, and nothing is reported for it.
+    const from = events.length;
+    await adapter.turnStart(text('again'), 'not-a-uuid');
+    await turnEnd(events, from);
+    expect(fake.last.userMessages[1]!.uuid).toBeUndefined();
+    expect(events.slice(from).some((e) => e.method === 'input/taken')).toBe(false);
+  });
+
+  it('queued flag: a message held behind background tasks is taken when the engine answers it, not when it is pushed', async () => {
+    const { fake, adapter, events, cwd } = rig({ turns: [[...agent('toolu_a', 'Review the parser', 'agent_1'), { text: 'Launched.' }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('review'), 'c1');
+    await turnEnd(events);
+    const played = fake.last.engineTurn([{ hold: true }, { text: 'Still reviewing.' }], null);
+    await until(() => (fake.last.holdingNow ? true : undefined), 'the engine turn');
+    const id = randomUUID();
+    await adapter.turnStart(text('how is it going?'), id);
+    await until(() => (fake.last.midTurn.length > 0 ? true : undefined), 'the message taken mid-turn');
+    // A subagent's reply carrying the uuid does not count.
+    fake.last.send({ ...assistant([{ type: 'text', text: 'sub' }], 'toolu_a').message, user_message_uuid: id });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(events.some((e) => e.method === 'input/taken')).toBe(false);
+    fake.last.release();
+    await played;
+    await find(events, 'input/taken');
+    expect(events.filter((e) => e.method === 'input/taken').map((e) => e.params)).toEqual([{ clientMessageId: id }]);
+  });
+});
+
 describe('ClaudeAdapter: a hung engine (fake timers)', () => {
   // Only setTimeout is faked: the fake query and the real child run on setImmediate and I/O.
   const TIMEOUT = 120_000;
@@ -1078,6 +1239,41 @@ describe('ClaudeAdapter: a hung engine (fake timers)', () => {
         return true;
       }
     }, 'the child gone');
+  });
+});
+
+describe('ClaudeAdapter: background tasks when Stop is not answered (fake timers)', () => {
+  const TIMEOUT = 120_000;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('the run Stop ends takes its running tasks with it as cancelled', async () => {
+    const { fake, adapter, events, cwd } = rig(
+      {
+        interruptHangs: true,
+        turns: [
+          [
+            { message: { type: 'assistant', message: { id: 'msg_a', content: [{ type: 'tool_use', id: 'toolu_a', name: 'Agent', input: { description: 'Review', prompt: 'x', run_in_background: true } }] }, parent_tool_use_id: null } },
+            { message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_a', content: 'ok' }] }, parent_tool_use_id: null, tool_use_result: { status: 'async_launched', agentId: 'agent_1' } } },
+            { hold: true },
+          ],
+        ],
+      },
+      { requestTimeoutMs: TIMEOUT },
+    );
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    for (let i = 0; i < 500 && !fake.last.holdingNow; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    const stopping = adapter.interrupt().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    expect(await stopping).toMatchObject({ code: 'agent_unavailable' });
+    const tasks = events.filter((e) => e.method === 'background/changed').map((e) => (e.params as { tasks: { status: string }[] }).tasks);
+    expect(tasks.map((list) => list.map((t) => t.status))).toEqual([['running'], ['cancelled']]);
+    expect(methods(events).lastIndexOf('background/changed')).toBeLessThan(methods(events).indexOf('agent/exited'));
   });
 });
 

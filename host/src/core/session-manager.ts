@@ -6,12 +6,18 @@
 // Everything that changes a session goes through `append`, synchronously: node:sqlite commits before
 // `append` returns and nothing awaits between a check and the append that depends on it, so two streams
 // racing on one session cannot both pass a check (two turns, two resolutions).
+//
+// Background tasks (spec 5.1): for an agent with `capabilities.backgroundTasks` the adapter's
+// `background/changed` list is held in memory and published as Session.backgroundTasks through
+// `session/changed` (and in every summary the host hands out). It is live state, not history: after a
+// host restart no engine runs, so no session reports any. A user message journaled while tasks run is
+// marked `queued` until the adapter reports `input/taken` (or its turn ends).
 import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import { BLOB_PATH, type AttachmentStore } from '../attachments/store.js';
-import type { Decision, InputPart, Settings, TurnError } from '../generated/common.js';
+import type { BackgroundTask, Decision, InputPart, Settings, TurnError } from '../generated/common.js';
 import type { TurnDiffResult } from '../generated/methods.js';
 import type { Journal } from '../journal/journal.js';
 import { CursorExpired } from '../journal/errors.js';
@@ -82,6 +88,8 @@ interface RunningTurn {
   delivered?: Promise<Adapter>;
   /** The engine started it by itself (adapter `turn/started`); a user `turn/start` joins it. */
   readonly engine: boolean;
+  /** Its userMessage items journaled `queued`, by clientMessageId, until the engine takes them. */
+  readonly queued: Map<string, Item>;
 }
 
 /** In-memory state of a session the host has touched since it started. */
@@ -91,6 +99,8 @@ interface Live {
   ready?: Promise<Adapter>;
   off?: () => void;
   turn?: RunningTurn;
+  /** The adapter's background tasks (`background/changed`), published as Session.backgroundTasks. */
+  tasks: BackgroundTask[];
 }
 
 function errorMessage(error: unknown): string {
@@ -194,7 +204,20 @@ export class SessionManager {
     if (!session || this.store.get(sessionId).deleted) {
       throw new RpcError('not_found', `no session ${sessionId}`, { sessionId });
     }
-    return session;
+    return this.withTasks(session);
+  }
+
+  /** The session's list row as the host hands it out (with its background tasks), or undefined. */
+  summary(sessionId: string): SessionSummary | undefined {
+    const summary = this.journal.summary(sessionId);
+    return summary === undefined ? undefined : this.withTasks(summary);
+  }
+
+  /** A summary or session with the live background tasks; without any, the field is left out. */
+  private withTasks<T extends SessionSummary>(summary: T): T {
+    const { backgroundTasks: _stored, ...rest } = summary;
+    const tasks = this.live.get(summary.sessionId)?.tasks ?? [];
+    return (tasks.length > 0 ? { ...rest, backgroundTasks: tasks.map((t) => ({ ...t })) } : rest) as T;
   }
 
   /** True when the session exists and is not deleted (the attachment endpoint, spec 8.1). */
@@ -218,11 +241,11 @@ export class SessionManager {
   list(options: { agentId?: string; cursor?: string; limit?: number } = {}): ListResult {
     const first = this.journal.list({ ...options, limit: options.limit ?? DEFAULT_LIST });
     const limit = Math.min(options.limit ?? DEFAULT_LIST, MAX_LIST_LIMIT);
-    const sessions = first.sessions.filter((s) => this.visible(s));
+    const sessions = first.sessions.filter((s) => this.visible(s)).map((s) => this.withTasks(s));
     let next = first.nextCursor;
     while (sessions.length < limit && next !== undefined) {
       const page = this.journal.list({ ...options, cursor: next, limit: limit - sessions.length });
-      sessions.push(...page.sessions.filter((s) => this.visible(s)));
+      sessions.push(...page.sessions.filter((s) => this.visible(s)).map((s) => this.withTasks(s)));
       next = page.nextCursor;
     }
     return next === undefined ? { sessions } : { sessions, nextCursor: next };
@@ -575,6 +598,13 @@ export class SessionManager {
       case 'engine/session':
         this.store.setEngineSessionId(sessionId, event.params.engineSessionId);
         return;
+      case 'background/changed':
+        if (this.providers.get(this.journal.session(sessionId)?.agentId ?? '')?.capabilities.backgroundTasks !== true) return;
+        this.setTasks(live, event.params.tasks);
+        return;
+      case 'input/taken':
+        if (live.turn) this.unqueue(live, live.turn, event.params.clientMessageId);
+        return;
       case 'usage/updated':
         this.append(sessionId, { method: 'usage/updated', params: { usage: event.params.usage } });
         return;
@@ -661,7 +691,7 @@ export class SessionManager {
 
   private liveOf(sessionId: string): Live {
     let live = this.live.get(sessionId);
-    if (!live) this.live.set(sessionId, (live = { sessionId }));
+    if (!live) this.live.set(sessionId, (live = { sessionId, tasks: [] }));
     return live;
   }
 
@@ -685,7 +715,7 @@ export class SessionManager {
   /** Journals `session/changed` with the session as it is now plus `patch`. */
   private changeSession(sessionId: string, patch: Partial<Session>): void {
     const session: Session = {
-      ...this.journal.session(sessionId)!,
+      ...this.withTasks(this.journal.session(sessionId)!),
       ...patch,
       updatedAt: this.now(),
       lastSeq: this.journal.head(sessionId) + 1,
@@ -710,7 +740,7 @@ export class SessionManager {
 
   /** Mints the turn id, makes it the running turn, journals `turn/started`. */
   private openTurn(live: Live, engine: boolean): RunningTurn {
-    const running: RunningTurn = { turnId: newId('trn'), startedAt: this.now(), items: [], engine };
+    const running: RunningTurn = { turnId: newId('trn'), startedAt: this.now(), items: [], engine, queued: new Map() };
     live.turn = running;
     this.append(live.sessionId, {
       method: 'turn/started',
@@ -721,18 +751,42 @@ export class SessionManager {
     return running;
   }
 
+  /** Journals the user's message; while background tasks run it is `queued` until the engine takes it. */
   private appendUserMessage(live: Live, input: InputPart[], clientMessageId: string): void {
-    const turnId = live.turn!.turnId;
+    const running = live.turn!;
+    const turnId = running.turnId;
     const item: Item = { itemId: newId('itm'), type: 'userMessage', turnId, status: 'completed', content: input, clientMessageId };
-    live.turn!.items.push(item.itemId);
+    if (live.tasks.some((t) => t.status === 'running')) {
+      item.queued = true;
+      running.queued.set(clientMessageId, item);
+    }
+    running.items.push(item.itemId);
     this.append(live.sessionId, { method: 'item/started', params: { item, turnId } });
     this.append(live.sessionId, { method: 'item/completed', params: { item, turnId } });
+  }
+
+  /** A queued message the engine took (or whose turn ended): journaled again without `queued`. */
+  private unqueue(live: Live, running: RunningTurn, clientMessageId: string): void {
+    const queued = running.queued.get(clientMessageId);
+    if (queued === undefined) return;
+    running.queued.delete(clientMessageId);
+    const { queued: _flag, ...item } = queued as Item & { queued?: boolean };
+    this.append(live.sessionId, { method: 'item/completed', params: { item: item as Item, turnId: running.turnId } });
+  }
+
+  /** Publishes the adapter's background tasks: journals session/changed when the list changed. */
+  private setTasks(live: Live, tasks: BackgroundTask[]): void {
+    if (JSON.stringify(tasks) === JSON.stringify(live.tasks)) return;
+    live.tasks = tasks.map((t) => ({ ...t }));
+    if (this.journal.session(live.sessionId) === undefined) return;
+    this.changeSession(live.sessionId, {});
   }
 
   /** Ends the running turn: withdraws what is still pending, journals `turn/completed`, session idle. */
   private finishTurn(live: Live, status: FinalTurnStatus, error: TurnError | null): void {
     const running = live.turn;
     if (!running) return;
+    for (const clientMessageId of [...running.queued.keys()]) this.unqueue(live, running, clientMessageId);
     live.turn = undefined;
     const cwd = this.journal.session(live.sessionId)?.cwd;
     if (cwd !== undefined) this.changes.end(live.sessionId, running.turnId, cwd);
@@ -816,6 +870,11 @@ export class SessionManager {
     const live = this.live.get(sessionId);
     if (!live) return;
     if (live.turn) this.finishTurn(live, 'interrupted', null);
+    // Stopping the engine stops its helpers too; the killed adapter reports nothing more.
+    if (live.tasks.some((t) => t.status === 'running')) {
+      const now = this.now();
+      this.setTasks(live, live.tasks.map((t) => (t.status === 'running' ? { ...t, status: 'cancelled', endedAt: now } : t)));
+    }
     const adapter = live.adapter;
     this.detach(live);
     if (adapter) await this.kill(adapter);

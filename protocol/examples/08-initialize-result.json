@@ -16,7 +16,7 @@
                           "attachments": {"images": true, "files": true}}},
         {"id": "claude", "name": "Claude Code", "status": "ready",
          "capabilities": {"steer": false, "diff": true, "approvalModes": ["default", "acceptEdits", "plan", "never"],
-                          "attachments": {"images": true, "files": true}}},
+                          "attachments": {"images": true, "files": true}, "backgroundTasks": true}},
         {"id": "kimi", "name": "Kimi", "status": "unavailable", "reason": "CLI not found"}
       ],
       "push": {"vapidPublicKey": "BOrExampleVapidPublicKeyForDocumentation", "subscribed": true},

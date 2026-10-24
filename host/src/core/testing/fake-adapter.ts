@@ -305,6 +305,7 @@ export class FakeAgent implements AgentProvider {
       diff: true,
       approvalModes: FAKE_APPROVAL_MODES,
       attachments: { images: true, files: true },
+      backgroundTasks: false,
       ...options.capabilities,
     };
   }

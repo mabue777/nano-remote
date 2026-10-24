@@ -4,7 +4,12 @@
 //   approval/request, input/request   always, even while connected (iOS drops the socket ~30 s after lock)
 //   turn/completed (final status)     only when the client has no open stream at that moment
 //   status/changed to error           only when the client has no open stream at that moment
+//   session/changed: the last running background task ended (Session.backgroundTasks, spec 5.1)
+//                                     only when the client has no open stream at that moment
 //   request/resolved, anything else   never
+//
+// The background rule needs the session's previous count of running tasks: the notifier keeps it in
+// memory from the session/changed events it sees (it starts at zero, like the tasks after a restart).
 //
 //   const notifier = new PushNotifier({ subscriptions: devices.push, presence, sender, title });
 //   const core = new HostCore({ ..., onJournalEvent: (event) => notifier.handle(event) });
@@ -45,11 +50,12 @@ export const PUSH_BODY = {
   failed: 'Turn failed',
   interrupted: 'Turn interrupted',
   error: 'Session error',
+  background: 'Background tasks finished',
 } as const;
 
 /** What one event pushes, before the per-client presence check. */
 export interface PushPlan {
-  kind: 'approval' | 'input' | 'completion' | 'error';
+  kind: 'approval' | 'input' | 'completion' | 'error' | 'background';
   sessionId: string;
   body: string;
   topic: string;
@@ -58,8 +64,17 @@ export interface PushPlan {
   onlyDisconnected: boolean;
 }
 
-/** The rules table (spec 9) as a pure function: undefined means the event never pushes. */
-export function planFor(event: JournalEvent): PushPlan | undefined {
+/** How many of a session/changed event's background tasks are running. */
+export function runningTasks(event: JournalEvent): number {
+  if (event.method !== 'session/changed') return 0;
+  return (event.params.session.backgroundTasks ?? []).filter((task) => task.status === 'running').length;
+}
+
+/**
+ * The rules table (spec 9) as a pure function: undefined means the event never pushes. `runningBefore`
+ * is the session's count of running background tasks before this event.
+ */
+export function planFor(event: JournalEvent, runningBefore = 0): PushPlan | undefined {
   const sessionId = event.params.sessionId;
   switch (event.method) {
     case 'approval/request':
@@ -88,6 +103,9 @@ export function planFor(event: JournalEvent): PushPlan | undefined {
     case 'status/changed':
       if (event.params.status !== 'error') return undefined;
       return { kind: 'error', sessionId, body: PUSH_BODY.error, topic: sessionId, ttl: PUSH_TTL.completion, onlyDisconnected: true };
+    case 'session/changed':
+      if (runningBefore === 0 || runningTasks(event) > 0) return undefined;
+      return { kind: 'background', sessionId, body: PUSH_BODY.background, topic: `${sessionId}.background`, ttl: PUSH_TTL.completion, onlyDisconnected: true };
     default:
       return undefined;
   }
@@ -128,6 +146,8 @@ export class PushNotifier {
   private readonly schedule: (work: () => void) => void;
   private readonly isPaired: (clientId: string) => boolean;
   private readonly inFlight = new Set<Promise<void>>();
+  /** Running background tasks per session, from the session/changed events seen so far. */
+  private readonly running = new Map<string, number>();
   private closed = false;
 
   constructor(private readonly options: PushNotifierOptions) {
@@ -139,7 +159,14 @@ export class PushNotifier {
   /** Called for every appended Journal event. Never throws and never waits on the network. */
   handle(event: JournalEvent): void {
     if (this.closed) return;
-    const plan = planFor(event);
+    const sessionId = event.params.sessionId;
+    const before = this.running.get(sessionId) ?? 0;
+    if (event.method === 'session/changed') {
+      const now = runningTasks(event);
+      if (now > 0) this.running.set(sessionId, now);
+      else this.running.delete(sessionId);
+    }
+    const plan = planFor(event, before);
     if (!plan) return;
     // Presence is read now, not when the deferred work runs: the rule is "no open stream at that moment".
     // The registry is in memory; the subscription list (a database read) waits for the deferred work.

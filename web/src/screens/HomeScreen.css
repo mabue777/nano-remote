@@ -190,6 +190,15 @@
   background: color-mix(in srgb, var(--accent) 14%, var(--surface));
 }
 
+/* "2 background tasks": the session's agent still runs helpers (spec 5.1 backgroundTasks). */
+.tasks-mark {
+  font-weight: 600;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  color: var(--accent); /* --busy has no dark variant; the accent reads on both palettes */
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
 .session.away {
   box-shadow: inset 3px 0 0 var(--accent);
 }

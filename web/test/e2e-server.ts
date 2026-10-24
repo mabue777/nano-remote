@@ -213,6 +213,12 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/keep-awake':
               host.keepAwake = body.supported === false ? null : { setting: body.setting ?? 'pluggedIn', onBattery: body.onBattery === true };
               return json(200, { ok: true });
+            case '/test/background':
+              host.setBackgroundTasks(body.sessionId, body.tasks ?? []);
+              return json(200, { ok: true });
+            case '/test/take-queued':
+              host.takeQueued(body.sessionId, body.reply);
+              return json(200, { ok: true });
             case '/test/delay':
               host.delay(body.method, body.ms);
               return json(200, { ok: true });

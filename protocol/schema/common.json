@@ -149,6 +149,50 @@
         "lastTurnStatus": {
           "$ref": "#/$defs/TurnStatus",
           "description": "Status of the session's newest turn; absent while the session has no turn."
+        },
+        "backgroundTasks": {
+          "type": "array",
+          "description": "Helpers the agent runs in the background (subagents, background commands, monitors): the running ones, plus the ones that ended since the newest turn started. Absent when the agent cannot report them (capabilities.backgroundTasks false) or has none. Additive within v1.",
+          "items": {
+            "$ref": "#/$defs/BackgroundTask"
+          }
+        }
+      }
+    },
+    "BackgroundTask": {
+      "type": "object",
+      "description": "One background helper of a session (spec 5.1). Additive within v1.",
+      "required": [
+        "id",
+        "title",
+        "status",
+        "startedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "description": "One line saying what the helper does (the description the agent gave it)."
+        },
+        "status": {
+          "enum": [
+            "running",
+            "finished",
+            "cancelled",
+            "failed"
+          ]
+        },
+        "startedAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/UnixSeconds"
+        },
+        "lastActivity": {
+          "type": "string",
+          "description": "The latest progress line the agent reported for it, when it reports any."
         }
       }
     },
@@ -355,6 +399,10 @@
             },
             "clientMessageId": {
               "$ref": "#/$defs/Uuid"
+            },
+            "queued": {
+              "type": "boolean",
+              "description": "True while the message waits in the engine behind running background tasks; the host journals the item again without it once the engine takes the message. Additive within v1."
             }
           }
         }
@@ -1002,6 +1050,10 @@
         },
         "attachments": {
           "$ref": "#/$defs/AttachmentCapabilities"
+        },
+        "backgroundTasks": {
+          "type": "boolean",
+          "description": "The agent reports its background helpers in Session.backgroundTasks. Absent or false: it does not. Additive within v1."
         }
       }
     },

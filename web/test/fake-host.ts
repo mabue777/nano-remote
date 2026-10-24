@@ -74,7 +74,7 @@ interface FakeSession {
   inputs: Map<string, Json>;
   byClientMessageId: Map<string, string>;
   /** The scripted turn in progress, if any; `timer` is its next paced step. */
-  running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout> };
+  running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout>; queued?: Json };
 }
 
 export type RequestHook = (
@@ -656,9 +656,11 @@ export class FakeHost {
           throw new HostError({ code: 'session_busy', message: 'A turn is already running in this session.', data: { turnId: session.running.turnId } });
         }
         const turn = this.newTurn(session, params.clientMessageId);
+        // While background tasks run, the message waits in the engine (spec 5.1): queued until takeQueued().
+        const play = this.runningTasks(session) > 0 ? this.queueTurn.bind(this) : this.playTurn.bind(this);
         return {
           result: { turn: { ...turn, items: [] } },
-          after: () => this.playTurn(params.sessionId, turn.turnId, params.input, params.clientMessageId),
+          after: () => play(params.sessionId, turn.turnId, params.input, params.clientMessageId),
         };
       }
       case 'turn/steer': {
@@ -950,9 +952,52 @@ export class FakeHost {
   }
 
   /** P9: the turn ends interrupted; a pending approval is withdrawn by the agent (spec 5.3). */
+  /** Background tasks of the session's agent (spec 5.1): journaled as session/changed, list row updated. */
+  setBackgroundTasks(sessionId: string, tasks: Json[]): void {
+    const session = this.session(sessionId);
+    if (tasks.length > 0) session.summary.backgroundTasks = tasks.map((t) => ({ ...t }));
+    else delete session.summary.backgroundTasks;
+    this.emit(sessionId, 'session/changed', { session: { ...this.full(session), lastSeq: session.journal.length + 1 } });
+    this.broadcast('session/updated', { summary: { ...session.summary } });
+  }
+
+  private runningTasks(session: FakeSession): number {
+    return ((session.summary.backgroundTasks ?? []) as Json[]).filter((t) => t.status === 'running').length;
+  }
+
+  /** A turn whose message waits behind background tasks: the userMessage carries queued until taken. */
+  private queueTurn(sessionId: string, turnId: string, input: Json, clientMessageId: string | undefined): void {
+    const session = this.session(sessionId);
+    this.emit(sessionId, 'turn/started', { turn: { turnId, status: 'inProgress', startedAt: 1760930100, completedAt: null, error: null, items: [] } });
+    const user = { itemId: `itm_fake_${++this.nextId}`, type: 'userMessage', turnId, status: 'completed', content: input, queued: true, ...(clientMessageId !== undefined ? { clientMessageId } : {}) };
+    this.emit(sessionId, 'item/started', { turnId, item: user });
+    this.emit(sessionId, 'item/completed', { turnId, item: user });
+    this.emit(sessionId, 'status/changed', { status: 'running' });
+    session.running!.queued = user;
+  }
+
+  /** The engine takes the queued message: the item without the flag, a short answer, the turn ends. */
+  takeQueued(sessionId: string, reply = 'All three reviews are still running; the parser one is halfway.'): void {
+    const session = this.session(sessionId);
+    const running = session.running;
+    if (running?.queued === undefined) throw new Error(`no queued message in ${sessionId}`);
+    const { queued: _flag, ...item } = running.queued;
+    running.queued = undefined;
+    this.emit(sessionId, 'item/completed', { turnId: running.turnId, item });
+    const agentId = `itm_fake_${++this.nextId}`;
+    this.emit(sessionId, 'item/completed', { turnId: running.turnId, item: { itemId: agentId, type: 'agentMessage', turnId: running.turnId, status: 'completed', text: reply } });
+    this.finishTurn(sessionId, 'completed');
+  }
+
   private interruptTurn(sessionId: string): void {
     const running = this.session(sessionId).running!;
     clearTimeout(running.timer);
+    // Stopping the turn stops the agent's background tasks too (Claude Code's interrupt does).
+    const session = this.session(sessionId);
+    if (this.runningTasks(session) > 0) {
+      const now = Math.floor(Date.now() / 1000);
+      this.setBackgroundTasks(sessionId, (session.summary.backgroundTasks as Json[]).map((t) => (t.status === 'running' ? { ...t, status: 'cancelled', endedAt: now } : t)));
+    }
     if (running.requestId !== undefined) {
       this.emit(sessionId, 'request/resolved', { requestId: running.requestId, kind: 'command', resolvedBy: 'agent', decision: 'cancel' });
     }

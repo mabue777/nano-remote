@@ -487,6 +487,108 @@ describe('agent capabilities', () => {
   });
 });
 
+describe('background tasks (spec 5.1 Session.backgroundTasks)', () => {
+  const running = { id: 'toolu_a', title: 'Review the parser', status: 'running' as const, startedAt: 1760930400 };
+  const withTasks = (options: FakeAgentOptions = {}) => make({ capabilities: { backgroundTasks: true }, ...options });
+  const changed = (events: JournalEvent[]) =>
+    events.filter((e): e is Extract<JournalEvent, { method: 'session/changed' }> => e.method === 'session/changed').map((e) => e.params.session);
+  const userItems = (events: JournalEvent[]) =>
+    events.flatMap((e) => (e.method === 'item/started' || e.method === 'item/completed') && e.params.item.type === 'userMessage' ? [[e.method, e.params.item] as const] : []);
+
+  it('background/changed is published through session/changed and in every summary; only changes are journaled', async () => {
+    const { manager, agent, events } = withTasks();
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    const id = session.sessionId;
+    await manager.turnStart(id, text('go'), cmid());
+    const before = changed(events).length;
+    agent.last.emit({ method: 'background/changed', params: { tasks: [running] } });
+    agent.last.emit({ method: 'background/changed', params: { tasks: [{ ...running }] } });
+    expect(changed(events).slice(before).map((s) => s.backgroundTasks)).toEqual([[running]]);
+    expect(manager.session(id).backgroundTasks).toEqual([running]);
+    expect(manager.summary(id)?.backgroundTasks).toEqual([running]);
+    expect(manager.list().sessions[0]!.backgroundTasks).toEqual([running]);
+    // Other session changes carry the list too.
+    manager.rename(id, 'Renamed');
+    expect(changed(events).at(-1)).toMatchObject({ title: 'Renamed', backgroundTasks: [running] });
+    // An empty list leaves the field out.
+    agent.last.emit({ method: 'background/changed', params: { tasks: [] } });
+    expect(changed(events).at(-1)).not.toHaveProperty('backgroundTasks');
+    expect(manager.session(id)).not.toHaveProperty('backgroundTasks');
+    expect(manager.summary('ses_unknown')).toBeUndefined();
+  });
+
+  it('an agent without the capability publishes nothing', async () => {
+    const { manager, agent, events } = make();
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    const before = events.length;
+    agent.last.emit({ method: 'background/changed', params: { tasks: [running] } });
+    expect(events.length).toBe(before);
+    expect(manager.session(session.sessionId)).not.toHaveProperty('backgroundTasks');
+  });
+
+  it('queued flag: a message sent while tasks run is queued until input/taken; without running tasks it is not', async () => {
+    const { manager, agent, events } = withTasks({ script: scripted([[{ hold: true }], [{ hold: true }], [{ reply: 'ok' }]]) });
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    const id = session.sessionId;
+    const first = cmid();
+    await manager.turnStart(id, text('launch'), first);
+    expect(userItems(events).map(([, item]) => (item as { queued?: boolean }).queued)).toEqual([undefined, undefined]);
+    agent.last.emit({ method: 'background/changed', params: { tasks: [running] } });
+    agent.last.emit({ method: 'turn/completed', params: { status: 'completed' } });
+
+    const second = cmid();
+    const from = events.length;
+    await manager.turnStart(id, text('status?'), second);
+    const queued = userItems(events.slice(from));
+    expect(queued.map(([method, item]) => [method, item.clientMessageId, (item as { queued?: boolean }).queued])).toEqual([
+      ['item/started', second, true],
+      ['item/completed', second, true],
+    ]);
+    const itemId = queued[0]![1].itemId;
+    // An id that is not queued changes nothing; the queued one is journaled again without the flag.
+    agent.last.emit({ method: 'input/taken', params: { clientMessageId: first } });
+    const mark = events.length;
+    agent.last.emit({ method: 'input/taken', params: { clientMessageId: second } });
+    agent.last.emit({ method: 'input/taken', params: { clientMessageId: second } });
+    expect(events.slice(mark).map((e) => e.method)).toEqual(['item/completed']);
+    expect(events.at(-1)!.params).toMatchObject({ item: { itemId, type: 'userMessage', clientMessageId: second } });
+    expect((events.at(-1)!.params as { item: object }).item).not.toHaveProperty('queued');
+    const turnId = manager.runningTurnId(id)!;
+    expect(manager.turn(id, turnId)!.items).toEqual([itemId]);
+  });
+
+  it('a queued message whose turn ends first loses the flag before turn/completed', async () => {
+    const { manager, agent, events } = withTasks({ script: scripted([[{ hold: true }]]) });
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    const id = session.sessionId;
+    // A turn the engine started by itself (a task reported in) is joined by the user's message.
+    agent.last.emit({ method: 'turn/started', params: {} });
+    agent.last.emit({ method: 'background/changed', params: { tasks: [running] } });
+    const message = cmid();
+    await manager.turnStart(id, text('status?'), message);
+    expect(userItems(events).at(-1)![1]).toMatchObject({ clientMessageId: message, queued: true });
+    agent.last.emit({ method: 'turn/completed', params: { status: 'interrupted' } });
+    const end = events.findIndex((e) => e.method === 'turn/completed');
+    const cleared = events.slice(0, end).filter((e) => e.method === 'item/completed').at(-1)!;
+    expect(cleared.params).toMatchObject({ item: { clientMessageId: message } });
+    expect((cleared.params as { item: object }).item).not.toHaveProperty('queued');
+  });
+
+  it('archiving stops the helpers with the engine: running tasks are cancelled before session/closed', async () => {
+    const { manager, agent, events } = withTasks();
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    agent.last.emit({ method: 'background/changed', params: { tasks: [running, { ...running, id: 'toolu_b', status: 'finished', endedAt: 1760930500 }] } });
+    await manager.archive(session.sessionId);
+    const last = changed(events).at(-1)!;
+    expect(last.backgroundTasks!.map((t) => [t.id, t.status])).toEqual([
+      ['toolu_a', 'cancelled'],
+      ['toolu_b', 'finished'],
+    ]);
+    expect(last.backgroundTasks![0]!.endedAt).toEqual(expect.any(Number));
+    expect(events.at(-1)!.method).toBe('session/closed');
+  });
+});
+
 describe('recovery after a host restart', () => {
   it('fails turns that were running, withdraws their requests and sets sessions idle', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nano-recover-'));
@@ -536,7 +638,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true } });
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false });
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });
 

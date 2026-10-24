@@ -209,6 +209,9 @@ from `not_supported`.
 `files` true when it accepts file parts (it gets the file's path). An agent with `images` false still takes
 image parts: the host hands them over as files. Clients offer attaching only when `attachments` is present
 and at least one of the two is true.
+`capabilities.backgroundTasks` (additive within v1) is true when the agent reports its background tasks in
+`Session.backgroundTasks` and marks messages that wait behind them `queued` (section 5.1). Claude Code
+declares it; Codex and Pi declare false. Absent means false.
 
 ### `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
@@ -235,6 +238,19 @@ Optional `lastTurnStatus` (a Turn `status`, below) is the status of the newest t
 session has none; the list shows "finished", "interrupted" or "failed" from it without opening the session
 (additive within v1).
 
+Optional `backgroundTasks` (additive within v1, on the summary and therefore on Session) lists the helpers
+the agent runs beside its turns (background subagents, background commands, monitors):
+`[{id, title, status, startedAt, endedAt?, lastActivity?}]`. `status` is `running`, `finished`,
+`cancelled` or `failed`; `startedAt` and `endedAt` are Unix seconds; `title` is the one line the agent gave
+the helper; `lastActivity` is the latest progress line it reported, if any. The list holds the running
+helpers plus those that ended since the newest turn started: a turn starting (a user's or the engine's own)
+drops the ended ones. The host reports changes with `session/changed` and puts the list in every summary it
+hands out (`session/list`, `session/updated`, `session/open`); with none, or for an agent whose
+`capabilities.backgroundTasks` is false, the field is absent. It is live state: after a host restart no
+session lists any (the engines are gone), and archiving or deleting a session ends its running helpers as
+`cancelled`. Stopping a turn (`turn/interrupt`) cancels them too: Claude Code ends its background
+subagents on interrupt, and they are then listed `cancelled`. Clients ask before Stop while any runs.
+
 **Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model` and `approvalMode`).
 `approvalMode` (additive within v1) may be set in `session/start` settings and is reported back as in effect.
 Its values come from the agent's `capabilities.approvalModes` (section 4); the host stores and reports an
@@ -260,7 +276,7 @@ Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through 
 
 | type | fields | Codex source | notes |
 |---|---|---|---|
-| `userMessage` | `content:[InputPart]`, `clientMessageId?` | `userMessage` | `clientMessageId` echoes the client's own id for Replica reconciliation |
+| `userMessage` | `content:[InputPart]`, `clientMessageId?`, `queued?` | `userMessage` | `clientMessageId` echoes the client's own id for Replica reconciliation; `queued: true` (additive within v1) while the message waits in the engine behind running background tasks: once the engine takes it (or its turn ends) the host journals `item/completed` for the same item without the flag |
 | `agentMessage` | `text` | `agentMessage` | streamed via `item/delta` field `text` |
 | `reasoning` | `summary`, `text?` | `reasoning` | streamed via `item/delta` fields `summary`, `text` |
 | `command` | `command`, `cwd`, `output`, `exitCode?`, `durationMs?` | `commandExecution` | streamed via `item/delta` field `output` |
@@ -281,7 +297,7 @@ Clients apply events in `seq` order and ignore any `seq <= lastApplied` (idempot
 
 | method | params beyond `sessionId, seq` | when |
 |---|---|---|
-| `session/changed` | `session` (full Session) | title, settings, cwd changed |
+| `session/changed` | `session` (full Session) | title, settings, cwd or background tasks changed |
 | `status/changed` | `status` | any session status transition |
 | `turn/started` | `turn` | adapter reports a new turn (after a `turn/start`, or an engine-initiated turn, below) |
 | `turn/completed` | `turn` | status `completed`, `interrupted` or `failed` |
@@ -532,6 +548,7 @@ Data-URL image parts keep working as before and are never stored.
 | `approval/request`, `input/request` | **always**, even while connected (iOS closes the socket about 30 s after lock; the push covers the gap) |
 | `request/resolved` by another device | never; the open stream gets the event |
 | `status/changed` to `error` | the client has no open stream |
+| `session/changed` whose `backgroundTasks` has no `running` task after one ran (additive within v1): body "Background tasks finished" | the client has no open stream |
 
 - Pending requests are replayed through `session/open` (`pending`), so a push that is tapped late still lands on a live prompt or on the resolved state.
 - Pushes are per client; every paired device with a subscription is evaluated separately.
@@ -594,6 +611,24 @@ Attachments (section 8.1), the same for `turn/start` and `turn/steer`:
 | file | text part `Attached file: <path>` | text `Attached file: <path>`; the attachments folder is an `additionalDirectories` entry so reading it asks nothing | text `Attached file: <path>` |
 
 All three declare `attachments: {images: true, files: true}`.
+
+Background tasks (section 5.1), Claude Code only. Verified on 2026-10-24 (SDK 0.3.308, Claude Code 2.1.308)
+by a raw SDK repro (in the Claude adapter's header comment) and by the adapter's live test
+(`host/src/adapters/claude/live-background.test.ts`):
+
+| Protocol | Claude Code | Codex, Pi |
+|---|---|---|
+| task launched | an `Agent`/`Task` call with `run_in_background`, a `Bash` call that went to the background (`backgroundTaskId` in its result), or a `Monitor` call, once its tool result confirms the launch; `id` is the tool_use id, `title` the tool input's `description` | not reported (`capabilities.backgroundTasks` false) |
+| `lastActivity` | `system/task_progress` of that tool_use id: its `summary` when present, else its `description` ("Running <the subagent's tool description>"), one per subagent tool call | |
+| task ended | `system/task_notification`: `completed` is `finished`, `failed` is `failed`, `stopped` is `cancelled`; a run that dies ends its running tasks `failed` (`cancelled` when an unanswered Stop ended it) | |
+| `queued` cleared | the first top-level assistant message or stream event whose `user_message_uuid` is the message's `clientMessageId` (sent as the SDK message `uuid`) | |
+
+Codex and Pi report none yet. The Codex app-server does have the idea as background terminals: requests
+`thread/backgroundTerminals/list` (each `{command, cwd, itemId, processId, osPid?, cpuPercent?, rssKb?}`),
+`.../terminate` and `.../clean`, a list to poll rather than events (engine schema in
+`docs/research/rea/codex-app-server-schema/`); a Codex adapter could map it later. Pi 1.4.0's RPC mode
+documents no background tasks; its in-process subagents come from extensions, which the adapter turns off
+(`--no-extensions`).
 
 The Claude Code approvals and questions reach `canUseTool` only when the adapter passes
 `permissionMode: "default"` and `settingSources: []`. With the user's own settings loaded, auto mode

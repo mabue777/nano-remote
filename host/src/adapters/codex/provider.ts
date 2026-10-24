@@ -10,7 +10,7 @@ import { Engine } from './engine.js';
 import { defaultModel, toModels, versionFrom } from './mapping.js';
 
 /** Codex steers a running turn (`turn/steer`), has turn diffs (the host's), honours its four approval policies, and takes images (localImage) and files (a path line). */
-export const CODEX_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: CODEX_APPROVAL_POLICIES, attachments: { images: true, files: true } };
+export const CODEX_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: CODEX_APPROVAL_POLICIES, attachments: { images: true, files: true }, backgroundTasks: false };
 
 export interface CodexAgentOptions {
   config?: CodexConfig;

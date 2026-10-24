@@ -7,6 +7,7 @@ import { Replica } from '../replica/replica';
 import type { SessionSummary } from '../replica/types';
 import type { ClientState } from '../stream/client';
 import {
+  backgroundTasksText,
   agentRow,
   connectionOf,
   folderOf,
@@ -156,6 +157,12 @@ describe('home formatting', () => {
     expect(row.model).toBeUndefined();
     expect(sessionRow(summary(), new Map(), NOW, 'llamacpp/bonsai-27b').model).toBe('bonsai-27b · llamacpp');
     expect(sessionRow(summary(), new Map(), NOW, '').model).toBeUndefined();
+    // Running background tasks (spec 5.1), for the "N background tasks" badge; ended ones do not count.
+    expect(row.backgroundTasks).toBe(0);
+    const tasks = (['running', 'finished', 'running', 'cancelled'] as const).map((status, n) => ({ id: `t${n}`, title: 't', status, startedAt: 1 }));
+    expect(sessionRow(summary({ backgroundTasks: tasks }), new Map(), NOW).backgroundTasks).toBe(2);
+    expect(backgroundTasksText(1)).toBe('1 background task');
+    expect(backgroundTasksText(2)).toBe('2 background tasks');
     expect(folderOf('/')).toBe('/');
     expect(folderOf('/a/b/')).toBe('b');
   });

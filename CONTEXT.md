@@ -25,8 +25,9 @@ _Avoid_: engine (the agent's own program, which the adapter starts), bot, provid
 **Agent capabilities**:
 What an agent supports, fixed per agent and sent with it in `initialize` and
 `agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes),
-`approvalModes` (the approval modes it honours; Pi honours none) and
-`attachments` (whether it sees attached images and takes attached files). The
+`approvalModes` (the approval modes it honours; Pi honours none),
+`attachments` (whether it sees attached images and takes attached files) and
+`backgroundTasks` (whether it reports its background tasks; Claude Code only). The
 phone shows only the controls an agent supports; without capabilities (an older
 host) it offers everything and learns from `not_supported` (attachments
 excepted: an older host takes no uploads, so the phone offers none).
@@ -51,6 +52,14 @@ _Avoid_: agent, backend; plain "provider" is fine where only model providers are
 A live conversation with a coding agent (Claude Code, Codex; Kimi later) that runs
 on the host, driven from the phone.
 _Avoid_: job, task ("task" belongs to the issue tracker), run
+
+**Background task**:
+A helper an agent runs beside its turns: a background subagent, a background
+command, a monitor (Claude Code). The host lists them in
+`Session.backgroundTasks` while they run and until the next turn starts, a
+message sent while they run is marked queued until the agent takes it, and
+stopping a turn cancels them.
+_Avoid_: job, worker; plain "task" (the issue tracker's word)
 
 **Local chat**:
 The mode where the phone chats with a model provider (Ollama and friends):

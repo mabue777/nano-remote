@@ -84,8 +84,10 @@ describe('protocol examples', () => {
       [TURN_A, 'inProgress'],
       [TURN_B, 'completed'],
     ]);
-    expect(turns[0]!.items.map((i) => i.type)).toEqual(['userMessage']);
+    // The second message of the running turn waits behind background tasks (example 62).
+    expect(turns[0]!.items.map((i) => i.type)).toEqual(['userMessage', 'userMessage']);
     expect(turns[0]!.items[0]).toMatchObject({ clientMessageId: '6f1b0c2e-8a4d-4f3e-9b7a-1d2c3e4f5a6b' });
+    expect(turns[0]!.items[1]).toMatchObject({ queued: true });
     const [message, command] = turns[1]!.items;
     expect(message).toMatchObject({ type: 'agentMessage', status: 'completed', text: 'Done. Created hello.txt in the current directory.' });
     expect(command).toMatchObject({ type: 'command', status: 'completed', output: 'Created hello.txt\n', exitCode: 0 });

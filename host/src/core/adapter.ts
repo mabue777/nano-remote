@@ -14,9 +14,16 @@
 // `turn/started` before the turn's first item; the core opens a turn without a user message and mints
 // its id. A `turn/start` from the user while such a turn runs joins that turn instead of failing with
 // `session_busy` (the engine takes the message mid-turn).
+//
+// Background tasks: an adapter whose agent declares `capabilities.backgroundTasks` reports the helpers its
+// engine runs in the background (subagents, background commands, monitors) with `background/changed`,
+// always the whole list: the running ones plus the ones that ended since the newest turn started. The core
+// publishes it as Session.backgroundTasks. Such an adapter also says when the engine took a user message
+// (`input/taken`), so a message that waited behind running tasks stops showing as queued.
 import type {
   Agent,
   ApprovalRequest,
+  BackgroundTask,
   Decision,
   InputFile,
   InputImage,
@@ -57,6 +64,13 @@ export type AdapterEvent =
   | { method: 'item/completed'; params: { item: AdapterItem } }
   | { method: 'approval/request'; params: { request: AdapterApprovalRequest } }
   | { method: 'input/request'; params: { request: AdapterInputRequest } }
+  /**
+   * The engine's background tasks changed (capabilities.backgroundTasks): the whole list, running ones
+   * plus those that ended since the newest turn started. Published as Session.backgroundTasks.
+   */
+  | { method: 'background/changed'; params: { tasks: BackgroundTask[] } }
+  /** The engine began answering the user message with this clientMessageId (it is no longer queued). */
+  | { method: 'input/taken'; params: { clientMessageId: string } }
   /** The engine dropped a request on its own (timeout, superseded). Journaled as resolved by "agent". */
   | { method: 'request/withdrawn'; params: { requestId: string } }
   | { method: 'usage/updated'; params: { usage: Usage } }
@@ -99,6 +113,8 @@ export interface AgentCapabilities {
   readonly approvalModes: readonly string[];
   /** Attachments (spec 8.1): images in the engine's native image input, files as a path in the prompt. */
   readonly attachments: { readonly images: boolean; readonly files: boolean };
+  /** The adapter reports the engine's background tasks (`background/changed`) and `input/taken`. */
+  readonly backgroundTasks: boolean;
 }
 
 /**
@@ -157,7 +173,7 @@ export function describeAgent(provider: AgentProvider): Agent {
   const agent: Agent = { id: provider.id, name: provider.name, status: state.status };
   if (state.version !== undefined) agent.version = state.version;
   if (state.reason !== undefined) agent.reason = state.reason;
-  const { steer, diff, approvalModes, attachments } = provider.capabilities;
-  agent.capabilities = { steer, diff, approvalModes: [...approvalModes], attachments: { ...attachments } };
+  const { steer, diff, approvalModes, attachments, backgroundTasks } = provider.capabilities;
+  agent.capabilities = { steer, diff, approvalModes: [...approvalModes], attachments: { ...attachments }, backgroundTasks };
   return agent;
 }

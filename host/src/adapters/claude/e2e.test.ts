@@ -62,6 +62,48 @@ const turnOf = (event: JournalEvent) => (event.params as { turn: { turnId: strin
 
 const bash = (command: string, description = 'May I create hello.txt?') => ({ tool: 'Bash', input: { command, description } });
 
+describe('background tasks end to end with the Claude adapter (spec 5.1 backgroundTasks, userMessage queued)', () => {
+  const launch = [
+    { message: { type: 'assistant', message: { id: 'msg_l', content: [{ type: 'tool_use', id: 'toolu_a', name: 'Agent', input: { description: 'Review the parser', prompt: 'x', run_in_background: true } }] }, parent_tool_use_id: null } },
+    { message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_a', content: 'launched' }] }, parent_tool_use_id: null, tool_use_result: { status: 'async_launched', agentId: 'agent_1' } } },
+    { text: 'Launched.', chunks: 1 },
+  ];
+  const tasksOf = (event: JournalEvent) => ((event.params as { session: { backgroundTasks?: { id: string; status: string }[] } }).session.backgroundTasks ?? []).map((t) => [t.id, t.status]);
+
+  it('launch, a queued message the engine then takes, the end: session/changed, session/list and the userMessage flag', async () => {
+    const { h, fake } = await setup({ turns: [launch, [{ text: 'Still reviewing.', chunks: 1 }]] });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: text('Review the parser in the background'), clientMessageId: randomUUID() });
+    const launched = await waitEvent(phone, 'session/changed', (p) => Array.isArray((p.session as { backgroundTasks?: unknown }).backgroundTasks));
+    expect(tasksOf(launched)).toEqual([['toolu_a', 'running']]);
+    await waitEvent(phone, 'turn/completed');
+    const { sessions } = await rpc<{ sessions: { sessionId: string; backgroundTasks?: unknown[] }[] }>(phone, 'session/list', {});
+    expect(sessions.find((s) => s.sessionId === sessionId)?.backgroundTasks).toEqual([expect.objectContaining({ id: 'toolu_a', title: 'Review the parser', status: 'running' })]);
+
+    const clientMessageId = randomUUID();
+    const from = eventsOf(phone, sessionId).length;
+    await rpc(phone, 'turn/start', { sessionId, input: text('How is it going?'), clientMessageId });
+    await phone.until(() => eventsOf(phone, sessionId).filter((e) => e.method === 'turn/completed').length === 2 || undefined, 'the second turn');
+    const second = eventsOf(phone, sessionId).slice(from);
+    const userEvents = second.filter((e) => (e.method === 'item/started' || e.method === 'item/completed') && (e.params as { item: { type: string } }).item.type === 'userMessage');
+    expect(userEvents.map((e) => [e.method, (e.params as { item: { queued?: boolean } }).item.queued ?? false])).toEqual([
+      ['item/started', true],
+      ['item/completed', true],
+      ['item/completed', false],
+    ]);
+    // The flag goes once the engine answers the message, before the answer is shown.
+    const reply = second.findIndex((e) => e.method === 'item/completed' && (e.params as { item: { type: string } }).item.type === 'agentMessage');
+    expect(second.indexOf(userEvents[2]!)).toBeLessThan(reply);
+
+    // The subagent reports in: finished; the turn it wakes starts a new list without it.
+    fake.last.send({ type: 'system', subtype: 'task_notification', task_id: 'agent_1', tool_use_id: 'toolu_a', status: 'completed', summary: 'found 2 bugs', output_file: '/tmp/a' });
+    const ended = await waitEvent(phone, 'session/changed', (p) => (p.session as { backgroundTasks?: { status: string }[] }).backgroundTasks?.[0]?.status === 'finished');
+    expect(tasksOf(ended)).toEqual([['toolu_a', 'finished']]);
+  });
+});
+
 describe('session core end to end with the Claude adapter', () => {
   it('open, turn/start, approval/request, approval/resolve accept, turn/completed', async () => {
     const { h, fake } = await setup({ turns: [[{ ...bash('echo hello > hello.txt'), id: 'toolu_1' }, { text: 'Done.', chunks: 1 }]] });
@@ -436,7 +478,7 @@ describe('session core end to end with the Claude adapter', () => {
       name: 'Claude Code',
       status: 'ready',
       version: '0.3.308',
-      capabilities: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'], attachments: { images: true, files: true } },
+      capabilities: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'], attachments: { images: true, files: true }, backgroundTasks: true },
     });
     const sessionId = await newSession(h, phone);
     await rpc(phone, 'session/open', { sessionId });

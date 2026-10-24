@@ -6,13 +6,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
 import { BackHeader } from '../../ui/BackHeader';
+import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
 import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import type { AttachmentEntry } from './attachments/composer';
-import { SessionModel, type AttachmentServices, type AttachmentView, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
@@ -60,6 +61,13 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   }, [model]);
   useEffect(() => () => requests.dispose(), [requests]);
   useEffect(() => onOpened?.(sessionId), [sessionId, onOpened]);
+  // Elapsed times of running background tasks count up every second.
+  const tasksRunning = model.runningTasks > 0;
+  useEffect(() => {
+    if (!tasksRunning) return undefined;
+    const timer = setInterval(() => model.tick(), 1000);
+    return () => clearInterval(timer);
+  }, [model, tasksRunning]);
 
   const scroller = useRef<HTMLElement>(null);
   const landed = useRef(false);
@@ -158,6 +166,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
           </span>
         </div>
       )}
+      <BackgroundTasks rows={model.backgroundTasks} model={model} />
       {model.openError !== undefined && (
         <p class="error" role="alert">
           {model.openError}
@@ -220,7 +229,53 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       {model.changesTurnId !== undefined && (
         <ChangesSheet sessionId={sessionId} turnId={model.changesTurnId} replica={replica} onClose={() => model.closeChanges()} />
       )}
+      <StopConfirm model={model} />
     </main>
+  );
+}
+
+/** The strip of background tasks: one row each (title, elapsed time, status); a tap shows the activity. */
+function BackgroundTasks({ rows, model }: { rows: BackgroundTaskRow[]; model: SessionModel }) {
+  if (rows.length === 0) return null;
+  const running = rows.filter((row) => row.status === 'running').length;
+  return (
+    <section class="bg-tasks" aria-labelledby="bg-tasks-title">
+      <h2 id="bg-tasks-title" class="bg-tasks-title small">
+        Background tasks{running > 0 ? ` · ${running} running` : ''}
+      </h2>
+      <ul class="bg-task-list">
+        {rows.map((row) => (
+          <li key={row.id} class="bg-task" data-status={row.status}>
+            <button type="button" class="bg-task-row" aria-expanded={row.expanded} onClick={() => model.toggleTask(row.id)}>
+              <span class="bg-task-title">{row.title}</span>
+              <span class="bg-task-time small muted">{row.elapsed}</span>
+              <span class={`state small ${row.tone}`}>{row.state}</span>
+            </button>
+            {row.expanded && <p class="bg-task-activity small muted">{row.activity ?? 'No activity reported yet.'}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Stop while background tasks run: stopping the turn cancels them too, so it asks first. */
+function StopConfirm({ model }: { model: SessionModel }) {
+  const question = model.stopQuestion;
+  if (question === undefined) return null;
+  return (
+    <Sheet labelledBy="stop-confirm-title" onClose={() => model.cancelStop()}>
+      <h2 id="stop-confirm-title">Stop the turn?</h2>
+      <p class="muted small">{question}</p>
+      <div class="actions">
+        <button type="button" class="small ghost" onClick={() => model.cancelStop()}>
+          Keep running
+        </button>
+        <button type="button" class="small danger" onClick={() => model.confirmStop()}>
+          Stop anyway
+        </button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -235,7 +290,11 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
           {turn.changes} ›
         </button>
       )}
-      {turn.label !== '' && <p class={`turn-state small ${turn.tone}`}>{turn.label}</p>}
+      {turn.label !== '' && (
+        <p class={`turn-state small ${turn.tone}${turn.queued === true ? ' queued' : ''}`} {...(turn.queued === true ? { role: 'status' } : {})}>
+          {turn.label}
+        </p>
+      )}
       {turn.error !== undefined && (
         <p class="error small" role="alert">
           {turn.error}
@@ -561,7 +620,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         />
         <div class="composer-actions">
           {running && (
-            <button type="button" class="stop" onClick={() => void model.interrupt()} disabled={!model.canInterrupt} aria-label="Interrupt">
+            <button type="button" class="stop" onClick={() => model.requestStop()} disabled={!model.canInterrupt} aria-label="Interrupt">
               {model.interrupting ? 'Stopping…' : 'Stop'}
             </button>
           )}

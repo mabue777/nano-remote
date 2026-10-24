@@ -640,8 +640,10 @@ export class Replica {
     if (base === undefined || base.lastSeq > view.cursor) return;
     const fromSession = view.session !== null ? summaryOf(view.session) : {};
     const lastHostTurn = [...view.turns].reverse().find((t) => t.optimistic === undefined);
+    // Background tasks are live state (spec 5.1): the session's list replaces the row's, even with none.
+    const { backgroundTasks: _rowTasks, ...row } = base;
     this.summaries.set(view.sessionId, {
-      ...base,
+      ...(view.session !== null ? row : base),
       ...fromSession,
       status: view.status,
       lastSeq: Math.max(base.lastSeq, view.cursor),

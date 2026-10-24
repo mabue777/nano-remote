@@ -186,6 +186,36 @@ describe('push rules (spec 9)', () => {
     ]);
   });
 
+  const tasks = (...statuses: string[]) =>
+    ev('session/changed', {
+      session: {
+        sessionId: SESSION,
+        title: TITLE,
+        backgroundTasks: statuses.map((status, n) => ({ id: `toolu_${n}`, title: `task ${n}`, status, startedAt: 1 })),
+      },
+    });
+
+  it('the last running background task ending pushes "Background tasks finished" to a client without an open stream', async () => {
+    const phone = pair('phone');
+    await emit(tasks('running', 'running'), tasks('running', 'finished'));
+    expect(sender.sent).toEqual([]);
+    await emit(tasks('finished', 'cancelled'));
+    expect(sender.sent.map((s) => [s.clientId, s.payload, s.options])).toEqual([
+      [phone, { title: TITLE, body: 'Background tasks finished', url: `/s/${SESSION}` }, { ttl: 3600, topic: `${SESSION}.background` }],
+    ]);
+    // Nothing ran since: an empty list, or one with only ended tasks, pushes nothing more.
+    await emit(tasks(), tasks('failed'));
+    expect(sender.sent).toHaveLength(1);
+  });
+
+  it('background tasks ending do not push to a client with an open stream, nor without tasks ever running', async () => {
+    const phone = pair('phone');
+    await emit(tasks('finished'));
+    connectStream(phone);
+    await emit(tasks('running'), tasks());
+    expect(sender.sent).toEqual([]);
+  });
+
   it('status/changed to error does not push to a client with an open stream', async () => {
     const phone = pair('phone');
     connectStream(phone);

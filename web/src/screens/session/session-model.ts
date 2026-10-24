@@ -17,12 +17,17 @@
 // With diffs, every finished turn asks turn/diff once and shows "N files changed" when it changed any;
 // the line opens the turn's Changes sheet.
 // Without capabilities (an older host) the rules above apply unchanged.
+//
+// Background tasks (spec 5.1 Session.backgroundTasks): the strip lists the agent's helpers with their
+// elapsed time and status, a tap shows the latest activity line. A turn whose message the host marks
+// `queued` says it waits for the running tasks instead of "Working…". Stop asks first while tasks run,
+// because stopping the turn also cancels them (Claude Code ends its background subagents on interrupt).
 import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
 import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
-import { folderOf, statusOf, type SessionRow } from '../home-model';
+import { backgroundTasksText, folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { modelLabel } from '../new-session-model';
 import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
@@ -79,6 +84,50 @@ export interface TurnRow {
   send?: { clientMessageId: string; failure?: string; busy: boolean };
   /** "3 files changed" for a finished turn that changed files (turn/diff); opens its Changes sheet. */
   changes?: string;
+  /** Its message waits in the engine behind background tasks (userMessage `queued`); `label` says so. */
+  queued?: boolean;
+}
+
+/** One background task of the session, for the strip. */
+export interface BackgroundTaskRow {
+  id: string;
+  title: string;
+  status: BackgroundTask['status'];
+  /** "Running", "Finished", "Cancelled", "Failed". */
+  state: string;
+  tone: Tone;
+  /** Time since it started, or how long it ran: "45 s", "2 min 5 s", "1 h 3 min". */
+  elapsed: string;
+  /** The latest activity line, shown when the row is opened. */
+  activity?: string;
+  expanded: boolean;
+}
+
+type BackgroundTask = NonNullable<SessionSummary['backgroundTasks']>[number];
+
+const TASK_STATE: Record<BackgroundTask['status'], { state: string; tone: Tone }> = {
+  running: { state: 'Running', tone: 'busy' },
+  finished: { state: 'Finished', tone: 'ok' },
+  cancelled: { state: 'Cancelled', tone: 'muted' },
+  failed: { state: 'Failed', tone: 'error' },
+};
+
+/** Whole seconds as "45 s", "2 min 5 s", "1 h 3 min". */
+export function elapsedText(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${s % 60} s`;
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}
+
+/** The notice of a turn whose message waits behind background tasks. */
+export function queuedText(running: number): string {
+  return running > 0 ? `Queued: waiting for ${backgroundTasksText(running)} to finish` : 'Queued: waiting for the agent';
+}
+
+/** What Stop asks while background tasks run. */
+export function stopConfirmText(running: number): string {
+  return `This also cancels ${backgroundTasksText(running)}. Stop anyway?`;
 }
 
 export interface SteerRow {
@@ -331,6 +380,8 @@ export interface SessionModelOptions {
   agents?: AgentsSource;
   /** Uploads for the composer; without them the composer offers no attach button. */
   attachments?: AttachmentServices;
+  /** Milliseconds since the epoch (background task times). Default Date.now. */
+  now?: () => number;
 }
 
 /** The composer's note while a turn runs and the agent cannot steer. */
@@ -365,10 +416,15 @@ export class SessionModel extends Model {
   private readonly attachmentServices: AttachmentServices | undefined;
   /** The photos and files picked for the next message. */
   readonly attachments: ComposerAttachments | undefined;
+  /** Stop waits for this confirmation while background tasks run. */
+  confirmingStop = false;
+  private readonly openTasks = new Set<string>();
+  private readonly now: () => number;
 
   constructor(options: SessionModelOptions) {
     super();
     this.sessionId = options.sessionId;
+    this.now = options.now ?? Date.now;
     this.replica = options.replica;
     this.agents = options.agents;
     this.attachmentServices = options.attachments;
@@ -514,11 +570,58 @@ export class SessionModel extends Model {
     return this.pending.total > 0;
   }
 
+  /** The session's background tasks (spec 5.1), running first as the host lists them; none once closed. */
+  get backgroundTasks(): BackgroundTaskRow[] {
+    if (this.closed) return [];
+    const nowSeconds = Math.floor(this.now() / 1000);
+    return (this.taskList ?? []).map((task) => {
+      const end = task.endedAt ?? (task.status === 'running' ? nowSeconds : task.startedAt);
+      const row: BackgroundTaskRow = {
+        id: task.id,
+        title: task.title.trim() === '' ? 'Background task' : task.title,
+        status: task.status,
+        ...(TASK_STATE[task.status] ?? TASK_STATE.running),
+        elapsed: elapsedText(end - task.startedAt),
+        expanded: this.openTasks.has(task.id),
+      };
+      if (task.lastActivity !== undefined && task.lastActivity !== '') row.activity = task.lastActivity;
+      return row;
+    });
+  }
+
+  private get taskList(): BackgroundTask[] | undefined {
+    const view = this.view;
+    return view?.session !== null && view?.session !== undefined ? view.session.backgroundTasks : this.summary?.backgroundTasks;
+  }
+
+  /** How many background tasks are running. */
+  get runningTasks(): number {
+    return this.backgroundTasks.filter((task) => task.status === 'running').length;
+  }
+
+  /** Opens or closes a task row's activity line. */
+  toggleTask(id: string): void {
+    if (!this.openTasks.delete(id)) this.openTasks.add(id);
+    this.changed();
+  }
+
+  /** Re-renders the elapsed times (the screen calls it every second while tasks run). */
+  tick(): void {
+    if (this.runningTasks > 0) this.changed();
+  }
+
   get turns(): TurnRow[] {
     const view = this.view;
     if (view === undefined) return [];
+    const running = this.runningTasks;
     return view.turns.map((turn) => {
       const row = turnRow(turn, view.items, this.expanded);
+      const queued = turn.status === 'inProgress' && turn.items.some((id) => (view.items[id] as { queued?: unknown } | undefined)?.queued === true);
+      if (queued) {
+        row.label = queuedText(running);
+        row.tone = 'muted';
+        row.queued = true;
+      }
       const count = this.fileCounts.get(turn.turnId) ?? 0;
       if (count > 0) row.changes = filesChangedText(count);
       return row;
@@ -728,6 +831,38 @@ export class SessionModel extends Model {
 
   discardSteer(clientMessageId: string): void {
     if (this.steers.delete(clientMessageId)) this.changed();
+  }
+
+  /** The Stop button: asks first while background tasks run (stopping cancels them), else stops. */
+  requestStop(): void {
+    if (!this.canInterrupt) return;
+    if (this.runningTasks > 0) {
+      this.confirmingStop = true;
+      this.changed();
+      return;
+    }
+    void this.interrupt();
+  }
+
+  /** "Stop anyway": the turn stops, and with it the background tasks. */
+  confirmStop(): void {
+    if (!this.confirmingStop) return;
+    this.confirmingStop = false;
+    void this.interrupt();
+  }
+
+  /** The question of the Stop confirmation while it is open. */
+  get stopQuestion(): string | undefined {
+    if (!this.confirmingStop || !this.canInterrupt) return undefined;
+    const running = this.runningTasks;
+    return running > 0 ? stopConfirmText(running) : 'Stop the turn?';
+  }
+
+  /** "Keep running": nothing stops. */
+  cancelStop(): void {
+    if (!this.confirmingStop) return;
+    this.confirmingStop = false;
+    this.changed();
   }
 
   /** turn/interrupt for the running turn; it ends through the Journal (turn/completed interrupted). */
