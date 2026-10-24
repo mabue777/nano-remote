@@ -7,14 +7,16 @@
 // Scripted turns are paced (PACE_MS per step) so the browser sees deltas arrive.
 //
 // Test hooks: `POST /test/code` issues a fresh code; `POST /test/expire` issues one that is already
-// expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them);
+// expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them) and empties
+// the request log;
 // `POST /test/run {sessionId, text}` starts a scripted turn the way the desktop would;
 // `POST /test/resolve {sessionId, decision}` answers its approval from another device;
 // `POST /test/touch {sessionId, agoSeconds}` sets a session's updatedAt to that many seconds ago;
 // `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
 // `POST /test/request {sessionId, request}` puts any approval or question up (answers {requestId});
 // `POST /test/resolve-request {sessionId, requestId, by?, decision?, answers?}` answers it from another
-// device; `POST /test/last {method}` returns the params of the last request of that method;
+// device; `POST /test/last {method}` returns the params of the last request of that method
+// since the last reset (null when none);
 // `POST /test/review {sessionId, chunks}` starts a turn whose command streams `chunks` (answers {itemId}),
 // `POST /test/review-finish {sessionId, changes}` completes it with those file changes, and
 // `POST /test/no-diffs {sessionId}` makes turn/diff answer not_supported for the session, and

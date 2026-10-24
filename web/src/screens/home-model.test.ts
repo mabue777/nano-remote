@@ -76,6 +76,11 @@ function summary(fields: Partial<SessionSummary> = {}): SessionSummary {
 
 const NOW = 1760930400_000;
 
+/** session/list requests for the main list (not the archived one). */
+function listCalls(client: FakeTransport) {
+  return client.calls.filter((c) => c.method === 'session/list' && c.params?.archived !== true);
+}
+
 function setup(options: { connect?: boolean } = {}) {
   const client = new HomeTransport();
   const replica = new Replica({ client, storage: null });
@@ -176,8 +181,10 @@ describe('HomeModel', () => {
     const settings: Record<string, { model?: string }> = { ses_pi: { model: 'openrouter/qwen/qwen3.5-coder' }, ses_plain: {} };
     const replica = {
       sessions: [summary({ sessionId: 'ses_pi', agentId: 'pi' }), summary({ sessionId: 'ses_plain' }), summary({ sessionId: 'ses_unopened' })],
+      archivedSessions: [],
       sessionsNextCursor: undefined,
       refreshSessions: async () => undefined,
+      refreshArchived: async () => undefined,
       loadMoreSessions: async () => false,
       subscribe: () => () => undefined,
       session: (id: string) => (id === 'ses_unopened' ? undefined : { session: { settings: settings[id]! } }),
@@ -307,14 +314,15 @@ describe('HomeModel', () => {
 
   it('pull to refresh: list and status again; one at a time; failures show and clear', async () => {
     const { client, model } = setup({ connect: true });
-    client.last('session/list').resolve({ sessions: [] });
+    listCalls(client).at(-1)!.resolve({ sessions: [] });
     client.last('host/status').resolve(STATUS);
     await settle();
     const first = model.refresh();
     expect(model.refreshing).toBe(true);
     void model.refresh(); // ignored while one runs
-    expect(client.count('session/list')).toBe(2);
-    client.last('session/list').reject(rpcError('internal'));
+    expect(listCalls(client)).toHaveLength(2);
+    client.calls.filter((c) => c.method === 'session/list' && !c.settled && c.params?.archived === true).forEach((c) => c.resolve({ sessions: [] }));
+    listCalls(client).at(-1)!.reject(rpcError('internal'));
     client.last('host/status').resolve(STATUS);
     await first;
     expect(model.refreshing).toBe(false);
@@ -341,7 +349,7 @@ describe('HomeModel', () => {
     void model.loadMore(); // one page at a time
     await more;
     expect(model.sessions.map((s) => s.sessionId)).toEqual(['a', 'b']);
-    expect(client.calls.filter((c) => c.method === 'session/list').map((c) => c.params?.cursor)).toEqual([undefined, 'p2']);
+    expect(listCalls(client).map((c) => c.params?.cursor)).toEqual([undefined, 'p2']);
     await model.loadMore();
     expect(model.error).toBe('Could not load more sessions: cursor_expired');
     expect(model.loadingMore).toBe(false);
@@ -349,7 +357,7 @@ describe('HomeModel', () => {
     await model.refresh();
     expect(model.hasMore).toBe(false);
     await model.loadMore();
-    expect(client.calls.filter((c) => c.method === 'session/list')).toHaveLength(4);
+    expect(listCalls(client)).toHaveLength(4);
   });
 
   it('update needed and unpaired are their own indicator states; dispose stops everything', () => {

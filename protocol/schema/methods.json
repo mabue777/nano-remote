@@ -104,7 +104,8 @@
       "properties": {
         "agentId": {"$ref": "common.json#/$defs/Id"},
         "cursor": {"type": "string"},
-        "limit": {"type": "integer", "minimum": 1}
+        "limit": {"type": "integer", "minimum": 1},
+        "archived": {"type": "boolean", "description": "true lists the archived sessions instead of the others (spec 6). Additive within v1."}
       }
     },
     "session/list.result": {
@@ -226,6 +227,14 @@
       "properties": {"sessionId": {"$ref": "common.json#/$defs/Id"}}
     },
     "session/archive.result": {"$ref": "common.json#/$defs/Ok"},
+
+    "session/unarchive.params": {
+      "type": "object",
+      "description": "Brings an archived session back to the list (spec 6). Additive within v1.",
+      "required": ["sessionId"],
+      "properties": {"sessionId": {"$ref": "common.json#/$defs/Id"}}
+    },
+    "session/unarchive.result": {"$ref": "common.json#/$defs/Ok"},
 
     "session/delete.params": {
       "type": "object",

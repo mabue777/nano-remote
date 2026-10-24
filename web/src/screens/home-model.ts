@@ -26,8 +26,11 @@ export interface HomeClient {
 /** What the home screen needs from the Replica; Replica fits. */
 export interface HomeReplica {
   readonly sessions: SessionSummary[];
+  /** The archived sessions, for the "Archived" section. */
+  readonly archivedSessions: SessionSummary[];
   readonly sessionsNextCursor: string | undefined;
   refreshSessions(): Promise<unknown>;
+  refreshArchived(): Promise<unknown>;
   loadMoreSessions(): Promise<boolean>;
   subscribe(listener: () => void): () => void;
   /** The session as last opened (its settings name the model); optional, rows then show no model. */
@@ -425,6 +428,12 @@ export interface HomeModelOptions {
 export class HomeModel extends Model {
   refreshing = false;
   loadingMore = false;
+  /** The "Archived" section is open (it starts collapsed). */
+  archivedOpen = false;
+  /** The row whose swipe actions show, if any. */
+  revealedId: string | undefined;
+  /** The row whose long-press menu (the actions sheet) is open, if any. */
+  menuId: string | undefined;
   /** The last failed refresh or page, shown above the list. */
   error: string | undefined;
   private status: { value: HostStatus; receivedAt: number } | undefined;
@@ -446,7 +455,10 @@ export class HomeModel extends Model {
         this.updateTicker();
         this.changed();
       }),
-      this.client.on('ready', () => this.fetchStatus()),
+      this.client.on('ready', () => {
+        void this.fetchStatus();
+        this.fetchArchived();
+      }),
       this.client.onNotification('host/status/changed', (params) => {
         this.status = { value: params as unknown as HostStatus, receivedAt: this.now() };
         this.changed();
@@ -454,7 +466,10 @@ export class HomeModel extends Model {
       this.replica.subscribe(() => this.changed()),
     );
     if (this.away !== undefined) this.unsubscribe.push(this.away.subscribe(() => this.changed()));
-    if (this.client.state === 'ready') this.fetchStatus();
+    if (this.client.state === 'ready') {
+      void this.fetchStatus();
+      this.fetchArchived();
+    }
     this.updateTicker();
   }
 
@@ -482,14 +497,62 @@ export class HomeModel extends Model {
   }
 
   get sessions(): SessionRow[] {
-    const names = new Map<string, string>();
-    for (const agent of this.status?.value.agents ?? this.client.host?.agents ?? []) names.set(agent.id, agent.name);
+    const names = this.agentNames();
     const now = this.now();
     return orderSessions(this.replica.sessions).map((summary) => {
       const row = sessionRow(summary, names, now, this.replica.session?.(summary.sessionId)?.session?.settings?.model);
       if (this.away?.isMarked(summary.sessionId) === true && isFinished(summary)) row.finishedWhileAway = true;
       return row;
     });
+  }
+
+  /** The "Archived" section's rows, newest first. */
+  get archived(): SessionRow[] {
+    const names = this.agentNames();
+    const now = this.now();
+    return this.replica.archivedSessions.map((summary) => sessionRow(summary, names, now, this.replica.session?.(summary.sessionId)?.session?.settings?.model));
+  }
+
+  get archivedCount(): number {
+    return this.replica.archivedSessions.length;
+  }
+
+  toggleArchived(): void {
+    this.archivedOpen = !this.archivedOpen;
+    this.changed();
+  }
+
+  /** A swipe: the row shows its actions; any other row's hide. */
+  reveal(sessionId: string): void {
+    if (this.revealedId === sessionId) return;
+    this.revealedId = sessionId;
+    this.changed();
+  }
+
+  conceal(): void {
+    if (this.revealedId === undefined) return;
+    this.revealedId = undefined;
+    this.changed();
+  }
+
+  /** A long-press: the actions sheet for the row. */
+  openMenu(sessionId: string): void {
+    this.revealedId = undefined;
+    this.menuId = sessionId;
+    this.changed();
+  }
+
+  closeMenu(): void {
+    if (this.menuId === undefined) return;
+    this.menuId = undefined;
+    this.changed();
+  }
+
+  /** The row the menu is open for, while it is still listed. */
+  get menuRow(): SessionRow | undefined {
+    const id = this.menuId;
+    if (id === undefined) return undefined;
+    return [...this.sessions, ...this.archived].find((row) => row.sessionId === id);
   }
 
   get hasMore(): boolean {
@@ -503,7 +566,7 @@ export class HomeModel extends Model {
     this.error = undefined;
     this.changed();
     try {
-      await Promise.all([this.replica.refreshSessions(), this.fetchStatus()]);
+      await Promise.all([this.replica.refreshSessions(), this.fetchStatus(), this.replica.refreshArchived()]);
     } catch (error) {
       this.error = `Could not refresh: ${errorText(error)}`;
     } finally {
@@ -530,6 +593,17 @@ export class HomeModel extends Model {
   /** The "retry now" button on the offline indicator. */
   retryNow(): void {
     this.client.retryNow();
+  }
+
+  private agentNames(): Map<string, string> {
+    const names = new Map<string, string>();
+    for (const agent of this.status?.value.agents ?? this.client.host?.agents ?? []) names.set(agent.id, agent.name);
+    return names;
+  }
+
+  /** The archived list for the "Archived" section; a failure leaves what the phone had. */
+  private fetchArchived(): void {
+    this.replica.refreshArchived().catch(() => undefined);
   }
 
   private async fetchStatus(): Promise<void> {

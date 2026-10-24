@@ -9,12 +9,14 @@
 // does on lock, closeAll(code) closes with a spec 10 code, compact() makes old cursors expire,
 // dropLive() loses one live event, onRequest intercepts requests, refuse() closes new sockets,
 // paceMs plays scripted turns step by step on a timer (so a browser sees deltas arrive), delay() holds
-// back the answer to the next request of a method, and reset() forgets every session. addRequest() puts
+// back the answer to the next request of a method, and reset() forgets every session and the request log. addRequest() puts
 // any approval or question in front of the user and resolveRequest() answers it from another device;
 // approval/resolve, input/answer and device/list (this stream's device plus a desktop) are answered.
 // For the browser smoke (e2e-server.ts) it can also share an http server and authorize sockets by cookie,
 // and it answers the discovery calls of spec 4 (agent/list, model/list, fs/readDirectory, project/list)
-// and pages session/list by cursor. turn/diff is computed from the turn's fileChange items (the last
+// and pages session/list by cursor (the archived ones with `archived: true`). session/archive,
+// session/unarchive and session/delete work as in spec 6: archive and delete stop a running turn and its
+// background tasks first; delete forgets the session. turn/diff is computed from the turn's fileChange items (the last
 // change per path), answered from `turnDiffs` when a test set one, or refused `not_supported` for sessions
 // in `noDiffs`. runReviewTurn() plays a turn
 // whose command streams colored output until finishReviewTurn() ends it with file edits.
@@ -81,6 +83,8 @@ interface FakeSession {
   byClientMessageId: Map<string, string>;
   /** The scripted turn in progress, if any; `timer` is its next paced step. */
   running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout>; queued?: Json };
+  /** Set by session/delete before the turn and helpers stop: the list hears no more of it (as the host). */
+  deleted?: true;
 }
 
 export type RequestHook = (
@@ -428,8 +432,12 @@ export class FakeHost {
     return ms;
   }
 
-  /** Forgets every session (stopping paced turns) and numbers new ones from 1 again. */
+  /**
+   * Forgets every session (stopping paced turns) and numbers new ones from 1 again. Also empties the
+   * request log, so a test that asks for the last request of a method never sees one an earlier test sent.
+   */
   reset(): void {
+    this.requestLog.length = 0;
     for (const session of this.sessions.values()) clearTimeout(session.running?.timer);
     this.sessions.clear();
     this.delays.clear();
@@ -518,6 +526,11 @@ export class FakeHost {
     return entry;
   }
 
+  /** session/updated with the row, unless the session is being deleted (host-core sends none then). */
+  private rowChanged(session: FakeSession): void {
+    if (session.deleted !== true) this.broadcast('session/updated', { summary: { ...session.summary } });
+  }
+
   /** Sends an unsequenced notification to every ready stream. */
   broadcast(method: string, params: Json): void {
     for (const stream of this.openStreams) if (stream.ready) stream.notify(method, params);
@@ -589,6 +602,7 @@ export class FakeHost {
         const all = [...this.sessions.values()]
           .map((s) => ({ ...s.summary }))
           .filter((s) => params.agentId === undefined || s.agentId === params.agentId)
+          .filter((s) => (s.archived === true) === (params.archived === true))
           .sort((a, b) => b.updatedAt - a.updatedAt);
         const start = typeof params.cursor === 'string' ? Number(params.cursor.replace(/^cur_/, '')) : 0;
         if (!Number.isInteger(start) || start < 0) throw new HostError({ code: 'invalid_params', message: 'bad cursor', data: { path: 'cursor' } });
@@ -657,6 +671,42 @@ export class FakeHost {
       }
       case 'session/open':
         return this.open(stream, params);
+      case 'session/archive': {
+        // Spec 6: ends a running turn and its helpers, journals session/closed, the row says archived.
+        const session = this.session(params.sessionId);
+        if (session.summary.archived === true) return { result: { ok: true } };
+        return {
+          result: { ok: true },
+          after: () => {
+            // Flag first, as the host does: the rows sent while the turn stops already say archived.
+            session.summary.archived = true;
+            this.shutdown(params.sessionId);
+            this.emit(params.sessionId, 'session/closed', { reason: 'archived' });
+            this.rowChanged(session);
+          },
+        };
+      }
+      case 'session/unarchive': {
+        const session = this.session(params.sessionId);
+        if (session.summary.archived !== true) return { result: { ok: true } };
+        delete session.summary.archived;
+        return {
+          result: { ok: true },
+          after: () => {
+            this.emit(params.sessionId, 'status/changed', { status: 'idle' });
+            this.rowChanged(session);
+          },
+        };
+      }
+      case 'session/delete': {
+        // Marked first, as the host does: stopping the turn and helpers sends no session/updated.
+        this.session(params.sessionId).deleted = true;
+        this.shutdown(params.sessionId);
+        this.emit(params.sessionId, 'session/closed', { reason: 'deleted' });
+        this.sessions.delete(params.sessionId);
+        for (const stream of this.openStreams) stream.subscriptions.delete(params.sessionId);
+        return { result: { ok: true } };
+      }
       case 'session/close':
         stream.subscriptions.delete(params.sessionId);
         return { result: { ok: true } };
@@ -984,14 +1034,14 @@ export class FakeHost {
     if (tasks.length > 0) session.summary.backgroundTasks = tasks.map((t) => ({ ...t }));
     else delete session.summary.backgroundTasks;
     this.emit(sessionId, 'session/changed', { session: { ...this.full(session), lastSeq: session.journal.length + 1 } });
-    this.broadcast('session/updated', { summary: { ...session.summary } });
+    this.rowChanged(session);
   }
 
   /** The session's status changes by itself (an agent that stopped: `error`): journaled, list row updated. */
   setStatus(sessionId: string, status: string): void {
     const session = this.session(sessionId);
     this.emit(sessionId, 'status/changed', { status });
-    this.broadcast('session/updated', { summary: { ...session.summary } });
+    this.rowChanged(session);
   }
 
   private runningTasks(session: FakeSession): number {
@@ -1020,6 +1070,16 @@ export class FakeHost {
     const agentId = `itm_fake_${++this.nextId}`;
     this.emit(sessionId, 'item/completed', { turnId: running.turnId, item: { itemId: agentId, type: 'agentMessage', turnId: running.turnId, status: 'completed', text: reply } });
     this.finishTurn(sessionId, 'completed');
+  }
+
+  /** Archive and delete: the running turn ends interrupted and running helpers are cancelled (spec 5.1). */
+  private shutdown(sessionId: string): void {
+    const session = this.session(sessionId);
+    if (session.running !== undefined) this.interruptTurn(sessionId);
+    else if (this.runningTasks(session) > 0) {
+      const now = Math.floor(Date.now() / 1000);
+      this.setBackgroundTasks(sessionId, (session.summary.backgroundTasks as Json[]).map((t) => (t.status === 'running' ? { ...t, status: 'cancelled', endedAt: now } : t)));
+    }
   }
 
   private interruptTurn(sessionId: string): void {

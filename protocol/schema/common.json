@@ -146,6 +146,10 @@
         "preview": {
           "type": "string"
         },
+        "archived": {
+          "type": "boolean",
+          "description": "true while the session is archived (session/archive); absent otherwise. Additive within v1."
+        },
         "lastTurnStatus": {
           "$ref": "#/$defs/TurnStatus",
           "description": "Status of the session's newest turn; absent while the session has no turn."

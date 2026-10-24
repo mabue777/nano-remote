@@ -64,7 +64,7 @@ function ChatItem({ row, model, onOpen }: { row: ChatRow; model: ChatsListModel;
   const press = usePress({ onLongPress: () => model.reveal(row.chatId), onSwipeLeft: () => model.reveal(row.chatId) });
   const { consumed, ...handlers } = press;
   return (
-    <li class={`chat-row${row.revealed ? ' revealed' : ''}`} data-chat-id={row.chatId}>
+    <li class={`swipe-row chat-row${row.revealed ? ' revealed' : ''}`} data-chat-id={row.chatId}>
       <a
         class="session chat"
         href={`/c/${encodeURIComponent(row.chatId)}`}

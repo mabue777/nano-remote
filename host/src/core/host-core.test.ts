@@ -284,6 +284,40 @@ describe('session lifecycle', () => {
     expect(listed.sessions.map((s) => s.sessionId)).toContain(sessionId);
   });
 
+  it('session/list archived:true lists the archived sessions; session/unarchive brings one back', async () => {
+    // A ticking clock: with the wall clock (seconds) the order of the list depends on where a second ends.
+    let clock = 100;
+    const now = () => clock++;
+    const h = await setup({ journal: new Journal({ path: ':memory:', now }), core: { now } });
+    const phone = await h.connect();
+    const kept = await newSession(h, phone);
+    const sessionId = await newSession(h, phone);
+    type Summary = { sessionId: string; archived?: boolean; status: string };
+    const listUpdate = (match: (summary: Summary) => boolean) =>
+      phone.until(
+        () => phone.messages.find((m) => m.method === 'session/updated' && match((m.params as { summary: Summary }).summary)),
+        'session/updated',
+      );
+    await rpc(phone, 'session/archive', { sessionId });
+    const updated = await listUpdate((summary) => summary.sessionId === sessionId && summary.archived === true);
+    expect((updated.params as { summary: { archived?: boolean } }).summary).toMatchObject({ sessionId, archived: true, status: 'closed' });
+    type Listed = { sessions: { sessionId: string; archived?: boolean; status: string }[] };
+    const archived = await rpc<Listed>(phone, 'session/list', { archived: true });
+    expect(archived.sessions).toEqual([expect.objectContaining({ sessionId, archived: true })]);
+    expect((await rpc<Listed>(phone, 'session/list', { archived: false })).sessions.map((s) => s.sessionId)).toEqual([kept]);
+    expect(await rpcError(phone, 'session/list', { archived: 'yes' })).toMatchObject({ data: { path: 'params.archived' } });
+
+    expect(await rpc(phone, 'session/unarchive', { sessionId })).toEqual({ ok: true });
+    const back = await listUpdate((summary) => summary.sessionId === sessionId && summary.status === 'idle');
+    expect((back.params as { summary: { archived?: boolean; status: string } }).summary).toMatchObject({ sessionId, status: 'idle' });
+    expect((back.params as { summary: { archived?: boolean } }).summary.archived).toBeUndefined();
+    const listed = await rpc<Listed>(phone, 'session/list');
+    expect(listed.sessions.map((s) => s.sessionId)).toEqual([sessionId, kept]);
+    expect((await rpc<Listed>(phone, 'session/list', { archived: true })).sessions).toEqual([]);
+    expect(await rpc(phone, 'session/unarchive', { sessionId })).toEqual({ ok: true }); // not archived: nothing changes
+    expect(await rpcError(phone, 'session/unarchive', { sessionId: 'ses_missing' })).toMatchObject({ code: 'not_found' });
+  });
+
   it('session/delete closes the session, drops subscriptions and then answers not_found', async () => {
     const h = await setup();
     const phone = await h.connect();
@@ -301,6 +335,30 @@ describe('session lifecycle', () => {
     ] as const) {
       expect(await rpcError(phone, method, params)).toMatchObject({ code: 'not_found', data: { sessionId } });
     }
+  });
+
+  it('session/delete of a working session sends no session/updated for it: the turn and helpers stop unseen by the list', async () => {
+    const h = await setup({ agent: { capabilities: { backgroundTasks: true }, script: [[{ hold: true }]] } });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: text('run'), clientMessageId: randomUUID() });
+    h.agent.last.emit({ method: 'background/changed', params: { tasks: [{ id: 'toolu_a', title: 'npm test', status: 'running', startedAt: 1 }] } });
+    type Row = { sessionId: string; backgroundTasks?: unknown[] };
+    const rowUpdates = () => phone.messages.filter((m) => m.method === 'session/updated' && (m.params as { summary: Row }).summary.sessionId === sessionId);
+    await phone.until(() => rowUpdates().find((m) => (m.params as { summary: Row }).summary.backgroundTasks !== undefined), 'row with the task');
+    const before = rowUpdates().length;
+
+    expect(await rpc(phone, 'session/delete', { sessionId })).toEqual({ ok: true });
+    await waitEvent(phone, 'session/closed');
+    // The turn ended and the helper was cancelled (journaled to the open session) ...
+    const methods = eventsOf(phone, sessionId).map((e) => e.method);
+    expect(methods).toContain('turn/completed');
+    const cancelled = eventsOf(phone, sessionId).filter((e) => e.method === 'session/changed').at(-1)!;
+    expect((cancelled.params as { session: { backgroundTasks: { status: string }[] } }).session.backgroundTasks.map((t) => t.status)).toEqual(['cancelled']);
+    // ... but the list heard nothing more about the session, so no client re-adds the deleted row.
+    await rpc(phone, 'host/status');
+    expect(rowUpdates().length).toBe(before);
   });
 
   it('session/close stops live delivery on that stream only; closing the socket unsubscribes everything', async () => {

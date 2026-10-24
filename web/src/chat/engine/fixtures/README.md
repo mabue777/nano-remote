@@ -10,6 +10,8 @@ of every stream stays the recorded bytes.
 | `openai-reasoning.sse` | OpenAI-compatible SSE | Recorded 2026-10-22 from the same Ollama's OpenAI-compatible endpoint: `POST http://localhost:11434/v1/chat/completions`, `stream_options.include_usage`, `reasoning_effort: "low"`. Reasoning in `delta.reasoning`, a `finish_reason` chunk, a usage chunk, then `[DONE]`. |
 | `anthropic-thinking.sse` | Anthropic Messages SSE | Transcribed from the extended-thinking streaming example in Anthropic's Messages streaming documentation (no Anthropic key on this machine). `message_start` usage, `ping`, thinking deltas, a signature delta, a text delta, `message_delta` usage, `message_stop`. |
 
-The same day, Ollama Cloud answered a retired model (`qwen3.5:cloud`) with HTTP 410 and
+Fact: Ollama retired `qwen3.5:cloud` (served as `qwen3.5:397b`) on 2026-09-25; it is no longer a usable
+Ollama Cloud model, so do not use it in presets, defaults or examples. On 2026-10-22 Ollama Cloud
+answered it with HTTP 410 and
 `{"error":"qwen3.5:397b was retired on September 25, 2026. Try glm-5.3-flash:cloud. …"}`; the tests use
 that body for the "unknown model" case.

@@ -20,6 +20,23 @@ async function pair(page: Page, request: APIRequestContext): Promise<void> {
   await expect(page.getByRole('status')).toHaveAttribute('data-state', 'connected');
 }
 
+/** The id of the session the page shows (/s/<id>). */
+function shownSession(page: Page): string {
+  return new URL(page.url()).pathname.split('/').at(-1)!;
+}
+
+/**
+ * Taps Save and checks the host received session/settings/update for the shown session with exactly
+ * `settings`. Before the tap the host must have no such request since this test's reset, so a request
+ * an earlier test sent can never stand in for this one.
+ */
+async function saveAndExpectSent(page: Page, request: APIRequestContext, sheet: Locator, settings: Record<string, string>): Promise<void> {
+  expect(await lastParams(request, 'session/settings/update')).toBeNull();
+  await sheet.getByRole('button', { name: 'Save' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect.poll(() => lastParams(request, 'session/settings/update')).toEqual({ sessionId: shownSession(page), settings });
+}
+
 async function lastParams(request: APIRequestContext, method: string): Promise<Record<string, unknown> | null> {
   return ((await (await request.post('/test/last', { data: { method } })).json()) as { params: Record<string, unknown> | null }).params;
 }
@@ -76,10 +93,7 @@ test('Codex: switch the model, then pick an effort the new model offers; the hea
   expect(group.x + group.width).toBeLessThanOrEqual(frame.x + frame.width);
   await shoot(page, sheet, 'sheet-idle');
 
-  await sheet.getByRole('button', { name: 'Save' }).click();
-  await expect(sheet).toHaveCount(0);
-  const sent = await lastParams(request, 'session/settings/update');
-  expect(sent).toEqual({ sessionId: expect.stringMatching(/^ses_fake_\d+$/), settings: { model: 'gpt-5.5-codex', effort: 'high' } });
+  await saveAndExpectSent(page, request, sheet, { model: 'gpt-5.5-codex', effort: 'high' });
   await expect(page.getByLabel('Model', { exact: true })).toHaveText('gpt-5.5-codex');
   await expect(page.getByLabel('Effort', { exact: true })).toHaveText('High effort');
   await shoot(page, page.locator('.session-head'), 'header-after');
@@ -110,9 +124,7 @@ test('a running turn: the sheet says the change applies after it, and the turn g
   await expect(effort.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true');
   await effort.getByRole('radio', { name: 'Max' }).click();
   await shoot(page, sheet, 'sheet-running');
-  await sheet.getByRole('button', { name: 'Save' }).click();
-  await expect(sheet).toHaveCount(0);
-  expect((await lastParams(request, 'session/settings/update'))?.settings).toEqual({ model: 'claude-opus', effort: 'max' });
+  await saveAndExpectSent(page, request, sheet, { model: 'claude-opus', effort: 'max' });
   await expect(page.getByLabel('Model', { exact: true })).toHaveText('claude-opus');
   await expect(page.getByLabel('Effort', { exact: true })).toHaveText('Max effort');
   // The turn was not touched: the approval still waits.
@@ -129,9 +141,7 @@ test('pi: the grouped picker; the header names the new model and its provider', 
   expect(await picker.locator('optgroup').evaluateAll((groups) => groups.map((g) => (g as HTMLOptGroupElement).label))).toEqual(['llamacpp', 'openrouter']);
   await picker.selectOption('openrouter/deepseek/deepseek-v4.1-flash');
   await expect(sheet.getByText('via openrouter', { exact: true })).toBeVisible();
-  await sheet.getByRole('button', { name: 'Save' }).click();
-  await expect(sheet).toHaveCount(0);
-  expect((await lastParams(request, 'session/settings/update'))?.settings).toEqual({ model: 'openrouter/deepseek/deepseek-v4.1-flash' });
+  await saveAndExpectSent(page, request, sheet, { model: 'openrouter/deepseek/deepseek-v4.1-flash' });
   await expect(page.getByLabel('Model', { exact: true })).toHaveText('deepseek/deepseek-v4.1-flash · openrouter');
 });
 

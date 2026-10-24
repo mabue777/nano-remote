@@ -406,8 +406,10 @@ Rules:
 
 ## 6. Opening a session, catching up, paging history
 
-### `session/list {agentId?, cursor?, limit?}` → `{sessions:[SessionSummary], nextCursor?}`
-Sorted by `updatedAt` descending. Default limit 50.
+### `session/list {agentId?, cursor?, limit?, archived?}` → `{sessions:[SessionSummary], nextCursor?}`
+Sorted by `updatedAt` descending. Default limit 50. Archived sessions are left out; `archived: true` lists
+only them instead (additive within v1). An archived session's summary carries `archived: true` (in
+`session/list`, `session/updated` and `session/open`); the field is absent otherwise.
 
 ### `session/start {agentId, cwd, title?, settings?, input?}` → `{session}`
 Creates the session (Codex `thread/start`). If `input` is given, the host also starts the first turn and
@@ -448,6 +450,11 @@ previous page. Items are inlined in full. (Codex: `thread/turns/list` + `thread/
 ### `session/close {sessionId}` → `{ok:true}` unsubscribes the stream. Closing the socket unsubscribes everything.
 
 ### `session/archive`, `session/delete`, `session/rename {sessionId, title}` → `{ok:true}`; each emits `session/changed` or `session/closed`.
+
+### `session/unarchive {sessionId}` → `{ok:true}` (additive within v1)
+Brings an archived session back: the flag clears and its status becomes `idle` (journaled as
+`status/changed`), so `session/updated` moves the row back to the list. A session that is not archived
+answers `{ok:true}` and nothing changes. Starting a turn in an archived session unarchives it as well.
 
 ### `session/settings/update {sessionId, settings:{model?, effort?}}` → `{session}` (additive within v1)
 Changes the model or the effort of an open session. Each key given must be in the agent's

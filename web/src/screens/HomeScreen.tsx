@@ -6,8 +6,11 @@ import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
 import { Switch } from '../ui/Switch';
+import { usePress } from './chat/hooks';
 import { backgroundTasksText, HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
 import { NewSessionSheet } from './NewSessionSheet';
+import { SessionActions } from './session-actions';
+import { ActionsSheet, DeleteConfirmSheet, UndoToast } from './SessionActionsSheets';
 import { useModel } from './use-model';
 
 export interface HomeScreenProps {
@@ -25,13 +28,19 @@ export interface HomeScreenProps {
   chats?: ComponentChildren;
   /** The gear: Settings > Providers. */
   onSettings?: () => void;
+  /** Archive and delete (one per stream client, so an archive in the session view shows its Undo here). */
+  actions?: SessionActions;
 }
 
 export type HomeTab = 'sessions' | 'chats';
 
-export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings }: HomeScreenProps) {
+export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings, actions: shared }: HomeScreenProps) {
   const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
+  const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
+  useEffect(() => () => own?.dispose(), [own]);
+  const actions = useModel((shared ?? own)!);
+  const menu = model.menuRow;
   const [creating, setCreating] = useState(false);
   const pull = usePullToRefresh(
     () => window.scrollY <= 0,
@@ -41,7 +50,7 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
   const sessions = model.sessions;
 
   return (
-    <main class="screen home" {...(tab === 'sessions' ? pull.handlers : {})}>
+    <main class={`screen home${actions.undo !== undefined ? ' with-toast' : ''}`} {...(tab === 'sessions' ? pull.handlers : {})}>
       <header class="topbar">
         <h1>Nano Remote</h1>
         <div class="topbar-end">
@@ -74,12 +83,17 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
                 {model.error}
               </p>
             )}
+            {actions.error !== undefined && (
+              <p class="error" role="alert">
+                {actions.error}
+              </p>
+            )}
             {sessions.length === 0 ? (
               <p class="empty muted">{model.connection.kind === 'connected' ? 'No sessions yet. Start one to drive an agent from here.' : 'Sessions appear once the host is connected.'}</p>
             ) : (
               <ul class="session-list" aria-label="Sessions">
                 {sessions.map((row) => (
-                  <SessionItem key={row.sessionId} row={row} onOpen={onOpenSession} />
+                  <SessionItem key={row.sessionId} row={row} model={model} actions={actions} archived={false} onOpen={onOpenSession} />
                 ))}
               </ul>
             )}
@@ -91,8 +105,30 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
               </div>
             )}
           </section>
+          {model.archivedCount > 0 && <ArchivedSection model={model} actions={actions} onOpen={onOpenSession} />}
         </>
       )}
+      {menu !== undefined && (
+        <ActionsSheet
+          title={menu.title}
+          archived={model.archived.some((row) => row.sessionId === menu.sessionId)}
+          onClose={() => model.closeMenu()}
+          onArchive={() => {
+            model.closeMenu();
+            actions.askArchive(menu.sessionId);
+          }}
+          onUnarchive={() => {
+            model.closeMenu();
+            void actions.unarchive(menu.sessionId);
+          }}
+          onDelete={() => {
+            model.closeMenu();
+            actions.askDelete(menu.sessionId);
+          }}
+        />
+      )}
+      <DeleteConfirmSheet actions={actions} />
+      <UndoToast actions={actions} />
       {creating && (
         <NewSessionSheet
           client={client}
@@ -227,16 +263,65 @@ function NotificationsCard({ push }: { push: PushModel }) {
   );
 }
 
-function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: string) => void }) {
+/** "Archived (3)": collapsed at first; open, its rows and "Delete all archived". */
+function ArchivedSection({ model, actions, onOpen }: { model: HomeModel; actions: SessionActions; onOpen: (sessionId: string) => void }) {
+  const open = model.archivedOpen;
   return (
-    <li>
+    <section class="archived" aria-labelledby="archived-title">
+      <h2 id="archived-title" class="archived-head">
+        <button type="button" class="archived-toggle" aria-expanded={open} aria-controls="archived-list" onClick={() => model.toggleArchived()}>
+          <span>Archived</span>
+          <span class="count muted">{model.archivedCount}</span>
+          <span class="chevron" aria-hidden="true">
+            {open ? '▾' : '▸'}
+          </span>
+        </button>
+      </h2>
+      {open && (
+        <div id="archived-list">
+          <ul class="session-list" aria-label="Archived sessions">
+            {model.archived.map((row) => (
+              <SessionItem key={row.sessionId} row={row} model={model} actions={actions} archived={true} onOpen={onOpen} />
+            ))}
+          </ul>
+          <div class="archived-foot">
+            <button type="button" class="small danger" onClick={() => actions.askDeleteArchived()}>
+              Delete all archived
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface SessionItemProps {
+  row: SessionRow;
+  model: HomeModel;
+  actions: SessionActions;
+  archived: boolean;
+  onOpen: (sessionId: string) => void;
+}
+
+/** A session row; a swipe to the left shows Archive and Delete under it, a long-press opens the actions sheet. */
+function SessionItem({ row, model, actions, archived, onOpen }: SessionItemProps) {
+  const { consumed, ...handlers } = usePress({ onLongPress: () => model.openMenu(row.sessionId), onSwipeLeft: () => model.reveal(row.sessionId) });
+  const revealed = model.revealedId === row.sessionId;
+  return (
+    <li class={`swipe-row${revealed ? ' revealed' : ''}`} data-session-id={row.sessionId}>
       <a
         class={`session${row.finishedWhileAway ? ' away' : ''}`}
         data-tone={row.tone}
         href={`/s/${encodeURIComponent(row.sessionId)}`}
+        {...handlers}
         onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
+          if (consumed()) return;
+          if (revealed) {
+            model.conceal();
+            return;
+          }
           onOpen(row.sessionId);
         }}
       >
@@ -267,6 +352,49 @@ function SessionItem({ row, onOpen }: { row: SessionRow; onOpen: (sessionId: str
         )}
         {row.preview !== '' && <p class="preview muted small">{row.preview}</p>}
       </a>
+      {revealed && (
+        <div class="row-actions">
+          {archived ? (
+            <button
+              type="button"
+              class="small ghost"
+              aria-label={`Unarchive ${row.title}`}
+              onClick={() => {
+                model.conceal();
+                void actions.unarchive(row.sessionId);
+              }}
+            >
+              Unarchive
+            </button>
+          ) : (
+            <button
+              type="button"
+              class="small ghost"
+              aria-label={`Archive ${row.title}`}
+              onClick={() => {
+                model.conceal();
+                actions.askArchive(row.sessionId);
+              }}
+            >
+              Archive
+            </button>
+          )}
+          <button
+            type="button"
+            class="small danger"
+            aria-label={`Delete ${row.title}`}
+            onClick={() => {
+              model.conceal();
+              actions.askDelete(row.sessionId);
+            }}
+          >
+            Delete
+          </button>
+          <button type="button" class="small ghost" onClick={() => model.conceal()}>
+            Cancel
+          </button>
+        </div>
+      )}
     </li>
   );
 }

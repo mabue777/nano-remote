@@ -91,8 +91,8 @@ describe('parseModels', () => {
   });
 
   it('reads Ollama models[].name (falling back to model)', () => {
-    expect(parseModels('ollama', { models: [{ name: 'qwen3.5:cloud' }, { model: 'llama3:8b' }, {}] })?.map((m) => m.id)).toEqual([
-      'qwen3.5:cloud',
+    expect(parseModels('ollama', { models: [{ name: 'glm-5.3-flash:cloud' }, { model: 'llama3:8b' }, {}] })?.map((m) => m.id)).toEqual([
+      'glm-5.3-flash:cloud',
       'llama3:8b',
     ]);
   });

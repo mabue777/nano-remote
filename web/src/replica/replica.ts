@@ -88,6 +88,12 @@ function summaryOf(session: Session): SessionSummary {
   return summary;
 }
 
+/** The row with `archived: true`, or without the field. */
+function withArchived(summary: SessionSummary, archived: boolean): SessionSummary {
+  const { archived: _was, ...rest } = summary;
+  return archived ? { ...rest, archived: true } : rest;
+}
+
 export class Replica {
   private readonly client: ReplicaTransport;
   private readonly storage: StorageLike | null;
@@ -103,6 +109,13 @@ export class Replica {
   private lastErrorValue: RequestError | undefined;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly listeners = new Set<() => void>();
+  /**
+   * Sessions this Replica deleted or archived; `settled` once the host answered. Stopping a turn and its
+   * helpers makes the host journal changes, so a session/updated can still be in flight: until a
+   * session/list asked after the answer lists the session again, an update for a deleted one is dropped
+   * and one for an archived one stays out of the main list. Not persisted.
+   */
+  private readonly removed = new Map<string, { kind: 'deleted' | 'archived'; settled: boolean }>();
   /** Live events held back while an open or catch-up is in flight, or after a gap. Not persisted. */
   private readonly buffers = new Map<string, Map<number, Sequenced>>();
   private readonly syncing = new Map<string, Promise<void>>();
@@ -139,9 +152,14 @@ export class Replica {
     return this.versionValue;
   }
 
-  /** Session list, newest activity first (spec 6). */
+  /** Session list, newest activity first (spec 6); archived sessions are not in it. */
   get sessions(): SessionSummary[] {
-    return [...this.summaries.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...this.summaries.values()].filter((s) => s.archived !== true).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /** The archived sessions (session/list `archived: true`), newest activity first. */
+  get archivedSessions(): SessionSummary[] {
+    return [...this.summaries.values()].filter((s) => s.archived === true).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   /** `nextCursor` from the last session/list page, for paging the list. */
@@ -181,9 +199,13 @@ export class Replica {
 
   /** session/list; replaces the list with the host's (walkthrough: render from Replica, then reconcile). */
   async refreshSessions(params: { agentId?: string; limit?: number } = {}): Promise<SessionSummary[]> {
+    const settled = this.settledRemovals();
     const result = await this.client.request<SessionListResult>('session/list', params);
-    this.summaries.clear();
-    for (const summary of result.sessions) this.summaries.set(summary.sessionId, summary);
+    for (const summary of [...this.summaries.values()]) if (summary.archived !== true) this.summaries.delete(summary.sessionId);
+    for (const listed of result.sessions) {
+      const summary = this.listed(listed, settled);
+      if (summary !== undefined) this.summaries.set(summary.sessionId, summary);
+    }
     for (const view of this.views.values()) this.updateSummary(view);
     this.nextCursor = result.nextCursor;
     this.changed();
@@ -197,15 +219,129 @@ export class Replica {
   async loadMoreSessions(params: { agentId?: string; limit?: number } = {}): Promise<boolean> {
     const cursor = this.nextCursor;
     if (cursor === undefined) return false;
+    const settled = this.settledRemovals();
     const result = await this.client.request<SessionListResult>('session/list', { ...params, cursor });
     if (this.nextCursor !== cursor) return true; // a refresh replaced the list meanwhile
-    for (const summary of result.sessions) {
-      if (!this.summaries.has(summary.sessionId)) this.summaries.set(summary.sessionId, summary);
+    for (const listed of result.sessions) {
+      const summary = this.listed(listed, settled);
+      if (summary !== undefined && !this.summaries.has(summary.sessionId)) this.summaries.set(summary.sessionId, summary);
     }
     for (const view of this.views.values()) this.updateSummary(view);
     this.nextCursor = result.nextCursor;
     this.changed();
     return true;
+  }
+
+  /**
+   * Replaces the archived sessions with the host's (session/list `archived: true`, every page). A row
+   * without the flag is skipped, and its page ends the listing: a host that does not know the parameter
+   * answers with the other list.
+   */
+  async refreshArchived(): Promise<SessionSummary[]> {
+    const settled = this.settledRemovals();
+    const archived: SessionSummary[] = [];
+    let cursor: string | undefined;
+    do {
+      const result: SessionListResult = await this.client.request<SessionListResult>('session/list', {
+        archived: true,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      const page = result.sessions.filter((s) => s.archived === true);
+      archived.push(...page);
+      // A page without archived rows is a host that ignored the parameter; a repeated cursor would loop.
+      cursor = page.length > 0 && result.nextCursor !== cursor ? result.nextCursor : undefined;
+    } while (cursor !== undefined);
+    // A row archived here and not yet answered may be missing from an older listing: it stays.
+    for (const summary of this.archivedSessions) if (!(this.removed.has(summary.sessionId) && !settled.has(summary.sessionId))) this.summaries.delete(summary.sessionId);
+    for (const listed of archived) {
+      const summary = this.listed(listed, settled);
+      if (summary !== undefined) this.summaries.set(summary.sessionId, summary);
+    }
+    this.changed();
+    return this.archivedSessions;
+  }
+
+  /** session/archive; the row moves to the archived ones at once and back if the host refuses. */
+  async archiveSession(sessionId: string): Promise<void> {
+    await this.flag(sessionId, true, 'session/archive');
+  }
+
+  /** session/unarchive (the Undo of an archive); the row moves back at once, and again if the host refuses. */
+  async unarchiveSession(sessionId: string): Promise<void> {
+    await this.flag(sessionId, false, 'session/unarchive');
+  }
+
+  /**
+   * session/delete: the row and any local copy of the session go at once; a refusal puts the row back.
+   * The host removes the history and attachments and stops a running turn and its helpers (spec 5.1, 6).
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    const row = this.summaries.get(sessionId);
+    const view = this.views.get(sessionId);
+    this.summaries.delete(sessionId);
+    this.views.delete(sessionId);
+    this.buffers.delete(sessionId);
+    const wasOpen = this.openId === sessionId;
+    if (wasOpen) this.openId = undefined;
+    const mark = { kind: 'deleted' as const, settled: false };
+    this.removed.set(sessionId, mark);
+    this.changed();
+    try {
+      await this.client.request('session/delete', { sessionId });
+      mark.settled = true;
+    } catch (error) {
+      mark.settled = true;
+      if (!(error instanceof RequestError && error.code === 'not_found')) {
+        if (this.removed.get(sessionId) === mark) this.removed.delete(sessionId);
+        if (row !== undefined) this.summaries.set(sessionId, row);
+        if (view !== undefined) this.views.set(sessionId, view);
+        if (wasOpen) this.openId = sessionId;
+        this.changed();
+        throw error;
+      }
+    }
+  }
+
+  private async flag(sessionId: string, archived: boolean, method: string): Promise<void> {
+    const before = this.summaries.get(sessionId);
+    if (before !== undefined) this.summaries.set(sessionId, withArchived(before, archived));
+    const mark = { kind: 'archived' as const, settled: !archived };
+    if (archived) this.removed.set(sessionId, mark);
+    else this.removed.delete(sessionId);
+    this.changed();
+    try {
+      await this.client.request(method, { sessionId });
+      mark.settled = true;
+    } catch (error) {
+      // A refused archive leaves the row in the list; a refused unarchive keeps it archived.
+      if (archived) {
+        if (this.removed.get(sessionId) === mark) this.removed.delete(sessionId);
+      } else this.removed.set(sessionId, mark);
+      const now = this.summaries.get(sessionId);
+      if (now !== undefined) this.summaries.set(sessionId, withArchived(now, !archived));
+      this.changed();
+      throw error;
+    }
+  }
+
+  /** Ids whose delete or archive the host has answered; a session/list asked now speaks after it. */
+  private settledRemovals(): Set<string> {
+    return new Set([...this.removed].filter(([, mark]) => mark.settled).map(([sessionId]) => sessionId));
+  }
+
+  /**
+   * A row from a session/list asked when `settled` were answered. A session deleted or archived here is
+   * the host's again once such a list names it; before that a deleted one is skipped and an archived
+   * one stays archived (the list may predate the request).
+   */
+  private listed(summary: SessionSummary, settled: Set<string>): SessionSummary | undefined {
+    const mark = this.removed.get(summary.sessionId);
+    if (mark === undefined) return summary;
+    if (settled.has(summary.sessionId)) {
+      this.removed.delete(summary.sessionId);
+      return summary;
+    }
+    return mark.kind === 'deleted' ? undefined : withArchived(summary, true);
   }
 
   /** session/start, then opens the new session (snapshot mode, which also subscribes the stream). */
@@ -572,7 +708,9 @@ export class Replica {
   private onNotification(method: string, params: Record<string, unknown>): void {
     if (method === 'session/updated') {
       const summary = params.summary as SessionSummary;
-      this.summaries.set(summary.sessionId, summary);
+      const mark = this.removed.get(summary.sessionId);
+      if (mark?.kind === 'deleted') return; // the turn and helpers stopping, after the row went
+      this.summaries.set(summary.sessionId, mark?.kind === 'archived' ? withArchived(summary, true) : summary);
       this.changed();
       return;
     }
@@ -656,7 +794,8 @@ export class Replica {
     const base = this.summaries.get(view.sessionId) ?? (view.session !== null ? summaryOf(view.session) : undefined);
     // A list row newer than this view (a session not open on this stream) is left as the host sent it.
     if (base === undefined || base.lastSeq > view.cursor) return;
-    const fromSession = view.session !== null ? summaryOf(view.session) : {};
+    // Whether the session is archived is the list's to say (session/updated), not the opened session's.
+    const { archived: _openedArchived, ...fromSession }: Partial<SessionSummary> = view.session !== null ? summaryOf(view.session) : {};
     const lastHostTurn = [...view.turns].reverse().find((t) => t.optimistic === undefined);
     // Background tasks are live state (spec 5.1): the session's list replaces the row's, even with none.
     const { backgroundTasks: _rowTasks, ...row } = base;

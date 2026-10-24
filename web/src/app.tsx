@@ -21,6 +21,7 @@ import { ProviderSettingsScreen } from './screens/settings/providers/ProviderSet
 import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
 import { AwayTracker, type SessionStorageLike } from './screens/home-model';
 import { HomeScreen } from './screens/HomeScreen';
+import { SessionActions } from './screens/session-actions';
 import type { FetchLike } from './screens/pair-model';
 import { PairScreen } from './screens/PairScreen';
 import { DeviceNames } from './screens/session/approvals/devices';
@@ -112,6 +113,8 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
     return {
       client,
       replica,
+      // Archive and delete; one for Home and the session view, so an archive's Undo outlives the page change.
+      actions: new SessionActions({ replica }),
       notifications,
       away,
       opened: (sessionId: string) => away.opened(sessionId),
@@ -140,6 +143,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
       off();
       stopBadge();
       services.away.dispose();
+      services.actions.dispose();
       services.notifications?.dispose();
       replica.dispose();
       client.stop();
@@ -159,6 +163,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           notifications={services.notifications}
           away={services.away}
           onOpenSession={open}
+          actions={services.actions}
           tab={route.name === 'chats' ? 'chats' : 'sessions'}
           onTab={(tab) => router.navigate(tab === 'chats' ? '/chats' : '/', { replace: true })}
           onSettings={() => router.navigate('/settings/providers')}
@@ -188,6 +193,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           onOpened={services.opened}
           agents={services.agents}
           attachments={services.attachments}
+          actions={services.actions}
           onBack={() => router.navigate('/')}
         />
       );

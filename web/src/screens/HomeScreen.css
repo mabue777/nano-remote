@@ -243,3 +243,116 @@
   color: var(--muted);
   text-decoration: none;
 }
+
+/* Archive and delete (SessionActionsSheets.tsx): the "Archived" section, the actions sheet, the delete
+   confirmation and the Undo toast. The swipe rows themselves are .swipe-row in chat/ChatsPanel.css. */
+.archived {
+  margin-top: var(--space-12);
+}
+
+.archived-head {
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-base);
+}
+
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+  text-align: left;
+}
+
+.archived-toggle .count {
+  font-weight: 400;
+}
+
+.archived-toggle .chevron {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.archived .session {
+  opacity: 0.8;
+}
+
+.archived-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-6);
+}
+
+.actions-sheet h2 {
+  margin: 0 0 var(--space-6);
+  overflow-wrap: anywhere;
+}
+
+.sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.confirm-sheet h2 {
+  margin: 0 0 var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.confirm-sheet .actions {
+  justify-content: flex-end;
+  margin-top: var(--space-8);
+}
+
+/* Room under the list so the toast never covers the last row or "Delete all archived". */
+.home.with-toast {
+  padding-bottom: calc(var(--safe-bottom) + 88px); /* the toast's height plus its gap */
+}
+
+.undo-toast {
+  position: fixed;
+  left: calc(var(--safe-left) + var(--space-8));
+  right: calc(var(--safe-right) + var(--space-8));
+  bottom: calc(var(--safe-bottom) + var(--space-8));
+  z-index: 9; /* above the page, below sheets (10) */
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  max-width: 528px; /* the sheet width less the gutters */
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-8);
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undo-toast button.link {
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  color: var(--bg);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.icon-button {
+  min-width: var(--touch);
+  padding: 0;
+  border: 0;
+  font-size: var(--font-xl);
+  line-height: 1;
+}
+
+.session-actions-error {
+  margin-top: 0;
+}

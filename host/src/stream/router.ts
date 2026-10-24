@@ -25,6 +25,7 @@ export interface MethodMap {
   'session/history': { params: m.SessionHistoryParams; result: m.SessionHistoryResult };
   'session/close': { params: m.SessionCloseParams; result: m.Ok };
   'session/archive': { params: m.SessionArchiveParams; result: m.Ok };
+  'session/unarchive': { params: m.SessionUnarchiveParams; result: m.Ok };
   'session/delete': { params: m.SessionDeleteParams; result: m.Ok };
   'session/rename': { params: m.SessionRenameParams; result: m.Ok };
   'session/settings/update': { params: m.SessionSettingsUpdateParams; result: m.SessionSettingsUpdateResult };

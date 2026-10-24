@@ -216,7 +216,9 @@ export class HostCore {
       .register('fs/readDirectory', async (params) => ({ entries: await readDirectory(p.str(params, 'path')) }))
       .register('project/list', () => ({ projects: this.projects() }))
       .register('session/list', (params) => {
-        const options: { agentId?: string; cursor?: string; limit?: number } = {};
+        const options: { agentId?: string; cursor?: string; limit?: number; archived?: boolean } = {};
+        const archived = p.optBool(params, 'archived');
+        if (archived !== undefined) options.archived = archived;
         const agentId = p.optStr(params, 'agentId');
         const cursor = p.optStr(params, 'cursor');
         const limit = p.optInt(params, 'limit', 1);
@@ -243,6 +245,10 @@ export class HostCore {
       })
       .register('session/archive', async (params) => {
         await s.archive(p.str(params, 'sessionId'));
+        return ok;
+      })
+      .register('session/unarchive', (params) => {
+        s.unarchive(p.str(params, 'sessionId'));
         return ok;
       })
       .register('session/delete', async (params) => {

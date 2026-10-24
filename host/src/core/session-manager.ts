@@ -224,11 +224,16 @@ export class SessionManager {
     return summary === undefined ? undefined : this.withTasks(summary);
   }
 
-  /** A summary or session with the live background tasks; without any, the field is left out. */
+  /**
+   * A summary or session as handed out: the live background tasks (without any, the field is left out)
+   * and `archived: true` while archived. Neither is taken from the Journal: both are live state.
+   */
   private withTasks<T extends SessionSummary>(summary: T): T {
-    const { backgroundTasks: _stored, ...rest } = summary;
+    const { backgroundTasks: _stored, archived: _archived, ...rest } = summary as SessionSummary;
     const tasks = this.live.get(summary.sessionId)?.tasks ?? [];
-    return (tasks.length > 0 ? { ...rest, backgroundTasks: tasks.map((t) => ({ ...t })) } : rest) as T;
+    const out: SessionSummary = tasks.length > 0 ? { ...rest, backgroundTasks: tasks.map((t) => ({ ...t })) } : rest;
+    if (this.store.get(summary.sessionId).archived) out.archived = true;
+    return out as T;
   }
 
   /** True when the session exists and is not deleted (the attachment endpoint, spec 8.1). */
@@ -248,15 +253,20 @@ export class SessionManager {
     return count;
   }
 
-  /** `session/list`: newest first, without archived or deleted sessions. */
-  list(options: { agentId?: string; cursor?: string; limit?: number } = {}): ListResult {
-    const first = this.journal.list({ ...options, limit: options.limit ?? DEFAULT_LIST });
-    const limit = Math.min(options.limit ?? DEFAULT_LIST, MAX_LIST_LIMIT);
-    const sessions = first.sessions.filter((s) => this.visible(s)).map((s) => this.withTasks(s));
+  /** `session/list`: newest first, without deleted sessions; archived ones only with `archived: true`. */
+  list(options: { agentId?: string; cursor?: string; limit?: number; archived?: boolean } = {}): ListResult {
+    const { archived = false, ...query } = options;
+    const listed = (s: SessionSummary) => {
+      const record = this.store.get(s.sessionId);
+      return !record.deleted && record.archived === archived;
+    };
+    const first = this.journal.list({ ...query, limit: query.limit ?? DEFAULT_LIST });
+    const limit = Math.min(query.limit ?? DEFAULT_LIST, MAX_LIST_LIMIT);
+    const sessions = first.sessions.filter(listed).map((s) => this.withTasks(s));
     let next = first.nextCursor;
     while (sessions.length < limit && next !== undefined) {
-      const page = this.journal.list({ ...options, cursor: next, limit: limit - sessions.length });
-      sessions.push(...page.sessions.filter((s) => this.visible(s)).map((s) => this.withTasks(s)));
+      const page = this.journal.list({ ...query, cursor: next, limit: limit - sessions.length });
+      sessions.push(...page.sessions.filter(listed).map((s) => this.withTasks(s)));
       next = page.nextCursor;
     }
     return next === undefined ? { sessions } : { sessions, nextCursor: next };
@@ -385,6 +395,14 @@ export class SessionManager {
     this.store.setArchived(sessionId, true);
     await this.shutdown(sessionId);
     this.append(sessionId, { method: 'session/closed', params: { reason: 'archived' } });
+  }
+
+  /** `session/unarchive`: clears the flag and sets the session idle (journaled, so the list row comes back). */
+  unarchive(sessionId: string): void {
+    this.session(sessionId);
+    if (!this.store.get(sessionId).archived) return;
+    this.store.setArchived(sessionId, false);
+    this.setStatus(sessionId, 'idle');
   }
 
   /** `session/delete`: like archive with `reason: "deleted"`; afterwards the session is `not_found`. */

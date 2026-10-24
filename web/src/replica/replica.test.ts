@@ -703,3 +703,185 @@ describe('storage', () => {
     }
   });
 });
+
+describe('Replica: archive and delete (spec 6)', () => {
+  const archivedRow = (sessionId: string, updatedAt: number) => summary({ sessionId, updatedAt, archived: true, status: 'closed' });
+
+  it('refreshArchived lists every page of archived sessions; refreshSessions keeps them', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', (params) => {
+      if (params?.archived !== true) return { sessions: [summary({ sessionId: 'live' })] };
+      if (params.cursor === undefined) return { sessions: [archivedRow('x1', 9)], nextCursor: 'a2' };
+      return { sessions: [archivedRow('x2', 4)] };
+    });
+    expect((await replica.refreshArchived()).map((s) => s.sessionId)).toEqual(['x1', 'x2']);
+    expect(client.calls.filter((c) => c.params?.archived === true).map((c) => c.params)).toEqual([{ archived: true }, { archived: true, cursor: 'a2' }]);
+    await replica.refreshSessions();
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['live']);
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual(['x1', 'x2']);
+    // a second listing replaces the archived rows
+    client.rule('session/list', () => ({ sessions: [archivedRow('x3', 1)] }));
+    expect((await replica.refreshArchived()).map((s) => s.sessionId)).toEqual(['x3']);
+  });
+
+  it('refreshArchived stops on a host that ignores the parameter (rows without the flag) or repeats a cursor', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary({ sessionId: 'live' })], nextCursor: 'p2' }));
+    expect(await replica.refreshArchived()).toEqual([]);
+    expect(client.count('session/list')).toBe(1);
+    client.rule('session/list', () => ({ sessions: [archivedRow('x1', 1)], nextCursor: 'same' }));
+    await replica.refreshArchived();
+    expect(client.count('session/list')).toBe(3);
+  });
+
+  it('session/updated with the flag moves a row between the lists', () => {
+    const { client, replica } = setup();
+    client.notify('session/updated', { summary: summary({ sessionId: 'a' }) });
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['a']);
+    client.notify('session/updated', { summary: archivedRow('a', 2) });
+    expect(replica.sessions).toEqual([]);
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual(['a']);
+  });
+
+  it('archive and unarchive move the row at once; a refusal moves it back and rejects', async () => {
+    const { client, replica } = setup();
+    client.notify('session/updated', { summary: summary({ sessionId: 'a' }) });
+    const archiving = replica.archiveSession('a');
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual(['a']);
+    client.last('session/archive').resolve({ ok: true });
+    await archiving;
+    const back = replica.unarchiveSession('a');
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['a']);
+    expect(replica.sessions[0]!.archived).toBeUndefined();
+    client.last('session/unarchive').reject(rpcError('internal'));
+    await expect(back).rejects.toMatchObject({ code: 'internal' });
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual(['a']);
+    // a session the list does not know: only the request goes out
+    client.rule('session/archive', () => {
+      throw rpcError('not_found');
+    });
+    await expect(replica.archiveSession('nobody')).rejects.toMatchObject({ code: 'not_found' });
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual(['a']);
+  });
+
+  it('deleteSession drops the row and the opened copy; a refusal brings both back; not_found counts as gone', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary()] }));
+    await replica.refreshSessions();
+    await openAt(client, replica, 3);
+    const deleting = replica.deleteSession(SID);
+    expect(replica.sessions).toEqual([]);
+    expect(replica.session(SID)).toBeUndefined();
+    expect(replica.openSessionId).toBeUndefined();
+    client.last('session/delete').reject(rpcError('internal'));
+    await expect(deleting).rejects.toMatchObject({ code: 'internal' });
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual([SID]);
+    expect(replica.session(SID)?.cursor).toBe(3);
+    expect(replica.openSessionId).toBe(SID);
+
+    client.rule('session/delete', () => {
+      throw rpcError('not_found');
+    });
+    await replica.deleteSession(SID);
+    expect(replica.sessions).toEqual([]);
+    client.rule('session/delete', () => {
+      throw rpcError('internal');
+    });
+    await expect(replica.deleteSession('unknown')).rejects.toMatchObject({ code: 'internal' });
+    expect(replica.sessions).toEqual([]);
+  });
+
+  it('session/updated for a deleted session does not bring the row back; a list asked after the answer decides', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary(), summary({ sessionId: 'other', updatedAt: 1 })] }));
+    await replica.refreshSessions();
+    client.unrule('session/list');
+    const deleting = replica.deleteSession(SID);
+    // Stopping the turn and its helpers: the host's row updates still arrive, before and after the answer.
+    client.notify('session/updated', { summary: summary({ status: 'idle', backgroundTasks: [{ id: 't', title: 'npm test', status: 'cancelled', startedAt: 1, endedAt: 2 }] }) });
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['other']);
+    const stale = replica.refreshSessions(); // asked before the answer: it may still list the session
+    client.last('session/delete').resolve({ ok: true });
+    await deleting;
+    client.notify('session/updated', { summary: summary({ status: 'idle' }) });
+    client.last('session/list').resolve({ sessions: [summary(), summary({ sessionId: 'other', updatedAt: 1 })] });
+    await stale;
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['other']);
+    client.notify('session/updated', { summary: summary({ status: 'idle' }) });
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['other']);
+    // Other rows still follow their updates.
+    client.notify('session/updated', { summary: summary({ sessionId: 'other', updatedAt: 1, status: 'running' }) });
+    expect(replica.sessions[0]).toMatchObject({ sessionId: 'other', status: 'running' });
+    // A list asked after the answer that names the session again is the host's word.
+    const fresh = replica.refreshSessions();
+    client.last('session/list').resolve({ sessions: [summary()] });
+    await fresh;
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual([SID]);
+    client.notify('session/updated', { summary: summary({ status: 'running' }) });
+    expect(replica.sessions[0]).toMatchObject({ status: 'running' });
+  });
+
+  it('a refused delete takes session/updated again; a page loaded later skips the deleted row', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary()], nextCursor: 'p2' }));
+    await replica.refreshSessions();
+    client.unrule('session/list');
+    const refused = replica.deleteSession(SID);
+    client.last('session/delete').reject(rpcError('internal'));
+    await expect(refused).rejects.toMatchObject({ code: 'internal' });
+    client.notify('session/updated', { summary: summary({ status: 'running' }) });
+    expect(replica.sessions[0]).toMatchObject({ sessionId: SID, status: 'running' });
+
+    const deleting = replica.deleteSession(SID);
+    const more = replica.loadMoreSessions();
+    client.last('session/delete').resolve({ ok: true });
+    await deleting;
+    client.last('session/list').resolve({ sessions: [summary(), summary({ sessionId: 'b', updatedAt: 1 })] });
+    await more;
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual(['b']);
+  });
+
+  it('session/updated without the flag for a session archived here keeps it out of the main list', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', (params) => (params?.archived === true ? { sessions: [] } : { sessions: [summary()] }));
+    await replica.refreshSessions();
+    client.unrule('session/list');
+    const archiving = replica.archiveSession(SID);
+    // The turn stopping: a row without the flag, then an archived listing that predates the request.
+    client.notify('session/updated', { summary: summary({ status: 'idle', title: 'Stopped' }) });
+    expect(replica.sessions).toEqual([]);
+    expect(replica.archivedSessions[0]).toMatchObject({ sessionId: SID, title: 'Stopped', archived: true });
+    const staleMain = replica.refreshSessions();
+    const staleArchived = replica.refreshArchived();
+    client.last('session/archive').resolve({ ok: true });
+    await archiving;
+    const [main, archivedList] = client.open('session/list');
+    archivedList!.resolve({ sessions: [] }); // not in it yet
+    main!.resolve({ sessions: [summary({ status: 'idle' })] });
+    await Promise.all([staleMain, staleArchived]);
+    expect(replica.sessions).toEqual([]);
+    expect(replica.archivedSessions.map((s) => s.sessionId)).toEqual([SID]);
+    // Once the host lists it as archived, its own rows say so; unarchive lifts the mark at once.
+    const fresh = replica.refreshArchived();
+    client.last('session/list').resolve({ sessions: [archivedRow(SID, 5)] });
+    await fresh;
+    const back = replica.unarchiveSession(SID);
+    client.last('session/unarchive').resolve({ ok: true });
+    await back;
+    client.notify('session/updated', { summary: summary({ status: 'idle' }) });
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual([SID]);
+  });
+
+  it('whether an opened session is archived follows the list, not the session/open answer', async () => {
+    const { client, replica } = setup();
+    client.rule('session/list', () => ({ sessions: [summary()] }));
+    await replica.refreshSessions();
+    const opened = replica.open(SID);
+    client.last('session/open').resolve({ ...snapshot(3), session: session({ lastSeq: 3, archived: true }) });
+    await opened;
+    expect(replica.sessions.map((s) => s.sessionId)).toEqual([SID]);
+    client.notify('status/changed', { sessionId: SID, seq: 4, status: 'running' });
+    expect(replica.sessions[0]).toMatchObject({ status: 'running' });
+    expect(replica.sessions[0]!.archived).toBeUndefined();
+  });
+});

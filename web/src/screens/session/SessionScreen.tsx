@@ -2,13 +2,15 @@
 // cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this
 // file renders them and owns only the DOM work (scrolling, the pull-down gesture, keeping the reading
 // position when older turns are put in front).
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
 import { BackHeader } from '../../ui/BackHeader';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
+import { SessionActions } from '../session-actions';
+import { ActionsSheet, DeleteConfirmSheet } from '../SessionActionsSheets';
 import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
@@ -35,9 +37,15 @@ export interface SessionScreenProps {
   agents?: AgentsSource;
   /** Photo and file uploads for the composer (spec 8.1); without them there is no attach button. */
   attachments?: AttachmentServices;
+  /** Archive and delete from the header's "⋯" menu (shared with Home, which shows the archive's Undo). */
+  actions?: SessionActions;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments }: SessionScreenProps) {
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared }: SessionScreenProps) {
+  const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
+  useEffect(() => () => own?.dispose(), [own]);
+  const actions = useModel((shared ?? own)!);
+  const [menuOpen, setMenuOpen] = useState(false);
   const model = useModel(
     useMemo(
       () =>
@@ -118,10 +126,20 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   return (
     <main class="screen session-screen">
       <BackHeader href="/" label="Sessions" onBack={onBack}>
-        <span class={`pill ${status.tone}`} aria-label="Session status" data-status={status.status}>
-          {status.label}
-        </span>
+        <div class="topbar-end">
+          <span class={`pill ${status.tone}`} aria-label="Session status" data-status={status.status}>
+            {status.label}
+          </span>
+          <button type="button" class="ghost icon-button" aria-label="Session actions" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
+            ⋯
+          </button>
+        </div>
       </BackHeader>
+      {actions.error !== undefined && (
+        <p class="error session-actions-error" role="alert">
+          {actions.error}
+        </p>
+      )}
       <div class="session-head">
         <h1 class="session-heading">
           {model.title}
@@ -251,6 +269,26 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       )}
       {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
       <StopConfirm model={model} />
+      {menuOpen && (
+        <ActionsSheet
+          title={model.title}
+          archived={replica.archivedSessions.some((s) => s.sessionId === sessionId)}
+          onClose={() => setMenuOpen(false)}
+          onArchive={() => {
+            setMenuOpen(false);
+            if (actions.askArchive(sessionId)) onBack();
+          }}
+          onUnarchive={() => {
+            setMenuOpen(false);
+            void actions.unarchive(sessionId);
+          }}
+          onDelete={() => {
+            setMenuOpen(false);
+            actions.askDelete(sessionId);
+          }}
+        />
+      )}
+      <DeleteConfirmSheet actions={actions} onDeleted={onBack} />
     </main>
   );
 }
