@@ -1,5 +1,6 @@
 // A tiny history router for the app's pages: /pair, / (home), /chats (home on its Chats tab),
-// /settings/providers (the provider settings), /s/:sessionId and /c/:chatId (a local chat). The host answers each of these paths with index.html (host/src/http/static.ts), so a reload or a push link
+// /settings/providers (the provider settings), /s/:sessionId, /c/:chatId (a local chat) and /lab (the
+// hidden interaction lab, reached only by typing the URL). The host answers each of these paths with index.html (host/src/http/static.ts), so a reload or a push link
 // lands on the right page. The fragment is left alone: the pairing link carries its code there
 // (`/pair#code=12345678`, spec 8), and a fragment never reaches the host.
 
@@ -10,6 +11,7 @@ export type Route =
   | { name: 'providers' }
   | { name: 'session'; sessionId: string }
   | { name: 'chat'; chatId: string }
+  | { name: 'lab' }
   | { name: 'notFound'; path: string };
 
 const SESSION = /^\/s\/([^/]+)\/?$/;
@@ -22,6 +24,7 @@ export function parseRoute(pathname: string): Route {
   if (path === '/pair' || path === '/pair/') return { name: 'pair' };
   if (path === '/chats' || path === '/chats/') return { name: 'chats' };
   if (path === '/settings/providers' || path === '/settings/providers/') return { name: 'providers' };
+  if (path === '/lab' || path === '/lab/') return { name: 'lab' };
   const sessionId = idOf(SESSION, path);
   if (sessionId !== undefined) return { name: 'session', sessionId };
   const chatId = idOf(CHAT, path);
@@ -56,6 +59,8 @@ export function routePath(route: Route): string {
       return `/s/${encodeURIComponent(route.sessionId)}`;
     case 'chat':
       return `/c/${encodeURIComponent(route.chatId)}`;
+    case 'lab':
+      return '/lab';
     case 'notFound':
       return route.path;
   }

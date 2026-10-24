@@ -335,7 +335,7 @@ describe('device methods', () => {
 });
 
 describe('static files', () => {
-  it('serves the web app with content types, and /pair, /chats, provider settings, session and chat pages as client routes', async () => {
+  it('serves the web app with content types, and /pair, /chats, provider settings, the lab, session and chat pages as client routes', async () => {
     const { base } = await start();
     const cases: [string, string][] = [
       ['/', 'text/html; charset=utf-8'],
@@ -343,6 +343,7 @@ describe('static files', () => {
       ['/s/ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D', 'text/html; charset=utf-8'],
       ['/chats', 'text/html; charset=utf-8'],
       ['/settings/providers', 'text/html; charset=utf-8'],
+      ['/lab', 'text/html; charset=utf-8'],
       ['/c/3f2a9c1e-6b7d-4e0a-9f1b-2c8d5e7a4b60', 'text/html; charset=utf-8'],
       ['/index.html', 'text/html; charset=utf-8'],
       ['/assets/app-Abc12345.js', 'text/javascript; charset=utf-8'],

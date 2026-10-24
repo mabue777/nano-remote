@@ -88,6 +88,9 @@ describe('parseRoute and routePath', () => {
     ['/c/', { name: 'notFound', path: '/c/' }],
     ['/c/a/b', { name: 'notFound', path: '/c/a/b' }],
     ['/c/%E0%A4%A', { name: 'notFound', path: '/c/%E0%A4%A' }],
+    ['/lab', { name: 'lab' }],
+    ['/lab/', { name: 'lab' }],
+    ['/lab/x', { name: 'notFound', path: '/lab/x' }],
   ])('%s', (path, route) => {
     expect(parseRoute(path)).toEqual(route);
   });
@@ -100,6 +103,7 @@ describe('parseRoute and routePath', () => {
     expect(routePath({ name: 'notFound', path: '/x' })).toBe('/x');
     expect(routePath({ name: 'chats' })).toBe('/chats');
     expect(routePath({ name: 'providers' })).toBe('/settings/providers');
+    expect(routePath({ name: 'lab' })).toBe('/lab');
     expect(routePath({ name: 'chat', chatId: 'a b' })).toBe('/c/a%20b');
     expect(parseRoute(routePath({ name: 'chat', chatId: 'a b/c' }))).toEqual({ name: 'chat', chatId: 'a b/c' });
   });

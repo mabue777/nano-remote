@@ -8,6 +8,7 @@
 // also shows the host section (keep this Mac awake while plugged in).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
+import { LabRoute } from './lab/LabRoute';
 import { watchBadge } from './pwa/badge';
 import { PushModel, type PushEnvironment } from './pwa/push';
 import { Replica } from './replica/replica';
@@ -51,9 +52,11 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
     device === null && (route.name === 'providers' || (hasLocalChat(chat) && (route.name === 'home' || route.name === 'chats' || route.name === 'chat')));
   const settings = () => router.navigate('/settings/providers');
   useEffect(() => {
-    if (device === null && route.name !== 'pair' && !localOnly) router.navigate('/pair', { replace: true });
+    if (device === null && route.name !== 'pair' && route.name !== 'lab' && !localOnly) router.navigate('/pair', { replace: true });
   }, [device, route, router, localOnly]);
 
+  // The hidden interaction lab: fake data, no host, no pairing needed.
+  if (route.name === 'lab') return <LabRoute />;
   if (localOnly) {
     if (route.name === 'providers') return <ProviderSettingsScreen services={chat} backLabel="Chats" onBack={() => router.navigate('/')} />;
     if (route.name === 'chat') {
@@ -94,7 +97,7 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
 
 interface ConnectedProps {
   device: PairedDevice;
-  route: Exclude<Route, { name: 'pair' }>;
+  route: Exclude<Route, { name: 'pair' } | { name: 'lab' }>;
   router: Router;
   storage: StorageLike | null;
   push: PushEnvironment | null;

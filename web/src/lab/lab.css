@@ -1,0 +1,416 @@
+/* The interaction lab (/lab) only: loaded with the lab's own chunk, never by the real screens.
+   Motion values are custom properties here so a later ticket can promote them to tokens.css as they are.
+   Values from docs/research/visual-gap-openai-2026-10.md (OpenAI: 150 ms default, 200 moderate,
+   300 relaxed, enter cubic-bezier(.23,1,.32,1), "Thinking" shimmer 2.8 s). Every Smooth rule is keyed on
+   the technique's data attribute on .lab, so Now renders exactly what the app renders today. */
+
+:root {
+  --duration-press: 90ms;
+  --duration-fast: 150ms;
+  --duration-moderate: 200ms;
+  --duration-relaxed: 300ms;
+  --duration-shimmer: 2.8s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* The sheet spring (stiffness 380, damping 33; spring.ts) as linear(); 520 ms to rest. */
+  --duration-spring: 520ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-press: 1ms;
+    --duration-fast: 1ms;
+    --duration-moderate: 1ms;
+    --duration-relaxed: 1ms;
+    --duration-spring: 1ms;
+  }
+
+  .lab *,
+  .lab *::before,
+  .lab *::after {
+    animation: none !important;
+  }
+}
+
+/* The floating Lab button and its panel: above everything, never animated. The button sits in the middle
+   of the top bar, the one spot no lab screen uses. */
+.lab-fab {
+  position: fixed;
+  top: calc(var(--safe-top) + var(--space-6) + 7px); /* one-off: centred on the 44 px top bar */
+  left: 50%;
+  margin-left: -26px; /* one-off: half the button width */
+  z-index: 30;
+  width: 52px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 0;
+  background: color-mix(in srgb, var(--text) 78%, transparent);
+  color: var(--bg);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.lab-panel-backdrop {
+  z-index: 40;
+}
+
+.lab-note {
+  margin: 0 0 var(--space-6);
+  color: var(--warn);
+}
+
+.lab-panel-all {
+  flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+}
+
+.lab-techniques {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.lab-technique {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.lab-technique-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-mode {
+  flex: none;
+  width: 150px; /* one-off: two equal segments */
+  margin: 0;
+}
+
+.lab-mode button {
+  min-height: var(--touch);
+}
+
+/* The lab's fake rows reuse the real classes; these few only fill gaps the fake data opens. */
+.lab-tool-toggle {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.lab-chevron {
+  margin-left: auto;
+  flex: none;
+}
+
+.lab-answered p {
+  margin: 0;
+}
+
+.lab-answered {
+  border-color: var(--line);
+}
+
+.lab-diff {
+  max-height: none;
+  margin-top: var(--space-6);
+}
+
+.lab-home .topbar span {
+  text-align: right;
+}
+
+/* ---------- 1. Press feedback ---------- */
+.lab[data-press='smooth'],
+.lab[data-press='smooth'] a,
+.lab[data-press='smooth'] button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lab[data-press='smooth'] :is(a, button) {
+  transition:
+    transform var(--duration-press) var(--ease-standard),
+    opacity var(--duration-press) var(--ease-standard);
+}
+
+.lab[data-press='smooth'] :is(a, button:not(:disabled)):active {
+  transform: scale(0.97);
+  opacity: 0.7;
+}
+
+/* The row keeps its colour and dims with the rest instead of flashing to the page colour. */
+.lab[data-press='smooth'] .session:active {
+  background: var(--surface);
+  transform: scale(0.98);
+}
+
+/* ---------- 2. Page push and back swipe ---------- */
+.lab-stage {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.lab-page {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg);
+}
+
+.lab-page .session-screen {
+  height: 100%;
+}
+
+.lab[data-page='smooth'] .lab-session-page {
+  touch-action: pan-y;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.12); /* one-off: the edge of the page that slides over the list */
+}
+
+.lab[data-page='smooth'] .lab-page:not([hidden]):not([data-under]) {
+  view-transition-name: lab-page;
+}
+
+/* Only the page snapshots move; the browser's default group animation (width, height, backdrop-filter)
+   and the root cross-fade are switched off so nothing but transform and opacity animates. */
+html[data-lab-nav]::view-transition-old(root),
+html[data-lab-nav]::view-transition-new(root),
+html[data-lab-nav]::view-transition-group(root),
+html[data-lab-nav]::view-transition-group(lab-page) {
+  animation: none;
+}
+
+html[data-lab-nav]::view-transition-old(lab-page),
+html[data-lab-nav]::view-transition-new(lab-page) {
+  mix-blend-mode: normal;
+  animation-duration: var(--duration-relaxed);
+  animation-timing-function: var(--ease-enter);
+  animation-fill-mode: both;
+}
+
+html[data-lab-nav='push']::view-transition-old(lab-page) {
+  animation-name: lab-to-under;
+}
+
+html[data-lab-nav='push']::view-transition-new(lab-page) {
+  animation-name: lab-from-right;
+}
+
+html[data-lab-nav='pop']::view-transition-old(lab-page) {
+  animation-name: lab-to-right;
+  z-index: 1;
+}
+
+html[data-lab-nav='pop']::view-transition-new(lab-page) {
+  animation-name: lab-from-under;
+}
+
+@keyframes lab-from-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes lab-to-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes lab-to-under {
+  to {
+    transform: translateX(-30%);
+    opacity: 0.85;
+  }
+}
+
+@keyframes lab-from-under {
+  from {
+    transform: translateX(-30%);
+    opacity: 0.85;
+  }
+}
+
+/* ---------- 3. Sheets ---------- */
+.lab-sheet-smooth {
+  background: transparent;
+}
+
+.lab-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.lab-sheet-smooth .sheet {
+  position: relative;
+  overscroll-behavior: contain;
+  will-change: transform;
+}
+
+.lab-grabber {
+  width: 36px;
+  height: 5px;
+  margin: calc(-1 * var(--space-4)) auto var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.lab-changes-sheet {
+  max-height: 85dvh;
+}
+
+/* ---------- 4. Streaming text ---------- */
+.lab-fresh {
+  animation: lab-fade-in 320ms var(--ease-standard) both;
+}
+
+@keyframes lab-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.lab-thinking {
+  justify-self: start;
+  align-self: flex-start;
+  font-weight: 600;
+  color: transparent;
+  background: linear-gradient(90deg, var(--muted) 0 35%, var(--text) 50%, var(--muted) 65% 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: lab-shimmer var(--duration-shimmer) linear infinite;
+}
+
+@keyframes lab-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* ---------- 5. Auto-scroll: the pill fades and rises instead of popping ---------- */
+.lab-jump {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-moderate) var(--ease-standard),
+    transform var(--duration-moderate) var(--ease-standard);
+}
+
+.lab-jump.shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+/* ---------- 6. Sending: the bubble rises out of the composer ---------- */
+.lab-enter {
+  transform-origin: 100% 100%;
+  animation: lab-enter var(--duration-moderate) var(--ease-enter) both;
+}
+
+@keyframes lab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+/* ---------- 7. Keyboard: the stage is the visible area above the keyboard ---------- */
+.lab-stage.lab-keyboard {
+  height: var(--lab-vvh, 100%);
+  transform: translateY(var(--lab-vvtop, 0px));
+}
+
+/* ---------- 8. List changes ---------- */
+.lab-leaving {
+  pointer-events: none;
+  animation: lab-leave var(--duration-moderate) var(--ease-exit) both;
+}
+
+@keyframes lab-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.lab-xfade {
+  display: inline-grid;
+}
+
+.lab-xfade > * {
+  grid-area: 1 / 1;
+}
+
+.lab-xfade-out {
+  animation: lab-fade-out var(--duration-moderate) var(--ease-standard) both;
+}
+
+.lab-xfade-in {
+  animation: lab-fade-in var(--duration-moderate) var(--ease-standard) both;
+}
+
+@keyframes lab-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- 9. Expand and collapse: a box's background scales, the content fades ---------- */
+.lab-shelled {
+  position: relative;
+  isolation: isolate;
+  background: none;
+  border-color: transparent;
+}
+
+.lab-shell {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+
+.request-card.approval.lab-shelled > .lab-shell {
+  border-color: var(--warn);
+}
+
+.lab-reveal {
+  animation: lab-reveal var(--duration-relaxed) var(--ease-enter) both;
+}
+
+@keyframes lab-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
