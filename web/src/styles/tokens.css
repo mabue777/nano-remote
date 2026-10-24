@@ -65,5 +65,6 @@
     --line: #2e2e2b;
     --accent: #6d8ef0;
     --accent-text: #0d0d0c;
+    --busy: #6d8ef0; /* 5.45:1 on --surface, 6.05:1 on --bg (WCAG AA 4.5:1) */
   }
 }

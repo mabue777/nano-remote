@@ -195,7 +195,7 @@
   font-weight: 600;
   padding: 0 var(--space-4);
   border-radius: var(--radius-pill);
-  color: var(--accent); /* --busy has no dark variant; the accent reads on both palettes */
+  color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, var(--surface));
 }
 
