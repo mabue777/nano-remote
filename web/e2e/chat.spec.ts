@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { longPress, swipeLeft } from './gestures';
 
 // Local chat at 390 x 844 against the fake provider (test/fake-provider.ts): an OpenAI-compatible cloud
 // API that streams SSE and Ollama (the ollama.com preset's host) that streams NDJSON, both reached directly
@@ -56,24 +57,6 @@ async function seed(page: Page, providers: SeedProvider[], chats: unknown[] = []
 function chat(id: string, title: string, minutesAgo: number) {
   const at = Date.now() - minutesAgo * 60_000;
   return { id, title, providerId: CLOUD.id, model: 'fake-reasoner', createdAt: at, updatedAt: at, messages: [{ role: 'user', text: title, status: 'complete' }] };
-}
-
-async function longPress(target: Locator): Promise<void> {
-  const box = (await target.boundingBox())!;
-  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, button: 0, pointerType: 'touch', isPrimary: true };
-  await target.dispatchEvent('pointerdown', at);
-  await target.page().waitForTimeout(650);
-  await target.dispatchEvent('pointerup', at);
-}
-
-async function swipeLeft(target: Locator): Promise<void> {
-  const box = (await target.boundingBox())!;
-  const y = box.y + box.height / 2;
-  const base = { button: 0, pointerType: 'touch', isPrimary: true, clientY: y };
-  await target.dispatchEvent('pointerdown', { ...base, clientX: box.x + box.width - 20 });
-  await target.dispatchEvent('pointermove', { ...base, clientX: box.x + box.width - 60 });
-  await target.dispatchEvent('pointermove', { ...base, clientX: box.x + box.width - 120 });
-  await target.dispatchEvent('pointerup', { ...base, clientX: box.x + box.width - 120 });
 }
 
 async function providerChats(request: APIRequestContext): Promise<Record<string, unknown>[]> {
@@ -178,8 +161,9 @@ test('delete a chat by long-press and by swipe', async ({ page }) => {
   const list = page.getByRole('list', { name: 'Chats' });
   await expect(list.getByRole('link')).toHaveText([/Second question/, /First question/]);
 
-  await longPress(list.getByRole('link', { name: /First question/ }));
-  await page.getByRole('button', { name: 'Delete First question' }).click();
+  const deleteFirst = page.getByRole('button', { name: 'Delete First question' });
+  await longPress(list.getByRole('link', { name: /First question/ }), deleteFirst);
+  await deleteFirst.click();
   await expect(list.getByRole('link')).toHaveText([/Second question/]);
 
   await swipeLeft(list.getByRole('link', { name: /Second question/ }));
