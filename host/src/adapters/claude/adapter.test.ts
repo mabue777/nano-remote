@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Settings } from '../../generated/common.js';
 import type { AdapterEvent } from '../../core/adapter.js';
@@ -834,6 +834,250 @@ describe('ClaudeAdapter: supervision', () => {
     const exited = await find(events, 'agent/exited');
     expect(exited.params.reason).toBe('Claude Code killed by SIGTERM');
     expect(() => process.kill(child!.pid!, 0)).toThrow();
+  });
+});
+
+describe('ClaudeAdapter: a hung engine (fake timers)', () => {
+  // Only setTimeout is faked: the fake query and the real child run on setImmediate and I/O.
+  const TIMEOUT = 120_000;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Lets the fake and the child run (real I/O, no timers) until `check` holds; at most a few real seconds. */
+  async function settle<T>(check: () => T | undefined, what: string): Promise<T> {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const value = check();
+      if (value !== undefined) return value;
+      if (Date.now() > deadline) throw new Error(`never happened: ${what}`);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+  const quiet = async () => {
+    for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const has = (events: AdapterEvent[], method: AdapterEvent['method'], from = 0) =>
+    events.slice(from).find((e) => e.method === method);
+  const exitedOf = (events: AdapterEvent[]) => has(events, 'agent/exited') as Extract<AdapterEvent, { method: 'agent/exited' }> | undefined;
+  const watch = (fakeOptions: FakeClaudeOptions) => rig(fakeOptions, { requestTimeoutMs: TIMEOUT });
+  const assistant = (content: unknown[]) => ({ message: { type: 'assistant', message: { id: `msg_${Math.random()}`, content }, parent_tool_use_id: null } });
+  const toolResult = (id: string, toolUseResult?: unknown) => ({
+    message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, parent_tool_use_id: null, tool_use_result: toolUseResult },
+  });
+
+  it('after a completed turn, a message the engine never answers ends the run: group signalled, error, agent/exited; the next turn resumes', async () => {
+    const { fake, adapter, events, cwd, logs } = watch({ hang: [1] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('one'), 'c1');
+    await settle(() => has(events, 'turn/completed'), 'the first turn');
+    const sessionId = adapter.engineSessionId;
+    const pid = adapter.pid!;
+    const kill = vi.spyOn(process, 'kill');
+
+    const from = events.length;
+    await adapter.turnStart(text('status?'), 'c2');
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 1);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    const exited = await settle(() => exitedOf(events), 'agent/exited');
+    expect(exited.params.reason).toBe('Claude stopped responding (restarted): no output for 120 s after a message');
+    expect(methods(events.slice(from))).toEqual(['status/changed', 'status/changed', 'agent/exited']);
+    expect(events.at(-2)!.params).toEqual({ status: 'error' });
+    expect(kill).toHaveBeenCalledWith(-pid, 'SIGTERM');
+    await settle(() => (fake.last.closed ? true : undefined), 'the query closed');
+    await settle(() => {
+      try {
+        process.kill(pid, 0);
+        return undefined;
+      } catch {
+        return true;
+      }
+    }, 'the child gone');
+    expect(logs).toContain('claude Claude stopped responding (restarted): no output for 120 s after a message');
+
+    const next = events.length;
+    await adapter.turnStart(text('again'), 'c3');
+    expect(fake.queries).toHaveLength(2);
+    expect(fake.last.options.resume).toBe(sessionId);
+    expect((await settle(() => has(events, 'turn/completed', next), 'the resumed turn')).params).toEqual({ status: 'completed' });
+  });
+
+  it('a tool in progress keeps a silent engine alive; once the tool ends, silence fires the watchdog', async () => {
+    const { fake, adapter, events, cwd, logs } = watch({
+      turns: [[assistant([{ type: 'tool_use', id: 'toolu_long', name: 'Bash', input: { command: 'pnpm test' } }]), { hold: true }, toolResult('toolu_long'), { hold: true }]],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('run the tests'), 'c1');
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the long tool');
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    expect(logs).toContain('claude silent for 120 s while a tool is in progress; still waiting');
+
+    fake.last.release();
+    await settle(() => has(events, 'item/completed'), 'the tool result');
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the silence after the tool');
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 1);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await settle(() => exitedOf(events), 'agent/exited')).params.reason).toMatch(/^Claude stopped responding \(restarted\)/);
+  });
+
+  it('a waiting approval keeps a silent engine alive; after the answer, silence fires the watchdog', async () => {
+    const { fake, adapter, events, cwd } = watch({ turns: [[{ tool: 'Bash', input: { command: 'ls' } }, { hold: true }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('list'), 'c1');
+    const request = await settle(() => has(events, 'approval/request'), 'the approval');
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+
+    await adapter.resolveApproval(requestOf(request).requestId, 'accept');
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the silence after the tool');
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 1);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await settle(() => exitedOf(events), 'agent/exited');
+  });
+
+  it('a waiting question counts like an approval', async () => {
+    const questions = [{ question: 'Which?', header: 'Q', options: [{ label: 'a', description: '' }], multiSelect: false }];
+    const { adapter, events, cwd } = watch({ turns: [[{ tool: 'AskUserQuestion', input: { questions } }]] });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('ask'), 'c1');
+    await settle(() => has(events, 'input/request'), 'the question');
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+  });
+
+  it('a background subagent holds a later message without output: not killed; after its task-notification, silence fires', async () => {
+    const { fake, adapter, events, cwd, logs } = watch({
+      hang: [1],
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { description: 'find downloads', prompt: 'find', run_in_background: true } }]),
+          toolResult('toolu_agent', { status: 'async_launched', agentId: 'agent_7', description: 'find downloads' }),
+          { text: 'Launched.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('look around'), 'c1');
+    await settle(() => has(events, 'turn/completed'), 'the first turn');
+
+    await adapter.turnStart(text('status?'), 'c2');
+    await vi.advanceTimersByTimeAsync(5 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    expect(logs).toContain('claude silent for 120 s while 1 background task(s) run; still waiting');
+
+    // Matched by the agent id alone (no tool_use_id on the notification).
+    fake.last.send({ type: 'system', subtype: 'task_notification', task_id: 'agent_7', status: 'completed', summary: 'found nothing', output_file: '/tmp/a' });
+    await settle(() => has(events, 'item/completed', events.length - 1), 'the notification item');
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 1);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await settle(() => exitedOf(events), 'agent/exited');
+  });
+
+  it('a background Bash is tracked by its tool_use id; a foreground Agent and a failed launch are not', async () => {
+    const { fake, adapter, events, cwd } = watch({
+      hang: [1],
+      turns: [
+        [
+          assistant([{ type: 'tool_use', id: 'toolu_fg', name: 'Agent', input: { description: 'inline', prompt: 'x' } }]),
+          toolResult('toolu_fg', { status: 'completed', prompt: 'x' }),
+          assistant([{ type: 'tool_use', id: 'toolu_bad', name: 'Bash', input: { command: 'nope', run_in_background: true } }]),
+          { message: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_bad', content: 'denied', is_error: true }] }, parent_tool_use_id: null } },
+          // Auto-backgrounded: the input did not ask, the result says so.
+          assistant([{ type: 'tool_use', id: 'toolu_bg', name: 'Bash', input: { command: 'sleep 600' } }]),
+          toolResult('toolu_bg', { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bash_3' }),
+          { text: 'Started.' },
+        ],
+      ],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    await settle(() => has(events, 'turn/completed'), 'the first turn');
+    await adapter.turnStart(text('status?'), 'c2');
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    // An unrelated notification changes nothing; the matching tool_use id ends the hold.
+    fake.last.send({ type: 'system', subtype: 'task_notification', task_id: 'other', status: 'completed', summary: '', output_file: '/tmp/o' });
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    fake.last.send({ type: 'system', subtype: 'task_notification', task_id: '', tool_use_id: 'toolu_bg', status: 'completed', summary: '', output_file: '/tmp/b' });
+    await quiet();
+    await vi.advanceTimersByTimeAsync(TIMEOUT);
+    await settle(() => exitedOf(events), 'agent/exited');
+  });
+
+  it('a message delivered mid-turn (no new system/init) with ongoing stream output is not killed; an idle engine is never watched', async () => {
+    const { fake, adapter, events, cwd } = watch({});
+    await adapter.start(cwd, {});
+    const played = fake.last.engineTurn([{ hold: true }, { text: 'Done.' }]);
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the engine turn');
+    await adapter.turnStart(text('status?'), 'c1');
+    await settle(() => (fake.last.midTurn.length > 0 ? true : undefined), 'the mid-turn message');
+    for (let i = 0; i < 6; i += 1) {
+      fake.last.send({ type: 'stream_event', event: { type: 'message_start', message: { id: `msg_s${i}` } }, parent_tool_use_id: null });
+      await quiet();
+      await vi.advanceTimersByTimeAsync(TIMEOUT - 1_000);
+    }
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    fake.last.release();
+    await played;
+    await settle(() => has(events, 'turn/completed'), 'the turn end');
+    await vi.advanceTimersByTimeAsync(10 * TIMEOUT);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+  });
+
+  it('interrupt() on an engine that never answers settles within the timeout: the turn ends interrupted, then the run', async () => {
+    const { fake, adapter, events, cwd } = watch({
+      interruptHangs: true,
+      // A tool in progress keeps the watchdog off: only the interrupt timeout can end this.
+      turns: [[assistant([{ type: 'tool_use', id: 'toolu_find', name: 'Bash', input: { command: 'find ~/Downloads' } }]), { hold: true }]],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the hold');
+    const pid = adapter.pid!;
+    let outcome: unknown;
+    const stopping = adapter.interrupt().then(
+      () => (outcome = 'resolved'),
+      (error: unknown) => (outcome = error),
+    );
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 1);
+    await quiet();
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await stopping;
+    expect(outcome).toMatchObject({ code: 'agent_unavailable', message: expect.stringContaining('Claude stopped responding (restarted): Stop was not answered within 120 s') });
+    const end = events.findIndex((e) => e.method === 'turn/completed');
+    expect(events[end]!.params).toEqual({ status: 'interrupted' });
+    expect(methods(events.slice(end))).toEqual(['turn/completed', 'status/changed', 'agent/exited']);
+    await settle(() => {
+      try {
+        process.kill(pid, 0);
+        return undefined;
+      } catch {
+        return true;
+      }
+    }, 'the child gone');
   });
 });
 

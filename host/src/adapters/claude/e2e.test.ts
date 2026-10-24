@@ -31,11 +31,11 @@ interface Rig {
 
 async function setup(
   options: FakeClaudeOptions = {},
-  extra: { fake?: FakeClaude; journal?: Journal; store?: SessionStore; configDir?: string } = {},
+  extra: { fake?: FakeClaude; journal?: Journal; store?: SessionStore; configDir?: string; requestTimeoutMs?: number } = {},
 ): Promise<Rig> {
   const fake = extra.fake ?? new FakeClaude(options);
   const configDir = extra.configDir ?? mkdtempSync(path.join(tmpdir(), 'nano-claude-cfg-'));
-  const agent = new ClaudeAgent({ config: claudeConfig({ configDir, requestTimeoutMs: 15_000, killGraceMs: 300 }, {}), query: fake.query });
+  const agent = new ClaudeAgent({ config: claudeConfig({ configDir, requestTimeoutMs: extra.requestTimeoutMs ?? 15_000, killGraceMs: 300 }, {}), query: fake.query });
   harness = await startHarness({
     extraAgents: [agent],
     ...(extra.journal ? { journal: extra.journal } : {}),
@@ -267,6 +267,32 @@ describe('session core end to end with the Claude adapter', () => {
     const late = await rpcError(phone, 'approval/resolve', { sessionId, requestId, decision: 'accept' });
     expect(late).toMatchObject({ code: 'already_resolved', data: { resolvedBy: 'agent' } });
     expect(await rpc(phone, 'turn/interrupt', { sessionId, turnId: turn.turnId })).toEqual({ ok: true });
+  });
+
+  it('Stop on an engine that never answers settles: the turn ends interrupted, and the next turn resumes', async () => {
+    // A short real timeout (the adapter tests cover the full 120 s with fake timers).
+    const tool = { message: { type: 'assistant', message: { id: 'msg_find', content: [{ type: 'tool_use', id: 'toolu_find', name: 'Bash', input: { command: 'find ~/Downloads' } }] }, parent_tool_use_id: null } };
+    const { h, fake } = await setup({ interruptHangs: true, turns: [[tool, { hold: true }], [{ text: 'Back.' }]] }, { requestTimeoutMs: 150 });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    const { turn } = await rpc<{ turn: { turnId: string } }>(phone, 'turn/start', { sessionId, input: text('go'), clientMessageId: randomUUID() });
+    await until(() => (fake.last.holdingNow ? true : undefined), 'the hold');
+    const engineSessionId = h.core.sessions.store.get(sessionId).engineSessionId;
+
+    expect(await rpc(phone, 'turn/interrupt', { sessionId, turnId: turn.turnId })).toEqual({ ok: true });
+    const completed = await waitEvent(phone, 'turn/completed');
+    expect(turnOf(completed).status).toBe('interrupted');
+    await waitEvent(phone, 'status/changed', (p) => p.status === 'error');
+    expect(h.core.sessions.runningTurnId(sessionId)).toBeUndefined();
+
+    await rpc(phone, 'turn/start', { sessionId, input: text('again'), clientMessageId: randomUUID() });
+    expect(fake.queries).toHaveLength(2);
+    expect(fake.last.options.resume).toBe(engineSessionId);
+    await until(
+      () => eventsOf(phone, sessionId).find((e) => e.method === 'turn/completed' && turnOf(e).status === 'completed'),
+      'the resumed turn',
+    );
   });
 
   it('session/start with input starts the first turn in one round trip', async () => {

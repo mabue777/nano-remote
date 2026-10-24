@@ -52,6 +52,10 @@ export interface FakeClaudeOptions {
   spawn?: boolean;
   /** Never send system/init nor play turns (an engine that does not accept its messages). */
   noInit?: boolean;
+  /** Turn numbers (as in FakeClaudeScript) the engine takes and never answers: no init, no output (a hung engine). */
+  hang?: number[];
+  /** interrupt() never settles (a hung engine). */
+  interruptHangs?: boolean;
   /** query() throws this instead of returning. */
   throwOnQuery?: string;
 }
@@ -209,6 +213,7 @@ export class FakeQuery implements ClaudeQuery {
 
   async interrupt(): Promise<undefined> {
     this.interrupts += 1;
+    if (this.fake.options.interruptHangs) return new Promise<never>(() => {});
     this.interrupted = true;
     this.abort?.abort();
     const holding = this.holding;
@@ -255,6 +260,10 @@ export class FakeQuery implements ClaudeQuery {
       const text = typeof content === 'string' ? content : '';
       // An engine that never accepts: no init, no turn.
       if (this.fake.options.noInit) continue;
+      if (this.fake.options.hang?.includes(this.fake.turnCount)) {
+        this.fake.turnCount += 1;
+        continue;
+      }
       if (this.engineBusy) {
         this.midTurn.push(message);
         continue;

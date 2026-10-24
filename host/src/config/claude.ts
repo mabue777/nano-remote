@@ -17,7 +17,10 @@ export interface ClaudeConfig {
   defaultModel: string;
   /** Extra environment for the child (added on top of the cleaned host environment). */
   env: Record<string, string>;
-  /** How long the engine may take to accept a call (the first turn's system/init, a model list). */
+  /**
+   * How long the engine may take to accept a call (the first turn's system/init, a model list, Stop), and
+   * how long it may stay silent after a user message before the adapter takes it for hung.
+   */
   requestTimeoutMs: number;
   /** How long `kill()` waits after SIGTERM before it sends SIGKILL to the process group. */
   killGraceMs: number;

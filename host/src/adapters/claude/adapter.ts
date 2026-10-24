@@ -29,6 +29,21 @@
 // that resumes the session. `kill()` ends the process group, closes the inbox and the query, and silences
 // the adapter for good.
 //
+// Hangs: a Claude Code process can stop answering while its pid lives on (seen 2026-10-23: main thread
+// stuck in a synchronous openat(), children no longer reaped), so the exit never comes. Two guards end
+// such a run the same way a death does, and the next turn resumes the session (--resume):
+// - the watchdog: from a user message handed to the engine until the turn's `result`, requestTimeoutMs of
+//   silence (no engine message of any kind) ends the run, unless the silence is expected: a tool is in
+//   progress (long tools are quiet for minutes), an approval or question waits on the user, or a
+//   background task the engine launched (an Agent/Task call, a run_in_background Bash) has not reported
+//   in. Claude Code holds a queued user message without any output while background subagents run, and
+//   killing it then would lose their work; a hang in that state is recovered by Stop (next point).
+//   Before the first system/init of a query, the init timeout owns the wait instead;
+// - interrupt(): Query.interrupt() gets requestTimeoutMs to answer; without an answer the turn ends
+//   interrupted and the run ends, so Stop always settles.
+// Background tasks are tracked by the launching tool_use id and the task id its tool result names (the
+// Agent tool's agentId, the Bash tool's backgroundTaskId); system/task_notification carries both.
+//
 // SDK behaviors (0.3.308, Claude Code 2.1.x on the operator's Mac):
 // Verified by the host-drive spike: system/init (carrying session_id) arrives only after the first user
 // message; assistant messages carry text and tool_use blocks and the next user message the tool_result
@@ -189,6 +204,14 @@ interface Run {
   /** system/init arrived (the engine accepted its first user message). */
   initialized: boolean;
   initWaiters: Array<{ resolve(): void; reject(error: Error): void }>;
+  /** A user message was handed to the engine and no `result` came since: its silence is watched. */
+  watching: boolean;
+  /** The hang watchdog, re-armed by every engine message. */
+  watchdog: NodeJS.Timeout | undefined;
+  /** Agent/Task/Bash tool calls waiting for their result, by tool_use id: whether the input asked for the background. */
+  launching: Map<string, boolean>;
+  /** Background tasks launched and not reported settled: task id ('' while unknown) by launching tool_use id. */
+  background: Map<string, string>;
 }
 
 interface PendingRequest {
@@ -296,6 +319,8 @@ export class ClaudeAdapter implements Adapter {
     }
     this.emit({ method: 'status/changed', params: { status: 'running' } });
     run.inbox.push({ type: 'user', message: { role: 'user', content: content as SDKUserMessage['message']['content'] }, parent_tool_use_id: null });
+    run.watching = true;
+    this.touch(run);
     if (!run.initialized) await this.initialized(run);
   }
 
@@ -309,7 +334,22 @@ export class ClaudeAdapter implements Adapter {
     const run = this.run;
     if (!run?.query || run.gone !== undefined) throw unavailable('the engine is not running');
     turn.interrupted = true;
-    await run.query.interrupt();
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), this.config.requestTimeoutMs);
+      timer.unref();
+    });
+    const answered = await Promise.race([run.query.interrupt().then(() => true as const), timeout]).finally(() => clearTimeout(timer));
+    if (answered) return;
+    const reason = `${HUNG}: Stop was not answered within ${seconds(this.config.requestTimeoutMs)}`;
+    this.log(`claude ${reason}`);
+    // The turn ends as the user asked; then the run ends like a lost one.
+    if (this.turn === turn && this.run === run && !this.killed) {
+      this.turn = undefined;
+      this.emit({ method: 'turn/completed', params: { status: 'interrupted' } });
+    }
+    this.lost(run, reason);
+    throw unavailable(reason);
   }
 
   async resolveApproval(requestId: string, decision: Decision): Promise<void> {
@@ -380,6 +420,10 @@ export class ClaudeAdapter implements Adapter {
       gone: undefined,
       initialized: false,
       initWaiters: [],
+      watching: false,
+      watchdog: undefined,
+      launching: new Map(),
+      background: new Map(),
     };
     const { permissionMode } = sessionPolicy(this.settings);
     const canUseTool: CanUseTool = (toolName, input, context) =>
@@ -483,6 +527,9 @@ export class ClaudeAdapter implements Adapter {
   /** Closes a run: waiters reject, inbox and query close, the process group ends (SIGTERM, then SIGKILL). */
   private async end(run: Run, reason: string): Promise<void> {
     run.gone ??= reason;
+    clearTimeout(run.watchdog);
+    run.watchdog = undefined;
+    run.background.clear();
     for (const waiter of run.initWaiters.splice(0)) waiter.reject(unavailable(run.gone));
     run.inbox.close();
     try {
@@ -504,6 +551,10 @@ export class ClaudeAdapter implements Adapter {
   // ---- engine messages -------------------------------------------------------------------------
 
   private onMessage(run: Run, message: Json): void {
+    // Any output shows the engine alive; a `result` ends the wait for the user message.
+    if (message.type === 'result') run.watching = false;
+    this.touch(run);
+    this.trackBackground(run, message);
     switch (message.type) {
       case 'system':
         if (message.subtype === 'init') this.onInit(run, message);
@@ -536,6 +587,75 @@ export class ClaudeAdapter implements Adapter {
     }
     run.initialized = true;
     for (const waiter of run.initWaiters.splice(0)) waiter.resolve();
+    this.touch(run);
+  }
+
+  // ---- hang watchdog ---------------------------------------------------------------------------
+
+  /** Re-arms the watchdog while a user message waits on an initialized, live run; else disarms it. */
+  private touch(run: Run): void {
+    clearTimeout(run.watchdog);
+    run.watchdog = undefined;
+    if (!run.watching || !run.initialized || run.gone !== undefined || run !== this.run || this.killed) return;
+    run.watchdog = setTimeout(() => this.bark(run), this.config.requestTimeoutMs);
+    run.watchdog.unref();
+  }
+
+  /** requestTimeoutMs of silence: a hang, unless the engine has a reason to be quiet. */
+  private bark(run: Run): void {
+    run.watchdog = undefined;
+    if (!run.watching || run.gone !== undefined || run !== this.run || this.killed) return;
+    const quiet = this.quietReason(run);
+    if (quiet !== undefined) {
+      this.log(`claude silent for ${seconds(this.config.requestTimeoutMs)} while ${quiet}; still waiting`);
+      this.touch(run);
+      return;
+    }
+    const reason = `${HUNG}: no output for ${seconds(this.config.requestTimeoutMs)} after a message`;
+    this.log(`claude ${reason}`);
+    this.lost(run, reason);
+  }
+
+  /** Why silence is expected now, or undefined when it means a hang. */
+  private quietReason(run: Run): string | undefined {
+    if ((this.turn?.tools.size ?? 0) > 0) return 'a tool is in progress';
+    if (this.requests.size > 0) return 'a request waits on the user';
+    if (run.background.size > 0) return `${run.background.size} background task(s) run`;
+    return undefined;
+  }
+
+  /**
+   * Keeps run.background: an Agent/Task call or a Bash call whose result says it went to the background
+   * (or whose input asked for it) adds a task; its system/task_notification removes it.
+   */
+  private trackBackground(run: Run, message: Json): void {
+    if (message.parent_tool_use_id != null) return;
+    if (message.type === 'assistant') {
+      for (const raw of list(obj(message.message).content)) {
+        const block = obj(raw);
+        if (block.type !== 'tool_use' || !BACKGROUND_TOOLS.has(str(block.name))) continue;
+        run.launching.set(str(block.id), obj(block.input).run_in_background === true);
+      }
+    } else if (message.type === 'user') {
+      const results = list(obj(message.message).content).map(obj).filter((b) => b.type === 'tool_result');
+      const output = obj(message.tool_use_result);
+      for (const block of results) {
+        const id = str(block.tool_use_id);
+        const asked = run.launching.get(id);
+        if (asked === undefined) continue;
+        run.launching.delete(id);
+        // tool_use_result belongs to the message's tool result; with several, only the input tells.
+        const taskId = results.length === 1 ? str(output.agentId) || str(output.backgroundTaskId) || str(output.taskId) : '';
+        const launched = output.status === 'async_launched' || str(output.backgroundTaskId) !== '';
+        if ((asked || (results.length === 1 && launched)) && block.is_error !== true) run.background.set(id, taskId);
+      }
+    } else if (message.type === 'system' && message.subtype === 'task_notification') {
+      const taskId = str(message.task_id);
+      const toolUseId = str(message.tool_use_id);
+      if (toolUseId !== '') run.background.delete(toolUseId);
+      if (taskId === '') return;
+      for (const [id, task] of run.background) if (task === taskId) run.background.delete(id);
+    }
   }
 
   /**
@@ -722,8 +842,10 @@ export class ClaudeAdapter implements Adapter {
     return request;
   }
 
+  /** The engine's answer to a request is due from now on: the watchdog counts from here. */
   private forget(request: PendingRequest): void {
     this.requests.delete(request.requestId);
+    if (this.run) this.touch(this.run);
   }
 
   /** Answers every open canUseTool call with a denial (the run or the adapter is going away). */
@@ -741,6 +863,16 @@ export class ClaudeAdapter implements Adapter {
     for (const listener of [...this.listeners]) listener(event);
   }
 }
+
+/** Start of every hang reason: the phone shows it as the turn error and the exit reason. */
+export const HUNG = 'Claude stopped responding (restarted)';
+
+/** Tools that can launch a background task. */
+const BACKGROUND_TOOLS = new Set(['Agent', 'Task', 'Bash']);
+
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const seconds = (ms: number): string => `${Math.round(ms / 100) / 10} s`;
 
 function newTurn(engine: boolean): TurnState {
   return { engine, interrupted: false, messageId: '', streaming: [], tools: new Map() };
