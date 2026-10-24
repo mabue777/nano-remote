@@ -115,7 +115,15 @@ export interface AgentCapabilities {
   readonly attachments: { readonly images: boolean; readonly files: boolean };
   /** The adapter reports the engine's background tasks (`background/changed`) and `input/taken`. */
   readonly backgroundTasks: boolean;
+  /**
+   * The settings `session/settings/update` can change in an open session (the adapter's `changeSettings`
+   * takes them). Empty: none.
+   */
+  readonly settingsUpdate: readonly SettingsUpdateKey[];
 }
+
+/** A setting an open session can change (spec 6 `session/settings/update`). */
+export type SettingsUpdateKey = 'model' | 'effort';
 
 /**
  * Drives one engine session. Every method resolves once the engine accepted the call, not when its
@@ -144,6 +152,14 @@ export interface Adapter {
    * `resume`. The core merges them into Session.settings so clients see what is in effect.
    */
   effectiveSettings?(): Settings;
+  /**
+   * The session's settings changed (`session/settings/update`): `settings` is the whole new set. Takes no
+   * engine call and never touches a running turn: the adapter hands the change to its engine before the
+   * next turn it starts (`turnStart` while no turn runs), or a new engine session starts with it. The core
+   * asks `effectiveSettings` again after that `turnStart`. Required when the agent declares
+   * `capabilities.settingsUpdate`.
+   */
+  changeSettings?(settings: Settings): void;
 }
 
 /** Status of an agent as `agent/list` reports it (spec 4). */
@@ -173,7 +189,14 @@ export function describeAgent(provider: AgentProvider): Agent {
   const agent: Agent = { id: provider.id, name: provider.name, status: state.status };
   if (state.version !== undefined) agent.version = state.version;
   if (state.reason !== undefined) agent.reason = state.reason;
-  const { steer, diff, approvalModes, attachments, backgroundTasks } = provider.capabilities;
-  agent.capabilities = { steer, diff, approvalModes: [...approvalModes], attachments: { ...attachments }, backgroundTasks };
+  const { steer, diff, approvalModes, attachments, backgroundTasks, settingsUpdate } = provider.capabilities;
+  agent.capabilities = {
+    steer,
+    diff,
+    approvalModes: [...approvalModes],
+    attachments: { ...attachments },
+    backgroundTasks,
+    settingsUpdate: [...settingsUpdate],
+  };
   return agent;
 }

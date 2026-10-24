@@ -126,6 +126,88 @@ describe('PiAdapter start and resume', () => {
     });
   });
 
+  describe('settings change (session/settings/update)', () => {
+    const models: FakePiModel[] = [
+      { provider: 'kimi-coding', id: 'k3', reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } },
+      { provider: 'google', id: 'gemini-3.1-pro-preview', reasoning: true, thinkingLevelMap: { off: null, minimal: null, xhigh: null, max: null } },
+      { provider: 'llamacpp', id: 'bonsai-27b', reasoning: false },
+    ];
+    const SETTINGS = new Set(['set_model', 'set_thinking_level', 'get_state', 'prompt']);
+    /** The settings commands and prompts pi got, in order. */
+    const calls = (fake: FakePi) =>
+      fake.log().flatMap((e) => {
+        const record = e.record;
+        if (!record || !SETTINGS.has(String(record.type))) return [];
+        if (record.type === 'set_model') return [`set_model ${String(record.provider)}/${String(record.modelId)}`];
+        if (record.type === 'set_thinking_level') return [`set_thinking_level ${String(record.level)}`];
+        if (record.type === 'prompt') return [`prompt ${String(record.message)}`];
+        return [String(record.type)];
+      });
+
+    it('the next prompt runs on the new model and level: set_model, set_thinking_level and get_state go first', async () => {
+      const r = rig({ models });
+      await r.adapter.start(r.fake.cwd, {});
+      await turn(r, 'a');
+      r.adapter.changeSettings({ model: 'google/gemini-3.1-pro-preview', effort: 'max' });
+      // Stored only: pi gets nothing before the next turn.
+      expect(calls(r.fake)).toEqual(['get_state', 'prompt a']);
+      await turn(r, 'b');
+      await turn(r, 'c');
+      expect(calls(r.fake)).toEqual([
+        'get_state',
+        'prompt a',
+        'set_model google/gemini-3.1-pro-preview',
+        'set_thinking_level max',
+        'get_state',
+        'prompt b',
+        'prompt c',
+      ]);
+      // pi fitted max to the model's highest level.
+      expect(r.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'high' });
+    });
+
+    it('a change during a running turn waits for its end (steering sends nothing)', async () => {
+      const r = rig({ models, turns: [[{ hold: true }, { reply: 'one', chunks: 1 }], [{ reply: 'two', chunks: 1 }]] });
+      await r.adapter.start(r.fake.cwd, {});
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      r.adapter.changeSettings({ model: 'llamacpp/bonsai-27b' });
+      await r.adapter.steer(text('more'), 'cm-s');
+      await r.next('turn/completed');
+      expect(calls(r.fake)).toEqual(['get_state', 'prompt a']);
+      await turn(r, 'b');
+      expect(calls(r.fake).slice(2)).toEqual(['set_model llamacpp/bonsai-27b', 'get_state', 'prompt b']);
+      expect(r.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
+    });
+
+    it('a pi restarted after a crash, and a resume after a host restart, start on the changed settings', async () => {
+      const fake = fakePi({ models, turns: [[{ crash: 7 }], [{ reply: 'back', chunks: 1 }]] });
+      const r = rig({}, fake);
+      const id = await r.adapter.start(fake.cwd, {});
+      r.adapter.changeSettings({ model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      await r.next('agent/exited');
+      await turn(r, 'b');
+      expect(calls(fake).slice(-4)).toEqual(['set_model google/gemini-3.1-pro-preview', 'set_thinking_level low', 'get_state', 'prompt b']);
+      await r.adapter.kill();
+      // The host restarted: the session record holds the changed settings.
+      const after = rig({}, fake);
+      await after.adapter.resume(id, fake.cwd, { model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      expect(after.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      await turn(after, 'c');
+      expect(calls(fake).slice(-4)).toEqual(['set_model google/gemini-3.1-pro-preview', 'set_thinking_level low', 'get_state', 'prompt c']);
+    });
+
+    it('a model pi refuses fails the turn start with agent_unavailable and sends no prompt', async () => {
+      const r = rig({ models });
+      await r.adapter.start(r.fake.cwd, {});
+      r.adapter.changeSettings({ model: 'nowhere/nothing' });
+      await expect(r.adapter.turnStart(text('a'), 'cm-1')).rejects.toMatchObject({ code: 'agent_unavailable' });
+      r.adapter.changeSettings({ model: 'no-slash' });
+      await expect(r.adapter.turnStart(text('b'), 'cm-2')).rejects.toMatchObject({ code: 'agent_unavailable', message: expect.stringMatching(/provider\/id/) });
+      expect(calls(r.fake).filter((c) => c.startsWith('prompt'))).toEqual([]);
+    });
+  });
+
   it('an unknown or malformed model fails the start with agent_unavailable and stops pi', async () => {
     const r = rig();
     const unknown = await r.adapter.start(r.fake.cwd, { model: 'nowhere/nothing' }).catch((e: unknown) => e);

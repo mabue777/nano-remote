@@ -171,6 +171,123 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
     });
   });
 
+  describe('settings change (session/settings/update)', () => {
+    // As supportedModels() listed them on 2026-10-24.
+    const levels: Record<string, readonly string[]> = {
+      opus: ['low', 'medium', 'high', 'xhigh', 'max'],
+      sonnet: ['low', 'medium', 'high', 'max'],
+      'claude-opus-4-6': ['low', 'medium', 'high', 'max'],
+      'claude-haiku-4-5-20251001': [],
+    };
+    const efforts = (model: string) => levels[model];
+    const ended = (events: AdapterEvent[], n: number) =>
+      until(() => events.filter((e) => e.method === 'turn/completed').length === n || undefined, `turn ${n} completed`);
+
+    it('the next turn sets the model and effort on the running query before its message; later turns send nothing', async () => {
+      const { fake, adapter, events, cwd } = rig({}, {}, undefined, efforts);
+      await adapter.start(cwd, { effort: 'max' });
+      await adapter.turnStart(text('a'), 'c1');
+      await ended(events, 1);
+      adapter.changeSettings({ model: 'claude-opus-4-6', effort: 'xhigh' });
+      // Stored only: nothing reaches the engine before the next turn.
+      expect(fake.last.timeline).toEqual(['user: a']);
+      await adapter.turnStart(text('b'), 'c2');
+      await ended(events, 2);
+      await adapter.turnStart(text('c'), 'c3');
+      await ended(events, 3);
+      expect(fake.queries).toHaveLength(1);
+      expect(fake.last.timeline).toEqual([
+        'user: a',
+        'setModel: claude-opus-4-6',
+        // Fitted to the new model the way Claude Code downgrades it.
+        'applyFlagSettings: {"effortLevel":"high"}',
+        'user: b',
+        'user: c',
+      ]);
+      expect(adapter.effectiveSettings()).toEqual({ model: 'claude-opus-4-6', approvalMode: 'default', effort: 'high' });
+    });
+
+    it('a model without effort control clears the level; a change of effort alone sends no setModel', async () => {
+      const { fake, adapter, events, cwd } = rig({}, {}, undefined, efforts);
+      await adapter.start(cwd, { effort: 'low' });
+      await adapter.turnStart(text('a'), 'c1');
+      await ended(events, 1);
+      adapter.changeSettings({ model: 'claude-haiku-4-5-20251001', effort: 'low' });
+      await adapter.turnStart(text('b'), 'c2');
+      await ended(events, 2);
+      adapter.changeSettings({ model: 'claude-haiku-4-5-20251001', effort: 'low' });
+      adapter.changeSettings({ model: 'opus', effort: 'low' });
+      adapter.changeSettings({ model: 'opus', effort: 'medium' });
+      await adapter.turnStart(text('c'), 'c3');
+      await ended(events, 3);
+      expect(fake.last.timeline).toEqual([
+        'user: a',
+        'setModel: claude-haiku-4-5-20251001',
+        'applyFlagSettings: {"effortLevel":null}',
+        'user: b',
+        'setModel: opus',
+        'applyFlagSettings: {"effortLevel":"medium"}',
+        'user: c',
+      ]);
+    });
+
+    it('a change during a running turn waits for its end, also through an engine-started turn', async () => {
+      const { fake, adapter, events, cwd } = rig({ turns: [[{ hold: true }, { text: 'one' }], [{ text: 'joined' }], [{ text: 'three' }]] }, {}, undefined, efforts);
+      await adapter.start(cwd, {});
+      await adapter.turnStart(text('a'), 'c1');
+      adapter.changeSettings({ model: 'sonnet', effort: 'low' });
+      fake.last.release();
+      await ended(events, 1);
+      expect(fake.last.timeline).toEqual(['user: a']);
+      // The engine starts a turn by itself; a message sent now joins it and changes nothing yet.
+      const engine = fake.last.engineTurn([{ text: 'two', chunks: 1 }, { hold: true }]);
+      await find(events, 'turn/started');
+      await adapter.turnStart(text('b'), 'c2');
+      fake.last.release();
+      await engine;
+      await ended(events, 2);
+      expect(fake.last.timeline.filter((line) => !line.startsWith('user'))).toEqual([]);
+      await adapter.turnStart(text('c'), 'c3');
+      await ended(events, 3);
+      expect(fake.last.timeline.slice(-3)).toEqual(['setModel: sonnet', 'applyFlagSettings: {"effortLevel":"low"}', 'user: c']);
+    });
+
+    it('a new query after the process died, and a resume after a host restart, start with the changed settings', async () => {
+      const { fake, adapter, events, cwd } = rig({ turns: [[{ text: 'one' }], [{ exit: true }]] }, {}, undefined, efforts);
+      await adapter.start(cwd, {});
+      await adapter.turnStart(text('a'), 'c1');
+      await ended(events, 1);
+      const sessionId = adapter.engineSessionId;
+      await adapter.turnStart(text('b'), 'c2');
+      await find(events, 'agent/exited');
+      adapter.changeSettings({ model: 'sonnet', effort: 'low' });
+      await adapter.turnStart(text('c'), 'c3');
+      // The lost turn ends in the core (agent/exited), not with turn/completed.
+      await ended(events, 2);
+      expect(fake.queries).toHaveLength(2);
+      expect(fake.last.options).toMatchObject({ resume: sessionId, model: 'sonnet', effort: 'low' });
+      expect(fake.last.timeline).toEqual(['user: c']);
+      await adapter.kill();
+      // The host restarted: the session record holds the changed settings.
+      const after = rig({}, {}, undefined, efforts);
+      await after.adapter.resume(sessionId, after.cwd, { model: 'sonnet', effort: 'low' });
+      expect(after.fake.last.options).toMatchObject({ resume: sessionId, model: 'sonnet', effort: 'low' });
+      await after.adapter.turnStart(text('d'), 'c4');
+      await ended(after.events, 1);
+      expect(after.fake.last.timeline).toEqual(['user: d']);
+    });
+
+    it('a query that refuses the change fails the turn start with agent_unavailable', async () => {
+      const { fake, adapter, events, cwd } = rig({ controlFails: 'not in streaming mode' }, {}, undefined, efforts);
+      await adapter.start(cwd, {});
+      await adapter.turnStart(text('a'), 'c1');
+      await ended(events, 1);
+      adapter.changeSettings({ model: 'sonnet' });
+      await expect(adapter.turnStart(text('b'), 'c2')).rejects.toMatchObject({ code: 'agent_unavailable', message: expect.stringMatching(/not in streaming mode/) });
+      expect(fake.last.timeline).toEqual(['user: a']);
+    });
+  });
+
   it('approvalMode never maps to bypassPermissions with allowDangerouslySkipPermissions; tools run unasked', async () => {
     const { fake, adapter, events, cwd } = rig({ turns: [[{ tool: 'Bash', input: { command: 'touch /tmp/x' } }, { text: 'Done.' }]] });
     await adapter.start(cwd, { approvalMode: 'never' });

@@ -6,7 +6,9 @@
 //                     set_thinking_level {level} when settings.effort is one of pi's levels (after the model:
 //                     pi fits the level to the model it runs), then get_state for the model and level in effect
 //   resume         -> the same command with the stored --session-id (pi reloads its session file)
-//   turn/start     -> prompt {message, images} (attachments: images read from their path, files as a path line)
+//   turn/start     -> prompt {message, images} (attachments: images read from their path, files as a path line);
+//                     after a settings change (session/settings/update) first set_model, set_thinking_level
+//                     and get_state on the live process, as at start (pi 1.4.0 takes both between prompts)
 //   turn/steer     -> steer {message, images}
 //   turn/interrupt -> open dialogs declined, clear_queue, abort
 //   items          <- message_update text and thinking deltas, message_end, tool_execution_start/update/end
@@ -94,6 +96,8 @@ export class PiAdapter implements Adapter {
   private effort: string | undefined;
   /** True from `turnStart` until the turn ended. */
   private running = false;
+  /** The settings changed since pi last got them (changeSettings): the next turn start sends them. */
+  private changed = false;
   private readonly dialogs = new Map<string, PendingDialog>();
   /** Tool calls the user declined: their error result is a declined item. */
   private readonly declined = new Set<string>();
@@ -142,9 +146,24 @@ export class PiAdapter implements Adapter {
     return settings;
   }
 
+  /** A settings change (spec 6): stored; the next turn start hands it to pi before the prompt. */
+  changeSettings(settings: Settings): void {
+    this.settings = settings;
+    this.changed = true;
+  }
+
   async turnStart(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
     const prompt = await toPrompt(input);
     const engine = await this.ready();
+    // pi only takes a turn start between runs (a running turn is steered), so a change applies here.
+    if (this.changed) {
+      this.changed = false;
+      try {
+        await this.applySettings(engine);
+      } catch (error) {
+        throw error instanceof RpcError ? error : unavailable(`cannot change the session settings: ${(error as Error).message}`);
+      }
+    }
     this.running = true;
     this.lastError = undefined;
     this.blocks = new Map();
@@ -249,18 +268,9 @@ export class PiAdapter implements Adapter {
     this.engine = engine;
     try {
       engine.start(['--session-id', this.sessionId], this.cwd);
-      const wanted = typeof this.settings.model === 'string' ? this.settings.model : '';
-      if (wanted !== '') {
-        const target = splitModel(wanted);
-        if (!target) throw unavailable(`model ${wanted} is not of the form provider/id`);
-        await engine.call('set_model', target);
-      }
-      // pi turns a level it does not know into `off`, so only its own levels are sent.
-      if (isThinkingLevel(this.settings.effort)) await engine.call('set_thinking_level', { level: this.settings.effort });
-      const state = obj(await engine.call('get_state'));
-      this.model = modelKey(state.model) ?? this.model;
-      const level = state.thinkingLevel;
-      this.effort = thinkingLevels(state.model).length > 0 && typeof level === 'string' && level !== '' ? level : undefined;
+      // A change from here on is sent again at the next turn start.
+      this.changed = false;
+      await this.applySettings(engine);
       attached = true;
       return engine;
     } catch (error) {
@@ -268,6 +278,22 @@ export class PiAdapter implements Adapter {
       await engine.kill();
       throw error instanceof RpcError ? error : unavailable((error as Error).message);
     }
+  }
+
+  /** set_model and set_thinking_level as the settings say, then get_state for what is in effect. */
+  private async applySettings(engine: PiEngine): Promise<void> {
+    const wanted = typeof this.settings.model === 'string' ? this.settings.model : '';
+    if (wanted !== '') {
+      const target = splitModel(wanted);
+      if (!target) throw unavailable(`model ${wanted} is not of the form provider/id`);
+      await engine.call('set_model', target);
+    }
+    // pi turns a level it does not know into `off`, so only its own levels are sent.
+    if (isThinkingLevel(this.settings.effort)) await engine.call('set_thinking_level', { level: this.settings.effort });
+    const state = obj(await engine.call('get_state'));
+    this.model = modelKey(state.model) ?? this.model;
+    const level = state.thinkingLevel;
+    this.effort = thinkingLevels(state.model).length > 0 && typeof level === 'string' && level !== '' ? level : undefined;
   }
 
   private onExit(reason: string): void {

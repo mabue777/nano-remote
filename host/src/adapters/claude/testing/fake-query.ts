@@ -64,6 +64,8 @@ export interface FakeClaudeOptions {
   interruptHangs?: boolean;
   /** query() throws this instead of returning. */
   throwOnQuery?: string;
+  /** setModel() and applyFlagSettings() reject with this message. */
+  controlFails?: string;
 }
 
 export interface PermissionCall {
@@ -144,6 +146,11 @@ export class FakeQuery implements ClaudeQuery {
   readonly background = new Map<string, string>();
   /** The uuid of the user message the next top-level assistant message answers. */
   private answering: string | undefined;
+  /**
+   * User messages and settings control requests in the order they reached the engine: `user: <text>`,
+   * `setModel: <model>`, `applyFlagSettings: <json>`.
+   */
+  readonly timeline: string[] = [];
 
   constructor(fake: FakeClaude, prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.fake = fake;
@@ -237,6 +244,16 @@ export class FakeQuery implements ClaudeQuery {
     return undefined;
   }
 
+  async setModel(model?: string): Promise<void> {
+    if (this.fake.options.controlFails !== undefined) throw new Error(this.fake.options.controlFails);
+    this.timeline.push(`setModel: ${model}`);
+  }
+
+  async applyFlagSettings(settings: Record<string, unknown>): Promise<void> {
+    if (this.fake.options.controlFails !== undefined) throw new Error(this.fake.options.controlFails);
+    this.timeline.push(`applyFlagSettings: ${JSON.stringify(settings)}`);
+  }
+
   close(): void {
     this.closed = true;
     this.spawnAbort.abort();
@@ -293,6 +310,8 @@ export class FakeQuery implements ClaudeQuery {
     for await (const message of prompt) {
       if (this.ended || this.failure) return;
       this.userMessages.push(message);
+      const said = message.message.content;
+      this.timeline.push(`user: ${typeof said === 'string' ? said : JSON.stringify(said)}`);
       if (typeof message.uuid === 'string') this.answering = message.uuid;
       const content = message.message.content;
       const text = typeof content === 'string' ? content : '';

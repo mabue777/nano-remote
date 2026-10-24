@@ -416,6 +416,20 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     await expect(done).resolves.toEqual({ turn: turn('t1') });
   });
 
+  it('models sends model/list for the agent; updateSettings sends session/settings/update and returns the session', async () => {
+    const { client, replica } = setup();
+    const listed = replica.models('codex');
+    expect(client.last('model/list').params).toEqual({ agentId: 'codex' });
+    const models = [{ id: 'gpt-5.5-codex', displayName: 'GPT-5.5 Codex', default: true }];
+    client.last('model/list').resolve({ models });
+    await expect(listed).resolves.toEqual(models);
+    const changed = replica.updateSettings(SID, { model: 'gpt-5.5-mini' });
+    expect(client.last('session/settings/update').params).toEqual({ sessionId: SID, settings: { model: 'gpt-5.5-mini' } });
+    const updated = { ...session(), settings: { model: 'gpt-5.5-mini' } };
+    client.last('session/settings/update').resolve({ session: updated });
+    await expect(changed).resolves.toEqual(updated);
+  });
+
   it('turnDiff sends turn/diff and returns the files', async () => {
     const { client, replica } = setup();
     const done = replica.turnDiff(SID, 't1');

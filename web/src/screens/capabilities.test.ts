@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff } from './capabilities';
+import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, settingsKeys } from './capabilities';
 
 const agent = (capabilities?: { steer: boolean; diff: boolean; approvalModes: string[] }) => ({
   id: 'a',
@@ -22,6 +22,14 @@ describe('agent capabilities', () => {
   it('an agent without capabilities (older host) or no agent at all allows everything', () => {
     expect([canBypass(agent()), canSteer(agent()), hasDiff(agent())]).toEqual([true, true, true]);
     expect([canBypass(undefined), canSteer(undefined), hasDiff(undefined)]).toEqual([true, true, true]);
+  });
+
+  it('settingsKeys lists what an open session can change, nothing for an older host or no agent', () => {
+    const codex = { ...agent({ steer: true, diff: true, approvalModes: [] }), capabilities: { steer: true, diff: true, approvalModes: [], settingsUpdate: ['model', 'effort'] as ('model' | 'effort')[] } };
+    expect(settingsKeys(codex)).toEqual(['model', 'effort']);
+    expect(settingsKeys(agent({ steer: true, diff: true, approvalModes: [] }))).toEqual([]);
+    expect(settingsKeys(agent())).toEqual([]);
+    expect(settingsKeys(undefined)).toEqual([]);
   });
 
   it('findAgent looks the id up in the current list', () => {

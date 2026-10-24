@@ -1059,6 +1059,14 @@
         "backgroundTasks": {
           "type": "boolean",
           "description": "The agent reports its background helpers in Session.backgroundTasks. Absent or false: it does not. Additive within v1."
+        },
+        "settingsUpdate": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "The settings session/settings/update can change in an open session. Absent or empty: none. Additive within v1.",
+          "items": {
+            "enum": ["model", "effort"]
+          }
         }
       }
     },

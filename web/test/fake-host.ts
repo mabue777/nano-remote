@@ -45,8 +45,14 @@ export const PI_AGENT = {
  * The agents of initialize and agent/list: example 08's (Kimi there carries no capabilities, like an agent
  * from an older host) and pi. Like the real host (spec 7), every agent declares `diff: true`.
  */
-function fakeAgents(): Json[] {
-  return [...exampleMessage('08').result.agents, PI_AGENT];
+function fakeAgents(locked: ReadonlySet<string> = new Set()): Json[] {
+  return [...exampleMessage('08').result.agents, PI_AGENT].map((agent: Json) =>
+    // Codex, Claude Code and pi change model and effort in an open session (spec 4 settingsUpdate), unless
+    // a test locks an agent; Kimi (example 08) carries no capabilities, like an agent from an older host.
+    agent.capabilities === undefined || locked.has(agent.id)
+      ? agent
+      : { ...agent, capabilities: { ...agent.capabilities, settingsUpdate: ['model', 'effort'] } },
+  );
 }
 
 /** pi's model/list: provider/model ids from two providers, each with `provider` (spec 4, example 54). */
@@ -320,6 +326,8 @@ export class FakeHost {
   paceMs = 0;
   /** Sessions whose agent "does not provide diffs": turn/diff answers not_supported. */
   readonly noDiffs = new Set<string>();
+  /** Agents that declare no settingsUpdate: session/settings/update answers not_supported. */
+  readonly settingsLocked = new Set<string>();
   /**
    * turn/diff answers for a session, as the real host computes them from git (spec 7): a result (files,
    * note, truncated, omittedFiles) or an error such as not_a_repository. Without one, the fake lists the
@@ -426,6 +434,7 @@ export class FakeHost {
     this.sessions.clear();
     this.delays.clear();
     this.noDiffs.clear();
+    this.settingsLocked.clear();
     this.turnDiffs.clear();
     this.nextSession = 0;
     this.pushSubscriptions.clear();
@@ -571,7 +580,7 @@ export class FakeHost {
         }
         stream.initialized = true;
         const result = exampleMessage('08').result;
-        result.agents = fakeAgents();
+        result.agents = fakeAgents(this.settingsLocked);
         result.device.clientId = stream.clientId;
         result.push = { vapidPublicKey: FAKE_VAPID_PUBLIC_KEY, subscribed: this.pushSubscriptions.has(stream.clientId) };
         return { result };
@@ -589,7 +598,7 @@ export class FakeHost {
         return { result: next < all.length ? { sessions, nextCursor: `cur_${next}` } : { sessions } };
       }
       case 'agent/list':
-        return { result: { agents: fakeAgents() } };
+        return { result: { agents: fakeAgents(this.settingsLocked) } };
       case 'model/list': {
         if (params.agentId === 'pi') return { result: { models: PI_MODELS } };
         if (params.agentId !== 'codex' && params.agentId !== 'claude') {
@@ -630,6 +639,21 @@ export class FakeHost {
           result: { session: this.full(session), turn: { ...turn, items: [] } },
           after: () => this.playTurn(sessionId, turn.turnId, params.input, undefined),
         };
+      }
+      case 'session/settings/update': {
+        // Spec 6: the keys the agent declares, journaled at once as session/changed.
+        const session = this.session(params.sessionId);
+        const agent = fakeAgents(this.settingsLocked).find((a: Json) => a.id === session.summary.agentId);
+        const allowed: string[] = agent?.capabilities?.settingsUpdate ?? [];
+        for (const key of Object.keys(params.settings ?? {})) {
+          if (!allowed.includes(key)) {
+            throw new HostError({ code: 'not_supported', message: `${agent?.name ?? session.summary.agentId} cannot change the ${key} of an open session` });
+          }
+        }
+        session.settings = { ...session.settings, ...params.settings };
+        session.summary.updatedAt = Math.floor(Date.now() / 1000);
+        this.emit(params.sessionId, 'session/changed', { session: { ...this.full(session), lastSeq: session.journal.length + 1 } });
+        return { result: { session: this.full(session) } };
       }
       case 'session/open':
         return this.open(stream, params);

@@ -1,0 +1,18 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/agent~1list.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 42,
+  "message": {
+    "id": "c-75",
+    "result": {
+      "agents": [
+        {"id": "claude", "name": "Claude Code", "status": "ready", "version": "2.1.310",
+         "capabilities": {"steer": false, "diff": true, "approvalModes": ["default", "acceptEdits", "plan", "never"],
+                          "attachments": {"images": true, "files": true}, "backgroundTasks": true,
+                          "settingsUpdate": ["model", "effort"]}}
+      ]
+    }
+  }
+}

@@ -244,6 +244,30 @@
     },
     "session/rename.result": {"$ref": "common.json#/$defs/Ok"},
 
+    "session/settings/update.params": {
+      "type": "object",
+      "description": "Changes the model or effort of an open session (spec 6). Additive within v1.",
+      "required": ["sessionId", "settings"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "settings": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "description": "The settings to change; each key must be in the agent's capabilities.settingsUpdate.",
+          "properties": {
+            "model": {"type": "string", "minLength": 1},
+            "effort": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "session/settings/update.result": {
+      "type": "object",
+      "required": ["session"],
+      "properties": {"session": {"$ref": "common.json#/$defs/Session"}}
+    },
+
     "turn/start.params": {
       "type": "object",
       "required": ["sessionId", "input", "clientMessageId"],

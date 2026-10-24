@@ -27,6 +27,7 @@ export interface MethodMap {
   'session/archive': { params: m.SessionArchiveParams; result: m.Ok };
   'session/delete': { params: m.SessionDeleteParams; result: m.Ok };
   'session/rename': { params: m.SessionRenameParams; result: m.Ok };
+  'session/settings/update': { params: m.SessionSettingsUpdateParams; result: m.SessionSettingsUpdateResult };
   'turn/start': { params: m.TurnStartParams; result: m.TurnStartResult };
   'turn/steer': { params: m.TurnSteerParams; result: m.TurnSteerResult };
   'turn/interrupt': { params: m.TurnInterruptParams; result: m.Ok };

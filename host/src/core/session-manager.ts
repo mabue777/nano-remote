@@ -15,6 +15,12 @@
 // forever otherwise). A host shutdown kills the adapters while still listening, so the end they report
 // is journaled too. A user message journaled while tasks run is marked `queued` until the adapter
 // reports `input/taken` (or its turn ends).
+//
+// Settings changes (spec 6 `session/settings/update`): the new settings are journaled at once (they are
+// the session record a restart or a resumed engine session starts from) and handed to the live adapter,
+// which gives them to its engine before the next turn it starts; a running turn is never touched. After
+// every turn start the adapter's effective settings are reported again, so a level the new model lacks
+// shows as the engine fitted it.
 import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -38,7 +44,7 @@ import type {
   Turn,
 } from '../journal/types.js';
 import { RpcError } from '../errors.js';
-import type { Adapter, AdapterEvent, AdapterInputPart, AgentProvider, FinalTurnStatus } from './adapter.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AgentProvider, FinalTurnStatus, SettingsUpdateKey } from './adapter.js';
 import { newId } from './ids.js';
 import { SessionStore } from './store.js';
 import { TurnChanges } from './turn-changes.js';
@@ -82,6 +88,9 @@ export interface StartParams {
   settings?: Settings;
   input?: InputPart[];
 }
+
+/** What `session/settings/update` may change (spec 6). */
+export type SettingsPatch = Partial<Record<SettingsUpdateKey, string>>;
 
 interface RunningTurn {
   readonly turnId: string;
@@ -330,6 +339,46 @@ export class SessionManager {
     this.changeSession(sessionId, { title });
   }
 
+  /**
+   * `session/settings/update` (spec 6): `not_supported` for a key the agent cannot change in an open
+   * session, `invalid_params` for a model its model list does not offer. Journals the new settings and
+   * hands them to the live adapter; they apply from the next turn (a running turn keeps its own).
+   */
+  async updateSettings(sessionId: string, patch: SettingsPatch): Promise<Session> {
+    const summary = this.session(sessionId);
+    const provider = this.providers.get(summary.agentId);
+    const allowed: readonly string[] = provider?.capabilities.settingsUpdate ?? [];
+    for (const key of Object.keys(patch)) {
+      if (!allowed.includes(key)) {
+        const name = provider?.name ?? summary.agentId;
+        throw new RpcError('not_supported', `${name} cannot change the ${key} of an open session`, { agentId: summary.agentId, setting: key });
+      }
+    }
+    if (patch.model !== undefined && provider) await this.requireModel(provider, patch.model);
+    const current = this.session(sessionId).settings ?? {};
+    const settings: Settings = { ...current, ...patch };
+    if (Object.entries(patch).every(([key, value]) => current[key] === value)) return this.session(sessionId);
+    this.changeSession(sessionId, { settings });
+    const adapter = this.live.get(sessionId)?.adapter;
+    adapter?.changeSettings?.({ ...settings });
+    return this.session(sessionId);
+  }
+
+  /** `invalid_params` when the agent lists its models and `model` is not one of them. */
+  private async requireModel(provider: AgentProvider, model: string): Promise<void> {
+    let models;
+    try {
+      models = await provider.models();
+    } catch (error) {
+      // Without a list the engine decides when the change reaches it.
+      this.log(`agent ${provider.id}: cannot list models to check ${model}`, error);
+      return;
+    }
+    if (models.length > 0 && !models.some((m) => m.id === model)) {
+      throw RpcError.invalidParams('params.settings.model', `${provider.name} offers no model ${model}`);
+    }
+  }
+
   /** `session/archive`: ends any running turn, stops the engine, journals `session/closed {reason: "archived"}`. */
   async archive(sessionId: string): Promise<void> {
     this.session(sessionId);
@@ -394,6 +443,8 @@ export class SessionManager {
       const adapter = await this.ensureAdapter(live);
       await snapshot.seal();
       await adapter.turnStart(resolved, clientMessageId);
+      // A settings change reaches the engine at a turn start: report what is in effect now.
+      this.reportSettings(sessionId, adapter.effectiveSettings?.());
       return adapter;
     })();
     try {

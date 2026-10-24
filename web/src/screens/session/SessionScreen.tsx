@@ -14,6 +14,7 @@ import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import type { AttachmentEntry } from './attachments/composer';
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import { SessionSettingsSheet } from './SessionSettingsSheet';
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
@@ -143,12 +144,29 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             </>
           )}
         </p>
-        {(model.model !== undefined || model.effort !== undefined) && (
-          <p class="muted small session-model">
-            {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
-            {model.model !== undefined && model.effort !== undefined && ' · '}
+        {model.canChangeSettings ? (
+          <button
+            type="button"
+            class="muted small session-model session-model-button"
+            aria-haspopup="dialog"
+            title="Change model and effort"
+            onClick={() => model.openSettings()}
+          >
+            <span aria-label="Model">{model.model ?? 'Default model'}</span>
+            {model.effort !== undefined && ' · '}
             {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
-          </p>
+            <span class="session-model-change" aria-hidden="true">
+              Change
+            </span>
+          </button>
+        ) : (
+          (model.model !== undefined || model.effort !== undefined) && (
+            <p class="muted small session-model">
+              {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
+              {model.model !== undefined && model.effort !== undefined && ' · '}
+              {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
+            </p>
+          )
         )}
       </div>
       {model.needsDecision && (
@@ -231,6 +249,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       {model.changesTurnId !== undefined && (
         <ChangesSheet sessionId={sessionId} turnId={model.changesTurnId} replica={replica} onClose={() => model.closeChanges()} />
       )}
+      {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
       <StopConfirm model={model} />
     </main>
   );

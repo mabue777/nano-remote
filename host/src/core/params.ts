@@ -51,6 +51,21 @@ export function optSettings(params: Params, key: string): Settings | undefined {
   return value as Settings;
 }
 
+/**
+ * `session/settings/update` settings (spec 6): an object naming at least one setting, every value a
+ * non-empty string. Which keys an agent can change is the session manager's check (`not_supported`).
+ */
+export function settingsPatch(params: Params, key: string): Record<string, string> {
+  const value = optSettings(params, key);
+  if (value === undefined) throw bad(key, `${key} is required`);
+  const entries = Object.entries(value);
+  if (entries.length === 0) throw bad(key, `${key} must name at least one setting`);
+  for (const [name, setting] of entries) {
+    if (typeof setting !== 'string' || setting === '') throw bad(`${key}.${name}`, `${name} must be a non-empty string`);
+  }
+  return value as Record<string, string>;
+}
+
 /** A non-empty list of InputParts (spec 5.1): text, image, mention or file. */
 export function input(params: Params, key: string): InputPart[] {
   const value = params[key];

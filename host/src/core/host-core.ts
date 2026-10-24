@@ -257,6 +257,10 @@ export class HostCore {
         s.rename(p.str(params, 'sessionId'), title.trim());
         return ok;
       })
+      .register('session/settings/update', async (params) => {
+        const session = await s.updateSettings(p.str(params, 'sessionId'), p.settingsPatch(params, 'settings'));
+        return { session } as Result<'session/settings/update'>;
+      })
       .register('events/since', (params, context) => {
         const sessionId = p.str(params, 'sessionId');
         const cursor = p.int(params, 'cursor');

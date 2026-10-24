@@ -20,7 +20,7 @@ import { obj, toModels, versionFrom } from './mapping.js';
  * pi steers a running turn (`steer`), has turn diffs (the host's), and honours no approvalMode: Nano's approval
  * extension always asks (ADR 0007), so a Pi session never runs with approvals bypassed.
  */
-export const PI_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false };
+export const PI_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] };
 
 export interface PiAgentOptions {
   config?: PiConfig;

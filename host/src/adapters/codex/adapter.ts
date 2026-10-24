@@ -3,7 +3,12 @@
 //   session/start  -> thread/start {cwd, approvalPolicy, sandbox, model, config}   (settings.approvalMode, settings.sandbox,
 //                     settings.effort as config.model_reasoning_effort)
 //   resume         -> thread/resume {threadId, ..., initialTurnsPage {limit 5, itemsView "full"}}
-//   turn/start     -> turn/start {threadId, input, clientUserMessageId, effort}
+//   turn/start     -> turn/start {threadId, input, clientUserMessageId, model, effort}
+//
+// Settings changes (spec 6 session/settings/update): turn/start takes `model` and `effort` "for this turn
+// and subsequent turns" (app-server types of codex-cli 0.163.0-alpha.11.1, the ChatGPT.app engine, and
+// 0.164.0), so changeSettings only stores them and every later turn/start carries them; a running turn
+// keeps its own. thread/resume after an engine restart sends them too (model, config effort).
 //
 // Effort (spec 5.1 settings.effort): thread/start takes no effort field of its own (app-server types of
 // codex-cli 0.163.0-alpha.11.1), so it goes in as the thread's model_reasoning_effort config; turn/start
@@ -166,8 +171,13 @@ export class CodexAdapter implements Adapter {
     this.turnId = undefined;
     this.items.clear();
     const params: Json = { threadId: this.threadId, input: toUserInput(input), clientUserMessageId: clientMessageId };
+    if (this.model !== undefined) params.model = this.model;
     const effort = sessionEffort(this.settings);
-    if (effort !== undefined) params.effort = effort;
+    if (effort !== undefined) {
+      params.effort = effort;
+      // The thread runs at it from this turn on (Codex does not downgrade a level).
+      this.reportedEffort = effort;
+    }
     const call = engine.call('turn/start', params);
     this.turnStarting = call;
     this.held = [];
@@ -291,6 +301,15 @@ export class CodexAdapter implements Adapter {
       // Engine calls reject with an RpcError (unavailable) or an Error carrying the engine's message.
       throw error instanceof RpcError ? error : unavailable((error as Error).message);
     }
+  }
+
+  /**
+   * A settings change (spec 6): stored for the next turn/start, which sends the model and effort to the
+   * engine; nothing goes to the engine now, so a running turn keeps its own.
+   */
+  changeSettings(settings: Settings): void {
+    this.settings = settings;
+    if (typeof settings.model === 'string' && settings.model !== '') this.model = settings.model;
   }
 
   /** The settings the engine session runs with: `approvalMode`, `sandbox`, `effort` (spec 5.1 Session.settings). */

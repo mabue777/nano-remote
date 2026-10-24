@@ -412,7 +412,7 @@ describe('session core end to end with the Codex adapter', { timeout: 30_000 }, 
       name: 'Codex',
       status: 'ready',
       version: '0.163.0-alpha.10.2',
-      capabilities: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true }, backgroundTasks: false },
+      capabilities: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] },
     });
     expect(changes).toEqual([1]);
     // Cached: no second engine for the list, and new sessions get the default without asking again.

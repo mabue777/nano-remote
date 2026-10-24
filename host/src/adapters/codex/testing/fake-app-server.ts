@@ -385,9 +385,15 @@ function handle(method: string, params: Json): Json {
       const turns = record.turns.slice(-(page?.limit ?? record.turns.length));
       return { thread: { id: record.id, turns }, model: String(params.model ?? record.model), cwd: record.cwd, reasoningEffort: record.effort ?? null };
     }
-    case 'turn/start':
+    case 'turn/start': {
       if (running) throw new Error('a turn is already running');
-      return startTurn(thread(params), (params.input as Json[]) ?? [], params.clientUserMessageId);
+      const record = thread(params);
+      // model and effort apply "for this turn and subsequent turns".
+      if (typeof params.model === 'string') record.model = params.model;
+      if (typeof params.effort === 'string') record.effort = params.effort;
+      saveState();
+      return startTurn(record, (params.input as Json[]) ?? [], params.clientUserMessageId);
+    }
     case 'turn/steer': {
       if (!running || params.expectedTurnId !== running.turn.id) throw new Error('expectedTurnId is not the running turn');
       const run = running;

@@ -27,6 +27,14 @@
 // Claude Code reports no applied level (probed with SDK 0.3.308 and Claude Code 2.1.308: system/init has
 // no `effort` in SDK runs, and Query has no get_settings call), so the fitted level is what the session
 // reports, and nothing when settings.effort is unset.
+// Settings changes (spec 6 session/settings/update): changeSettings only stores them. Before the next user
+// message that starts a turn (never during one, also not an engine-initiated one), the running query gets
+// Query.setModel(model) and Query.applyFlagSettings({effortLevel}) for what differs from what it runs
+// with (effortLevel null when the new model has no effort control: back to its default). Both are
+// control requests that work on a live query in streaming-input mode (sdk.d.ts of SDK 0.3.308), so the
+// effort needs no new query. Verified live on 2026-10-24 (live-settings.test.ts): a session on haiku
+// switched to opus between turns, and the assistant messages named claude-haiku-5-5, then claude-opus-5-5.
+// A query opened later (first turn, or a resume after the process died) starts with them as options.
 //
 // Supervision: the adapter spawns the Claude Code executable itself (spawnClaudeCodeProcess), detached in
 // its own process group. When it dies on its own the adapter emits `status/changed {error}` and
@@ -154,7 +162,7 @@ import {
 type Json = Record<string, unknown>;
 
 /** The part of the SDK's Query the adapter and the provider use. */
-export type ClaudeQuery = AsyncIterable<SDKMessage> & Pick<Query, 'interrupt' | 'close' | 'supportedModels'>;
+export type ClaudeQuery = AsyncIterable<SDKMessage> & Pick<Query, 'interrupt' | 'close' | 'supportedModels' | 'setModel' | 'applyFlagSettings'>;
 
 /** The SDK's `query()`, or a fake with the same shape. */
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => ClaudeQuery;
@@ -274,6 +282,8 @@ interface Run {
   settled: Set<string>;
   /** Tasks ended because the live set no longer listed them, by task id: a later notification corrects them. */
   reconciled: Map<string, BackgroundTask>;
+  /** The model and effort the query runs with (its options, then setModel and applyFlagSettings). */
+  applied: { model: string; effort: EffortLevel | undefined };
 }
 
 /** A tool call that may launch a background task, until its result says. */
@@ -399,6 +409,8 @@ export class ClaudeAdapter implements Adapter {
   async turnStart(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     const content = await toUserContent(input);
     const run = await this.ready();
+    // A settings change reaches the engine only between turns.
+    if (!this.turn) await this.applySettings(run);
     // During an engine-initiated turn the message joins it: Claude Code delivers it mid-turn.
     if (!this.turn) {
       this.turn = newTurn(false);
@@ -475,6 +487,33 @@ export class ClaudeAdapter implements Adapter {
     if (run) await this.end(run, 'killed by the host');
   }
 
+  /** A settings change (spec 6): stored; the next turn start hands it to the query (applySettings). */
+  changeSettings(settings: Settings): void {
+    this.settings = settings;
+  }
+
+  /** Brings the running query to the session's model and effort, for what differs. */
+  private async applySettings(run: Run): Promise<void> {
+    const query = run.query;
+    if (!query) return;
+    const model = sessionModel(this.settings, this.config);
+    const effort = this.effort();
+    try {
+      if (model !== run.applied.model) {
+        await query.setModel(model);
+        run.applied.model = model;
+        this.log(`claude: model changed to ${model}`);
+      }
+      if (effort !== run.applied.effort) {
+        await query.applyFlagSettings({ effortLevel: effort ?? null });
+        run.applied.effort = effort;
+        this.log(`claude: effort changed to ${effort ?? 'the model default'}`);
+      }
+    } catch (error) {
+      throw unavailable(`cannot change the session settings: ${(error as Error).message}`);
+    }
+  }
+
   /** The settings the session runs with: `model` and `approvalMode` as mapped (spec 5.1 Session.settings). */
   effectiveSettings(): Settings {
     const settings: Settings = { model: sessionModel(this.settings, this.config), approvalMode: sessionPolicy(this.settings).approvalMode };
@@ -533,13 +572,14 @@ export class ClaudeAdapter implements Adapter {
       foreground: new Map(),
       settled: new Set(),
       reconciled: new Map(),
+      applied: { model: sessionModel(this.settings, this.config), effort: this.effort() },
     };
     const { permissionMode } = sessionPolicy(this.settings);
     const canUseTool: CanUseTool = (toolName, input, context) =>
       this.canUseTool(run, toolName, input, context) as Promise<PermissionResult>;
     const options: Options = {
       cwd: this.cwd,
-      model: sessionModel(this.settings, this.config),
+      model: run.applied.model,
       permissionMode,
       settingSources: [],
       includePartialMessages: true,
@@ -550,8 +590,7 @@ export class ClaudeAdapter implements Adapter {
       spawnClaudeCodeProcess: (spawnOptions) => this.spawn(run, spawnOptions) as SpawnedProcess,
     };
     if (permissionMode === 'bypassPermissions') options.allowDangerouslySkipPermissions = true;
-    const effort = this.effort();
-    if (effort !== undefined) options.effort = effort;
+    if (run.applied.effort !== undefined) options.effort = run.applied.effort;
     const executable = executablePath(this.config);
     if (executable !== undefined) options.pathToClaudeCodeExecutable = executable;
     if (this.config.attachmentsDir !== undefined) options.additionalDirectories = [this.config.attachmentsDir];

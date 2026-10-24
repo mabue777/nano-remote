@@ -44,8 +44,8 @@ describe('discovery', () => {
     expect(status).toEqual({
       host: expect.objectContaining({ hostId: 'host_test' }),
       agents: [
-        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false } },
-        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false } },
+        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
+        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
       ],
       sessionsActive: 0,
       uptimeSeconds: 42,
@@ -83,7 +83,7 @@ describe('discovery', () => {
     h.agent.setState({ status: 'unavailable', reason: 'updating' });
     const changed = await phone.until(() => phone.messages.find((m) => m.method === 'host/status/changed'));
     expect((changed.params as { agents: unknown[] }).agents).toEqual([
-      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false } },
+      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
     ]);
     await h.core.close();
     const before = phone.messages.length;
@@ -235,6 +235,30 @@ describe('session lifecycle', () => {
     expect(await rpcError(phone, 'session/rename', { sessionId: 'ses_missing', title: 'x' })).toMatchObject({
       code: 'not_found',
     });
+  });
+
+  it('session/settings/update answers with the session and journals session/changed; bad params are invalid_params', async () => {
+    const h = await setup({ agent: { capabilities: { settingsUpdate: ['effort'] } } });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    const result = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/settings/update', {
+      sessionId,
+      settings: { effort: 'low' },
+    });
+    expect(result.session).toMatchObject({ sessionId, settings: { effort: 'low' } });
+    const changed = await waitEvent(phone, 'session/changed');
+    expect((changed.params as { session: { settings: Record<string, unknown> } }).session.settings).toMatchObject({ effort: 'low' });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: { model: 'fake-1' } })).toMatchObject({
+      code: 'not_supported',
+      message: 'Fake Agent cannot change the model of an open session',
+    });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId })).toMatchObject({ data: { path: 'params.settings' } });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: {} })).toMatchObject({ data: { path: 'params.settings' } });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: { effort: '' } })).toMatchObject({
+      data: { path: 'params.settings.effort' },
+    });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: [] })).toMatchObject({ data: { path: 'params.settings' } });
   });
 
   it('session/archive closes the session; a new turn brings it back', async () => {

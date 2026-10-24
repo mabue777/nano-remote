@@ -27,10 +27,13 @@ What an agent supports, fixed per agent and sent with it in `initialize` and
 `agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes),
 `approvalModes` (the approval modes it honours; Pi honours none),
 `attachments` (whether it sees attached images and takes attached files) and
-`backgroundTasks` (whether it reports its background tasks; Claude Code only). The
+`backgroundTasks` (whether it reports its background tasks; Claude Code only) and
+`settingsUpdate` (which of model and effort an open session can change; all three
+agents change both, from the next turn). The
 phone shows only the controls an agent supports; without capabilities (an older
-host) it offers everything and learns from `not_supported` (attachments
-excepted: an older host takes no uploads, so the phone offers none).
+host) it offers everything and learns from `not_supported` (attachments and
+settings changes excepted: an older host takes no uploads and no settings
+change, so the phone offers neither).
 _Avoid_: features, flags
 
 **Attachment**:

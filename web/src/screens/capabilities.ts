@@ -31,6 +31,17 @@ export function attachmentsFor(agent: Agent | undefined, maxBytes: number | unde
   return { images: attachments.images, files: attachments.files };
 }
 
+/** A setting an open session can change (spec 6 session/settings/update). */
+export type SettingsKey = 'model' | 'effort';
+
+/**
+ * What an open session of the agent can change (`capabilities.settingsUpdate`, spec 4). Never guessed for
+ * an older host: without the capability the session view offers no way to change them.
+ */
+export function settingsKeys(agent: Agent | undefined): readonly SettingsKey[] {
+  return agent?.capabilities?.settingsUpdate ?? [];
+}
+
 /** The agents the screens consult; the stream client's `initialize` result fits (`() => client.host?.agents`). */
 export type AgentsSource = () => readonly Agent[] | undefined;
 

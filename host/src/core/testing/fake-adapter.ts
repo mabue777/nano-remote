@@ -46,8 +46,12 @@ export interface FakeAdapterOptions {
   script?: FakeScript;
   /** What `start` returns; '' makes the adapter report it with the first turn (`engine/session`), like Claude. */
   engineSessionId?: string;
-  /** What `effectiveSettings` reports after start and resume. Default: nothing. */
-  effectiveSettings?: Settings;
+  /**
+   * What `effectiveSettings` reports. A function gets the settings the engine runs with: those of start
+   * or resume, replaced by `changeSettings` from the next `turnStart` on (as real adapters apply them).
+   * Default: nothing.
+   */
+  effectiveSettings?: Settings | ((settings: Settings) => Settings);
   /** Methods that reject with this message instead of doing their work. */
   failOn?: Partial<Record<Method, string>>;
 }
@@ -84,6 +88,9 @@ export class FakeAdapter implements Adapter {
   private reportEngineId = false;
   private itemCounter = 0;
   private requestCounter = 0;
+  /** The settings the engine runs with, and a change waiting for the next turn (`changeSettings`). */
+  private applied: Settings = {};
+  private changed: Settings | undefined;
 
   constructor(options: FakeAdapterOptions = {}) {
     this.options = options;
@@ -91,7 +98,18 @@ export class FakeAdapter implements Adapter {
   }
 
   effectiveSettings(): Settings {
-    return this.options.effectiveSettings ?? {};
+    const report = this.options.effectiveSettings;
+    return typeof report === 'function' ? report({ ...this.applied }) : (report ?? {});
+  }
+
+  /** The settings the engine runs with (start or resume, then changes applied at a turn start). */
+  get settings(): Settings {
+    return { ...this.applied };
+  }
+
+  changeSettings(settings: Settings): void {
+    this.record('changeSettings', settings);
+    this.changed = { ...settings };
   }
 
   /** A turn is running (started and not yet completed). */
@@ -117,6 +135,7 @@ export class FakeAdapter implements Adapter {
 
   async start(cwd: string, settings: Settings): Promise<string> {
     this.record('start', cwd, settings);
+    this.applied = { ...settings };
     this.engineId = this.options.engineSessionId ?? `eng_fake_${++engineCounter}`;
     if (this.engineId === '') {
       this.engineId = `eng_fake_${++engineCounter}`;
@@ -128,11 +147,17 @@ export class FakeAdapter implements Adapter {
 
   async resume(engineSessionId: string, cwd: string, settings: Settings): Promise<void> {
     this.record('resume', engineSessionId, cwd, settings);
+    this.applied = { ...settings };
     this.engineId = engineSessionId;
   }
 
   async turnStart(input: AdapterInputPart[], clientMessageId: string): Promise<void> {
     this.record('turnStart', input, clientMessageId);
+    // Like a real engine: a change waits for a turn that starts while none runs.
+    if (this.changed !== undefined && !this.running) {
+      this.applied = this.changed;
+      this.changed = undefined;
+    }
     if (this.reportEngineId) {
       this.reportEngineId = false;
       this.emit({ method: 'engine/session', params: { engineSessionId: this.engineId } });
@@ -306,6 +331,7 @@ export class FakeAgent implements AgentProvider {
       approvalModes: FAKE_APPROVAL_MODES,
       attachments: { images: true, files: true },
       backgroundTasks: false,
+      settingsUpdate: ['model', 'effort'],
       ...options.capabilities,
     };
   }

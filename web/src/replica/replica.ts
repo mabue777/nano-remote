@@ -10,6 +10,10 @@
 import type {
   EventsSinceResult,
   HostStatus,
+  ModelInfo,
+  ModelListResult,
+  SessionSettingsUpdateParams,
+  SessionSettingsUpdateResult,
   SessionListResult,
   SessionHistoryResult,
   SessionOpenResult,
@@ -426,6 +430,20 @@ export class Replica {
   /** turn/diff: the net change of a turn, for the diff view; adapters without diffs reject not_supported. */
   turnDiff(sessionId: string, turnId: string): Promise<TurnDiffResult> {
     return this.client.request<TurnDiffResult>('turn/diff', { sessionId, turnId });
+  }
+
+  /** model/list (spec 4): the models a session of the agent can run on. */
+  async models(agentId: string): Promise<ModelInfo[]> {
+    return (await this.client.request<ModelListResult>('model/list', { agentId })).models;
+  }
+
+  /**
+   * session/settings/update (spec 6): changes the model or effort of an open session from its next turn.
+   * The view learns the new settings from the session/changed the host journals; this resolves the
+   * session the host answered with. not_supported and invalid_params reject.
+   */
+  async updateSettings(sessionId: string, settings: SessionSettingsUpdateParams['settings']): Promise<SessionSettingsUpdateResult['session']> {
+    return (await this.client.request<SessionSettingsUpdateResult>('session/settings/update', { sessionId, settings })).session;
   }
 
   /** A fresh clientMessageId (the same source sendMessage uses). */

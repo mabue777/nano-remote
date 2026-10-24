@@ -1,11 +1,11 @@
 import { useEffect, useMemo } from 'preact/hooks';
 
-import type { ModelInfo } from '../generated/methods';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { Sheet, SheetHeader } from '../ui/Sheet';
 import { Switch } from '../ui/Switch';
-import { effortLabel, NewSessionModel } from './new-session-model';
+import { ModelEffortFields } from './ModelEffortFields';
+import { NewSessionModel } from './new-session-model';
 import { useModel } from './use-model';
 
 export interface NewSessionSheetProps {
@@ -54,67 +54,7 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
           </div>
         </fieldset>
 
-        {(model.modelsLoading || model.models.length > 0) && (
-          <div class="field model-field">
-            <label for="new-session-model">Model</label>
-            {model.modelSearch && (
-              <input
-                type="search"
-                name="model-search"
-                class="model-search"
-                placeholder={`Search ${model.models.length} models`}
-                aria-label="Search models"
-                autocomplete="off"
-                value={model.modelFilter}
-                onInput={(event) => model.setModelFilter(event.currentTarget.value)}
-              />
-            )}
-            <select
-              id="new-session-model"
-              name="model"
-              value={model.modelId ?? ''}
-              disabled={model.modelsLoading}
-              onChange={(event) => model.selectModel(event.currentTarget.value)}
-            >
-              {model.modelsLoading && <option value="">Loading…</option>}
-              {model.modelGroups.map((group) =>
-                group.provider === undefined ? (
-                  group.models.map((m) => <ModelOption key={m.id} model={m} />)
-                ) : (
-                  <optgroup key={group.provider} label={group.provider}>
-                    {group.models.map((m) => (
-                      <ModelOption key={m.id} model={m} />
-                    ))}
-                  </optgroup>
-                ),
-              )}
-            </select>
-            {model.model?.provider !== undefined && (
-              <p class="small muted model-provider">
-                via {model.model.provider}
-              </p>
-            )}
-          </div>
-        )}
-
-        {model.efforts.length > 0 && (
-          <fieldset class="field effort-field">
-            <legend>Effort</legend>
-            <div class="effort-choices" role="radiogroup" aria-label="Effort">
-              {model.effortAuto && (
-                <EffortChoice label="Auto" checked={model.effort === undefined} onPick={() => model.selectEffort(undefined)} />
-              )}
-              {model.efforts.map((level) => (
-                <EffortChoice key={level} label={effortLabel(level)} checked={model.effort === level} onPick={() => model.selectEffort(level)} />
-              ))}
-            </div>
-            <p class="small muted effort-hint">
-              {model.model?.defaultEffort !== undefined
-                ? `${effortLabel(model.model.defaultEffort)} is this model's default.`
-                : 'Auto leaves the level to the agent.'}
-            </p>
-          </fieldset>
-        )}
+        <ModelEffortFields picker={model} idPrefix="new-session" />
 
         <div class="field">
           <span>Folder</span>
@@ -214,22 +154,5 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
         </button>
       </form>
     </Sheet>
-  );
-}
-
-function EffortChoice({ label, checked, onPick }: { label: string; checked: boolean; onPick: () => void }) {
-  return (
-    <button type="button" role="radio" aria-checked={checked} class={`choice${checked ? ' selected' : ''}`} onClick={onPick}>
-      {label}
-    </button>
-  );
-}
-
-function ModelOption({ model }: { model: ModelInfo }) {
-  return (
-    <option value={model.id}>
-      {model.displayName}
-      {model.default ? ' (default)' : ''}
-    </option>
   );
 }

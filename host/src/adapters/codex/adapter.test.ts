@@ -172,6 +172,73 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
     });
   });
 
+  describe('settings change (session/settings/update)', () => {
+    const turnsSent = (fake: FakeCodex) => fake.sent('turn/start').map((p) => [p.model, p.effort]);
+    const completed = (r: Rig, n: number) =>
+      until(() => r.events.filter((e) => e.method === 'turn/completed').length === n || undefined, `turn ${n} completed`);
+
+    it('the next turn/start and every later one carry the new model and effort', async () => {
+      const r = rig({ turns: [[{ reply: 'one' }], [{ reply: 'two' }], [{ reply: 'three' }]] });
+      await r.adapter.start(cwd(), { effort: 'low' });
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      await completed(r, 1);
+      r.adapter.changeSettings({ model: 'gpt-fake-astra', effort: 'high' });
+      // Nothing reaches the engine until a turn starts.
+      expect(r.fake.sent('turn/start')).toHaveLength(1);
+      await r.adapter.turnStart(text('b'), 'cm-2');
+      await completed(r, 2);
+      await r.adapter.turnStart(text('c'), 'cm-3');
+      await completed(r, 3);
+      expect(turnsSent(r.fake)).toEqual([
+        ['gpt-fake-luna', 'low'],
+        ['gpt-fake-astra', 'high'],
+        ['gpt-fake-astra', 'high'],
+      ]);
+      expect(r.adapter.effectiveSettings()).toMatchObject({ effort: 'high' });
+    });
+
+    it('a change during a running turn waits for its end', async () => {
+      const r = rig({ turns: [[{ hold: true }, { reply: 'first' }], [{ reply: 'second' }]] });
+      await r.adapter.start(cwd(), {});
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      r.adapter.changeSettings({ model: 'gpt-fake-astra', effort: 'max' });
+      await r.adapter.steer(text('more'), 'cm-s');
+      await completed(r, 1);
+      expect(r.fake.sent('turn/steer')[0]).not.toHaveProperty('model');
+      expect(turnsSent(r.fake)).toEqual([['gpt-fake-luna', undefined]]);
+      await r.adapter.turnStart(text('b'), 'cm-2');
+      await completed(r, 2);
+      expect(turnsSent(r.fake)).toEqual([
+        ['gpt-fake-luna', undefined],
+        ['gpt-fake-astra', 'max'],
+      ]);
+    });
+
+    it('an engine restart and a host restart (resume with the stored settings) keep the change', async () => {
+      const fake = fakeCodex({ turns: [[{ reply: 'one' }], [{ crash: 1 }], [{ reply: 'three' }], [{ reply: 'four' }]] });
+      const r = rig({}, { fake });
+      const dir = cwd();
+      const threadId = await r.adapter.start(dir, {});
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      await completed(r, 1);
+      r.adapter.changeSettings({ model: 'gpt-fake-astra', effort: 'low' });
+      await r.adapter.turnStart(text('b'), 'cm-2');
+      await r.next('agent/exited');
+      await r.adapter.turnStart(text('c'), 'cm-3');
+      await completed(r, 2);
+      expect(fake.sent('thread/resume')[0]).toMatchObject({ threadId, model: 'gpt-fake-astra', config: { model_reasoning_effort: 'low' } });
+      expect(turnsSent(fake).at(-1)).toEqual(['gpt-fake-astra', 'low']);
+      await r.adapter.kill();
+      // The host restarted: the session record holds the changed settings.
+      const after = rig({}, { fake });
+      await after.adapter.resume(threadId, dir, { model: 'gpt-fake-astra', effort: 'low' });
+      await after.adapter.turnStart(text('d'), 'cm-4');
+      await completed(after, 1);
+      expect(fake.sent('thread/resume')[1]).toMatchObject({ threadId, model: 'gpt-fake-astra', config: { model_reasoning_effort: 'low' } });
+      expect(turnsSent(fake).at(-1)).toEqual(['gpt-fake-astra', 'low']);
+    });
+  });
+
   it('a turn: turn/start with clientUserMessageId, items and deltas, usage, completed; user items skipped', async () => {
     const r = rig({ turns: [[{ reasoning: 'thinking' }, { run: { command: 'ls', output: 'a\n' } }, { reply: 'Hello there', chunks: 2 }]] });
     await r.adapter.start(cwd(), {});

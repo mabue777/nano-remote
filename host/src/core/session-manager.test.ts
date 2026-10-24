@@ -10,6 +10,7 @@ import { Readable } from 'node:stream';
 
 import { AttachmentStore, blobUrl } from '../attachments/store.js';
 import { Journal } from '../journal/journal.js';
+import type { Settings } from '../generated/common.js';
 import type { JournalEvent } from '../journal/types.js';
 import type { Adapter } from './adapter.js';
 import { newId } from './ids.js';
@@ -601,6 +602,112 @@ describe('background tasks (spec 5.1 Session.backgroundTasks)', () => {
   });
 });
 
+describe('settings change (spec 6 session/settings/update)', () => {
+  const models = [
+    { id: 'fake-1', displayName: 'Fake 1', default: true },
+    { id: 'fake-2', displayName: 'Fake 2', default: false },
+  ];
+  /** An engine that runs fake-2 at most at `high`, as Claude Code downgrades. */
+  const fitted = (s: Settings): Settings => {
+    const out: Settings = {};
+    if (s.model !== undefined) out.model = s.model;
+    if (s.effort !== undefined) out.effort = s.model === 'fake-2' && s.effort === 'xhigh' ? 'high' : s.effort;
+    return out;
+  };
+
+  it('journals the new settings at once, hands them to the live adapter, and reports what the next turn runs with', async () => {
+    const { manager, agent, events } = make({ models, adapter: { effectiveSettings: fitted } });
+    const { session } = await manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1', effort: 'xhigh' } });
+    await manager.turnStart(session.sessionId, text('a'), cmid());
+    const from = events.length;
+    const updated = await manager.updateSettings(session.sessionId, { model: 'fake-2' });
+    expect(updated.settings).toEqual({ model: 'fake-2', effort: 'xhigh' });
+    expect(methods(events.slice(from))).toEqual(['session/changed']);
+    expect(agent.last.calls.filter((c) => c.method === 'changeSettings').map((c) => c.args)).toEqual([[{ model: 'fake-2', effort: 'xhigh' }]]);
+    // The engine has it from the next turn on.
+    expect(agent.last.settings).toEqual({ model: 'fake-1', effort: 'xhigh' });
+    await manager.turnStart(session.sessionId, text('b'), cmid());
+    expect(agent.last.settings).toEqual({ model: 'fake-2', effort: 'xhigh' });
+    expect(manager.session(session.sessionId).settings).toEqual({ model: 'fake-2', effort: 'high' });
+    expect(agent.adapters).toHaveLength(1);
+  });
+
+  it('a change during a running turn is journaled at once; the turn keeps its settings and the next one gets them', async () => {
+    const { manager, agent } = make({ models, script: [[{ hold: true }], [{ reply: 'two' }]], adapter: { effectiveSettings: fitted } });
+    const { session } = await manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } });
+    await manager.turnStart(session.sessionId, text('a'), cmid());
+    const updated = await manager.updateSettings(session.sessionId, { effort: 'low', model: 'fake-2' });
+    expect(updated).toMatchObject({ status: 'running', settings: { model: 'fake-2', effort: 'low' } });
+    expect(agent.last.calls.map((c) => c.method)).not.toContain('interrupt');
+    agent.last.release();
+    expect(manager.session(session.sessionId).status).toBe('idle');
+    expect(agent.last.settings).toEqual({ model: 'fake-1' });
+    await manager.turnStart(session.sessionId, text('b'), cmid());
+    expect(agent.last.settings).toEqual({ model: 'fake-2', effort: 'low' });
+  });
+
+  it('refuses what the agent cannot change or does not offer, in plain words, and journals nothing', async () => {
+    const limited = make({ models, capabilities: { settingsUpdate: ['effort'] } });
+    const a = (await limited.manager.start({ agentId: 'fake', cwd })).session.sessionId;
+    const from = limited.events.length;
+    await expect(limited.manager.updateSettings(a, { model: 'fake-2' })).rejects.toMatchObject({
+      code: 'not_supported',
+      message: 'Fake Agent cannot change the model of an open session',
+      data: { agentId: 'fake', setting: 'model' },
+    });
+    await expect(limited.manager.updateSettings(a, { approvalMode: 'never' } as never)).rejects.toMatchObject({ code: 'not_supported' });
+    await expect(limited.manager.updateSettings('ses_missing', { effort: 'low' })).rejects.toMatchObject({ code: 'not_found' });
+    const full = make({ models });
+    const b = (await full.manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } })).session.sessionId;
+    await expect(full.manager.updateSettings(b, { model: 'fake-9' })).rejects.toMatchObject({
+      code: 'invalid_params',
+      message: 'Fake Agent offers no model fake-9',
+      data: { path: 'params.settings.model' },
+    });
+    // The same values again change nothing.
+    const head = full.journal.head(b);
+    expect((await full.manager.updateSettings(b, { model: 'fake-1' })).settings).toEqual({ model: 'fake-1' });
+    expect(full.journal.head(b)).toBe(head);
+    expect(limited.events.slice(from)).toEqual([]);
+    expect(full.agent.last.calls.map((c) => c.method)).not.toContain('changeSettings');
+  });
+
+  it('an agent that cannot list its models leaves the model to the engine', async () => {
+    const { manager, agent, log } = make({ models });
+    vi.spyOn(agent, 'models').mockRejectedValue(new Error('not signed in'));
+    const { session } = await manager.start({ agentId: 'fake', cwd });
+    expect((await manager.updateSettings(session.sessionId, { model: 'fake-9' })).settings).toEqual({ model: 'fake-9' });
+    expect(log).toHaveBeenCalledWith('agent fake: cannot list models to check fake-9', expect.any(Error));
+  });
+
+  it('a host restart, and a change to a dormant session, resume the engine with the changed settings', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-settings-'));
+    const file = path.join(dir, 'journal.sqlite');
+    const store = new SessionStore(path.join(dir, 'core.sqlite'));
+    const journal = new Journal({ path: file });
+    const before = new SessionManager({ journal, agents: [new FakeAgent({ models })], store });
+    const { session } = await before.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } });
+    await before.turnStart(session.sessionId, text('a'), cmid());
+    await before.updateSettings(session.sessionId, { model: 'fake-2', effort: 'low' });
+    await before.close();
+    journal.close();
+
+    const reopened = new Journal({ path: file });
+    const agent = new FakeAgent({ models });
+    const after = new SessionManager({ journal: reopened, agents: [agent], store });
+    open.push({ journal: reopened, manager: after });
+    expect(after.session(session.sessionId).settings).toEqual({ model: 'fake-2', effort: 'low' });
+    // Dormant: the change is journaled and no engine starts for it.
+    await after.updateSettings(session.sessionId, { effort: 'high' });
+    expect(agent.adapters).toHaveLength(0);
+    await after.turnStart(session.sessionId, text('b'), cmid());
+    const resumed = agent.last.calls.find((c) => c.method === 'resume');
+    expect(resumed?.args[2]).toEqual({ model: 'fake-2', effort: 'high' });
+    expect(agent.last.settings).toEqual({ model: 'fake-2', effort: 'high' });
+    store.close();
+  });
+});
+
 describe('recovery after a host restart', () => {
   it('fails turns that were running, withdraws their requests and sets sessions idle', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nano-recover-'));
@@ -650,7 +757,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false });
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] });
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });
 

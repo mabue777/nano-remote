@@ -18,6 +18,10 @@
 // the line opens the turn's Changes sheet.
 // Without capabilities (an older host) the rules above apply unchanged.
 //
+// Settings (spec 6 session/settings/update): when the agent's capabilities.settingsUpdate names anything,
+// the header's model and effort line opens the settings sheet (settings-model.ts); without it (also on an
+// older host) the line is plain text.
+//
 // Background tasks (spec 5.1 Session.backgroundTasks): the strip lists the agent's helpers with their
 // elapsed time and status, a tap shows the latest activity line. An ended task (finished, cancelled,
 // failed) leaves the strip TASK_LINGER_S after it ended, or with the next turn when the host drops it
@@ -29,17 +33,18 @@ import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
-import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
+import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
 import { backgroundTasksText, folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { effortLabel, modelLabel } from '../new-session-model';
 import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
 import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
+import { SessionSettingsModel, type SettingsReplica } from './settings-model';
 import { filesChangedText } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
-export interface SessionReplica {
+export interface SessionReplica extends SettingsReplica {
   readonly sessions: SessionSummary[];
   session(sessionId: string): SessionView | undefined;
   open(sessionId: string): Promise<void>;
@@ -413,6 +418,8 @@ export class SessionModel extends Model {
   detailItemId: string | undefined;
   /** The turn whose Changes sheet (views/ChangesSheet) is open. */
   changesTurnId: string | undefined;
+  /** The settings sheet (model and effort) is open. */
+  settingsOpen = false;
   /** Files changed per finished turn, once turn/diff answered (spec 7). */
   private readonly fileCounts = new Map<string, number>();
   private readonly counted = new Set<string>();
@@ -946,6 +953,43 @@ export class SessionModel extends Model {
     if (this.changesTurnId === turnId || !this.diffs) return;
     this.changesTurnId = turnId;
     this.changed();
+  }
+
+  /** What an open session of this agent can change (capabilities.settingsUpdate); empty: nothing. */
+  get settingsKeys(): readonly SettingsKey[] {
+    return settingsKeys(this.agent);
+  }
+
+  /** The header's model line opens the settings sheet. */
+  get canChangeSettings(): boolean {
+    return this.summary !== undefined && this.settingsKeys.length > 0;
+  }
+
+  openSettings(): void {
+    if (!this.canChangeSettings) return;
+    this.settingsOpen = true;
+    this.changed();
+  }
+
+  closeSettings(): void {
+    this.settingsOpen = false;
+    this.changed();
+  }
+
+  /** The settings sheet's model, from the session's settings as they are now. */
+  settingsSheet(): SessionSettingsModel {
+    const settings = this.view?.session?.settings ?? {};
+    const current: { model?: string; effort?: string } = {};
+    if (typeof settings.model === 'string' && settings.model !== '') current.model = settings.model;
+    if (typeof settings.effort === 'string' && settings.effort !== '') current.effort = settings.effort;
+    return new SessionSettingsModel({
+      sessionId: this.sessionId,
+      agentId: this.agentId ?? '',
+      current,
+      keys: this.settingsKeys,
+      running: () => this.runningTurnId !== undefined,
+      replica: this.replica,
+    });
   }
 
   closeChanges(): void {

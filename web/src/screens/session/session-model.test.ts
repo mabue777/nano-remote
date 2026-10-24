@@ -985,3 +985,58 @@ describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
     expect(other.model.stopQuestion).toBe('Stop the turn?');
   });
 });
+
+describe('settings sheet (spec 6 session/settings/update)', () => {
+  const codex = (settingsUpdate?: ('model' | 'effort')[]): Agent => ({
+    id: 'codex',
+    name: 'Codex',
+    status: 'ready',
+    capabilities: { steer: true, diff: true, approvalModes: [], ...(settingsUpdate ? { settingsUpdate } : {}) },
+  });
+
+  it('the model line opens the sheet only for an agent that can change settings', async () => {
+    const without = await setup({ agents: () => [codex()] });
+    expect(without.model.canChangeSettings).toBe(false);
+    without.model.openSettings();
+    expect(without.model.settingsOpen).toBe(false);
+    const older = await setup({ agents: () => [{ id: 'codex', name: 'Codex', status: 'ready' }] });
+    expect(older.model.canChangeSettings).toBe(false);
+    const { model, changes } = await setup({ agents: () => [codex(['model', 'effort'])] });
+    expect(model.settingsKeys).toEqual(['model', 'effort']);
+    expect(model.canChangeSettings).toBe(true);
+    changes.mockClear();
+    model.openSettings();
+    expect(model.settingsOpen).toBe(true);
+    expect(changes).toHaveBeenCalled();
+    model.closeSettings();
+    expect(model.settingsOpen).toBe(false);
+  });
+
+  it('the sheet starts from the session\'s settings, knows a running turn, and saves through the Replica', async () => {
+    const { model, client, live } = await setup({
+      agents: () => [codex(['effort'])],
+      over: { session: { ...snapshot(0).session, settings: { model: 'gpt-5-codex', effort: 'low' } } },
+    });
+    client.rule('model/list', () => ({
+      models: [{ id: 'gpt-5-codex', displayName: 'GPT-5 Codex', default: true, efforts: ['low', 'high'], defaultEffort: 'high' }],
+    }));
+    const sheet = model.settingsSheet();
+    await sheet.load();
+    expect([sheet.modelId, sheet.effort, sheet.canChangeModel, sheet.note]).toEqual(['gpt-5-codex', 'low', false, undefined]);
+    live(1, [['turn/started', { turn: turn('t1') }]]);
+    expect(sheet.note).toBe('Applies after this turn');
+    sheet.selectEffort('high');
+    const saved = sheet.save();
+    await settle();
+    expect(client.last('session/settings/update').params).toEqual({ sessionId: SID, settings: { effort: 'high' } });
+    client.last('session/settings/update').resolve({ session: snapshot(2).session });
+    expect(await saved).toBe(true);
+  });
+
+  it('a session whose settings name no model or effort gives the sheet none', async () => {
+    const { model } = await setup({ agents: () => [codex(['model'])], over: { session: { ...snapshot(0).session, settings: {} } } });
+    const sheet = model.settingsSheet();
+    expect(sheet.canChangeEffort).toBe(false);
+    expect(sheet.change).toEqual({});
+  });
+});

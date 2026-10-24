@@ -30,6 +30,44 @@
   margin: 0 0 var(--space-4);
 }
 
+/* The model and effort line opens the settings sheet when the agent can change them (spec 6). */
+.session-model-button {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-height: 32px; /* a tap target on the phone */
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-model-button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-model-change {
+  flex: none;
+  margin-left: var(--space-3);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.session-settings-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--warn); /* one-off: accent bar */
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  color: var(--text);
+  font-weight: 600;
+}
+
 .decision-banner {
   display: flex;
   align-items: center;

@@ -10,7 +10,7 @@ describe('PiAgent', () => {
   it('is unavailable without the pi program', () => {
     const agent = new PiAgent({ config: { ...fakePi().config, binary: '/nonexistent/pi' } });
     expect(piInstalled(agent.config)).toBe(false);
-    expect(describeAgent(agent)).toEqual({ id: 'pi', name: 'Pi', status: 'unavailable', reason: 'pi is not installed at /nonexistent/pi', capabilities: { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false } });
+    expect(describeAgent(agent)).toEqual({ id: 'pi', name: 'Pi', status: 'unavailable', reason: 'pi is not installed at /nonexistent/pi', capabilities: { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } });
   });
 
   it('is ready when found and learns its version from pi --version', async () => {
@@ -19,7 +19,7 @@ describe('PiAgent', () => {
     const off = agent.onStateChange(() => changes++);
     expect(agent.state()).toEqual({ status: 'ready' });
     await until(() => (changes > 0 ? true : undefined), 'version');
-    expect(describeAgent(agent)).toEqual({ id: 'pi', name: 'Pi', status: 'ready', version: '1.3.0', capabilities: { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false } });
+    expect(describeAgent(agent)).toEqual({ id: 'pi', name: 'Pi', status: 'ready', version: '1.3.0', capabilities: { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } });
     off();
     expect(agent.createAdapter()).toBeInstanceOf(PiAdapter);
   });

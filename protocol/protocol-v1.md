@@ -212,6 +212,9 @@ and at least one of the two is true.
 `capabilities.backgroundTasks` (additive within v1) is true when the agent reports its background tasks in
 `Session.backgroundTasks` and marks messages that wait behind them `queued` (section 5.1). Claude Code
 declares it; Codex and Pi declare false. Absent means false.
+`capabilities.settingsUpdate` (additive within v1) lists the settings `session/settings/update` (section 6)
+can change in an open session: `model`, `effort`, or both. Codex, Claude Code and Pi declare both. Absent or
+empty means none: clients then offer no way to change them after `session/start`.
 
 ### `model/list {agentId}` → `{models:[{id, displayName, default, provider?, efforts?, defaultEffort?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
@@ -294,8 +297,8 @@ Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through 
 `effort` (additive within v1) may be set in `session/start` settings to one of the model's `efforts`
 (section 4 `model/list`) and is reported back as in effect: the level the engine runs at after any
 downgrade it makes for the model, or absent when none is (a model without effort control). The adapter's
-report is authoritative for this key, so a session never claims a level its model ignores. Changing it in an
-open session is out of v1.
+report is authoritative for this key, so a session never claims a level its model ignores. An open session
+changes it, and its `model`, with `session/settings/update` (section 6).
 - Codex: sent as the thread's `model_reasoning_effort` config on `thread/start` and `thread/resume` and as
   `effort` on every `turn/start`; reported as the `reasoningEffort` the thread answers with (also when
   `session/start` named none: the engine's configured default). Codex does not downgrade a level its model
@@ -445,6 +448,27 @@ previous page. Items are inlined in full. (Codex: `thread/turns/list` + `thread/
 ### `session/close {sessionId}` → `{ok:true}` unsubscribes the stream. Closing the socket unsubscribes everything.
 
 ### `session/archive`, `session/delete`, `session/rename {sessionId, title}` → `{ok:true}`; each emits `session/changed` or `session/closed`.
+
+### `session/settings/update {sessionId, settings:{model?, effort?}}` → `{session}` (additive within v1)
+Changes the model or the effort of an open session. Each key given must be in the agent's
+`capabilities.settingsUpdate` (section 4); otherwise the host answers `not_supported` with a plain message
+(for example "Pi cannot change the sandbox of an open session") and changes nothing. A `model` the agent's
+`model/list` does not offer is `invalid_params` at `params.settings.model`. A key left out keeps its value.
+
+The host journals `session/changed` with the new `settings` at once and answers with that session, so
+`Session.settings` shows what the next turn runs with. The change applies from the next turn: when a turn
+is running, it finishes on the model and effort it started with, and the new settings apply when that turn
+ends (clients say "Applies after this turn"). After the engine took the change, the host reports the
+settings in effect as usual (section 5.1): an effort the new model lacks is reported as the engine fitted
+it. The settings live in the session record, so a host restart or a resumed engine session keeps them.
+Per agent (section 11):
+- Codex: the new `model` and `effort` go out on the next `turn/start` (its fields "for this turn and
+  subsequent turns") and with every later turn; a resumed thread gets them on `thread/resume` as well.
+- Claude Code: `Query.setModel(model)` and `Query.applyFlagSettings({effortLevel})` on the running query
+  before the next user message (both work mid-session in streaming-input mode, SDK 0.3.308); when no query
+  runs, the next one starts with them (`options.model`, `options.effort`, `resume`).
+- Pi: `set_model {provider, modelId}` and `set_thinking_level {level}` on the live pi process before the
+  next `prompt`, then `get_state` for what is in effect; a new pi process gets them at start.
 
 `session/delete` also deletes the session's attachments (section 8.1) from the host's disk; their
 `/v1/blob` URLs answer 404 from then on.
@@ -610,7 +634,7 @@ Data-URL image parts keep working as before and are never stored.
 | `already_resolved` | request answered (`data.resolvedBy`) | dismiss prompt |
 | `cursor_expired` | Journal no longer holds the cursor | re-open in snapshot mode |
 | `agent_unavailable` | adapter down (`data.agentId`, `data.reason`) | show agent state |
-| `not_supported` | adapter lacks the operation (steer, diff) | hide the control |
+| `not_supported` | adapter lacks the operation (steer, diff, a `session/settings/update` key) | hide the control |
 | `not_a_repository` | `turn/diff`: the session folder is not inside a git work tree (`data.cwd`; additive within v1) | say "Changes need a git repository in the session folder" |
 | `rate_limited` | too many requests (`data.retryAfterMs`) | back off |
 | `provider_unavailable` | a relayed provider failed (`data.reason`, `data.status?`, `data.retryAfterMs?`; section 15) | show the reason's sentence |
@@ -636,6 +660,7 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 | `session/start` | `thread/start` (`settings.effort` as `config.model_reasoning_effort`) | `query()` with a new session (`settings.effort` as `options.effort`) | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id`, then `set_thinking_level {level}` when `settings.effort` is set |
 | `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal | the same command with the stored `--session-id` (pi reloads its session file; `get_messages` returns the history) + host Journal. `--session <id>` is not used: it exits with "No session found" for a session whose first prompt never ran |
 | `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn | `prompt {message, images}`; no turn id, the host assigns one; `agent_settled` ends the turn |
+| `session/settings/update` | `model` and `effort` on the next `turn/start` and every later one | `Query.setModel()` and `Query.applyFlagSettings({effortLevel})` before the next user message; a new query takes them as options | not probed | `set_model`, `set_thinking_level`, `get_state` before the next `prompt` |
 | `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely | `steer {message, images}`: queued, delivered before the next model call, then reported by pi as a user message (the host journals its own) |
 | `turn/interrupt` | `turn/interrupt` | `query.interrupt()`; the turn ends with result `error_during_execution`, reported `interrupted` | not probed | `clear_queue`, then `abort`, then open approvals are declined (pi's abort waits for idle, which an open dialog blocks); `agent_settled {aborted: true}`, reported `interrupted` |
 | `item/*` | `item/started`, `item/*/delta`, `item/completed` | `stream_event` text deltas, then assistant text and tool_use blocks and the tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` | `message_update` `text_delta` and `thinking_delta`, `message_end`, `tool_execution_start`, `tool_execution_update` (bash output), `tool_execution_end` (`isError`; declined when the host refused it) |
