@@ -10,7 +10,7 @@ import { SheetHeader } from '../ui/Sheet';
 import { CrossFade, Shell } from './dom';
 import { APPROVAL, QUESTION, type LabSession as Session, type ToolRow } from './fixtures';
 import type { Shown } from './flip';
-import { Icon } from './icons';
+import { Icon } from '../ui/Icon';
 import { indicatorOf, previousMessages, type Indicator } from './look';
 
 export interface NewListProps {

@@ -26,8 +26,8 @@
   margin: 0;
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-sm);
-  background: var(--bg);
-  font-size: var(--font-md);
+  background: var(--fill);
+  font: var(--type-code);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 160px;
@@ -72,8 +72,8 @@
   margin: var(--space-2) 0 0;
   padding: var(--space-3) 0;
   border-radius: var(--radius-sm);
-  background: var(--bg);
-  font-size: 0.78rem; /* one-off: code text, between --font-xs and --font-sm */
+  background: var(--fill);
+  font: var(--type-code);
   max-height: 220px;
   overflow: auto;
 }
@@ -85,11 +85,11 @@
 }
 
 .diff-line.add {
-  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  background: var(--diff-add-bg);
 }
 
 .diff-line.del {
-  background: color-mix(in srgb, var(--error) 14%, transparent);
+  background: var(--diff-del-bg);
 }
 
 .diff-line.hunk,
@@ -153,7 +153,7 @@
 }
 
 .option.selected {
-  border-color: var(--accent);
+  border-color: var(--primary);
 }
 
 .option input {
@@ -163,7 +163,7 @@
   min-height: 0;
   margin: var(--space-1) 0 0;
   padding: 0;
-  accent-color: var(--accent);
+  accent-color: var(--primary);
 }
 
 .option > span {

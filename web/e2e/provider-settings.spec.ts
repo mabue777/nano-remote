@@ -71,7 +71,7 @@ test('add by pasting a key: OpenAI is detected, no URL typed, and its model list
   await expect(page.getByText('Pair your Mac first: it is the one that looks for servers on your network.')).toBeVisible();
 
   // Back on Chats, the new provider is the default for a new chat.
-  await page.getByRole('link', { name: '‹ Chats' }).click();
+  await page.getByRole('link', { name: 'Chats', exact: true }).click();
   await page.getByRole('button', { name: 'New chat' }).click();
   await expect(page.getByLabel('Provider')).toHaveText('OpenAI · direct');
 });
@@ -186,7 +186,7 @@ test('export, delete all, import: providers come back without keys and ask for t
   // The chat's empty model picker leads back to Settings.
   await page.goto('/c/chat_1');
   await page.getByRole('button', { name: /^Model:/ }).click();
-  await page.getByRole('link', { name: 'Add one in Settings › Providers' }).click();
+  await page.getByRole('link', { name: 'Add one in Settings Providers' }).click();
   await expect(page).toHaveURL(/\/settings\/providers$/);
 
   await page.getByLabel('Import file').setInputFiles(file);

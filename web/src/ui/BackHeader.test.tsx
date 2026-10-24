@@ -2,16 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { childNodes, fire, text, type Node } from '../../test/vnode';
 import { BackHeader } from './BackHeader';
+import { Icon } from './Icon';
 
 describe('BackHeader', () => {
-  it('is the top bar with "‹ <label>" linking to the page it goes to', () => {
+  it('is the top bar with a back chevron and "<label>" linking to the page it goes to', () => {
     const tree = BackHeader({ href: '/chats', label: 'Chats', onBack: () => {} }) as Node;
     expect(tree.type).toBe('header');
     expect(tree.props.class).toBe('topbar');
     const [link] = childNodes(tree);
     expect(link!.type).toBe('a');
     expect(link!.props).toMatchObject({ class: 'back', href: '/chats' });
-    expect(text(link!.props.children)).toBe('‹ Chats');
+    expect(text(link!.props.children)).toBe('Chats');
+    const [chevron] = childNodes(link!);
+    expect(chevron!.type).toBe(Icon);
+    expect(chevron!.props.name).toBe('back');
   });
 
   it('a tap goes back in the app instead of loading the page', () => {

@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 
 import type { Replica } from '../../replica/replica';
 import { BackHeader } from '../../ui/BackHeader';
+import { Icon } from '../../ui/Icon';
 import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
@@ -38,7 +39,7 @@ export interface SessionScreenProps {
   agents?: AgentsSource;
   /** Photo and file uploads for the composer (spec 8.1); without them there is no attach button. */
   attachments?: AttachmentServices;
-  /** Archive and delete from the header's "⋯" menu (shared with Home, which shows the archive's Undo). */
+  /** Archive and delete from the header's More menu (shared with Home, which shows the archive's Undo). */
   actions?: SessionActions;
 }
 
@@ -132,7 +133,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             {status.label}
           </span>
           <button type="button" class="ghost icon-button" aria-label="Session actions" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
-            ⋯
+            <Icon name="more" size={22} />
           </button>
         </div>
       </BackHeader>
@@ -347,7 +348,8 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
       ))}
       {turn.changes !== undefined && (
         <button type="button" class="link small turn-changes" onClick={() => model.openChanges(turn.turnId)}>
-          {turn.changes} ›
+          {turn.changes}
+          <Icon name="chevron-right" size={16} />
         </button>
       )}
       {turn.label !== '' && (
@@ -418,7 +420,8 @@ function OpenableItem({ item, model }: { item: ItemRow; model: SessionModel }) {
     >
       <Item item={item} model={model} />
       <button type="button" class="link small open-detail" aria-label={`Details of ${ITEM_NAME[item.kind]}`} onClick={() => model.openItem(item.itemId)}>
-        {item.kind === 'command' ? 'Output ›' : 'Details ›'}
+        {item.kind === 'command' ? 'Output' : 'Details'}
+        <Icon name="chevron-right" size={16} />
       </button>
     </div>
   );
@@ -443,7 +446,8 @@ function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
       return (
         <div class="item reasoning" data-item={item.kind}>
           <button type="button" class="link reasoning-toggle" aria-expanded={item.expanded} onClick={() => model.toggleReasoning(item.itemId)}>
-            {item.expanded ? '▾' : '▸'} Thinking{item.summary !== '' ? `: ${item.summary.split('\n')[0]}` : ''}
+            <Icon name="chevron-right" size={16} class={item.expanded ? 'chevron open' : 'chevron'} />
+            Thinking{item.summary !== '' ? `: ${item.summary.split('\n')[0]}` : ''}
           </button>
           {item.expanded && <p class="muted small reasoning-text">{item.text !== '' ? item.text : item.summary}</p>}
         </div>
@@ -647,7 +651,7 @@ function Composer({ model, running }: { model: SessionModel; running: boolean })
         {rules !== undefined && (
           <>
             <button type="button" class="attach-button" aria-label="Attach photos or files" title="Attach photos or files" onClick={() => picker.current?.click()}>
-              +
+              <Icon name="plus" size={22} />
             </button>
             <input
               ref={picker}

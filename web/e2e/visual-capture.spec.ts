@@ -2,9 +2,10 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 
 import { sheetsSettled } from './sheets';
 
-// Reference screenshots of six screens at 390 x 844 against the fake host, for before/after pixel
-// comparisons when styles change (the visual groundwork, and the redesign after it). Runs only when
-// VISUAL_OUT names a folder: `VISUAL_OUT=/tmp/shots pnpm exec playwright test visual-capture`.
+// Reference screenshots of every real screen at 390 x 844 against the fake host, in light and dark
+// (<scheme>-<screen>.png), for before/after comparisons when styles change (the visual groundwork, the look
+// adoption steps). Runs only when VISUAL_OUT names a folder:
+// `VISUAL_OUT=/tmp/shots pnpm exec playwright test visual-capture`.
 // Each screen waits for its content and lets animations finish, so two runs of the same build match.
 
 const out = process.env.VISUAL_OUT;
@@ -41,69 +42,157 @@ async function pair(page: Page, request: APIRequestContext): Promise<void> {
 async function shot(page: Page, name: string): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
   await sheetsSettled(page); // no sheet mid-slide; animations: 'disabled' finishes the switch knob
-  await page.screenshot({ path: `${out}/${name}.png`, animations: 'disabled', caret: 'hide' });
+  await page.screenshot({ path: `${out}/${await scheme(page)}-${name}.png`, animations: 'disabled', caret: 'hide' });
 }
 
-test('pair', async ({ page }) => {
-  await page.goto('/pair');
-  await expect(page.getByRole('button', { name: 'Pair' })).toBeVisible();
-  await shot(page, 'pair');
-});
+async function scheme(page: Page): Promise<string> {
+  return page.evaluate(() => (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+}
 
-test('home', async ({ page, request }) => {
-  await pair(page, request);
-  await expect(page.getByRole('list', { name: 'Sessions' })).toBeVisible();
-  await shot(page, 'home');
-});
+const CHANGES = [
+  { path: 'src/new.ts', kind: 'add', diff: '--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1,2 @@\n+export const a = 1;\n+export const b = 2;\n' },
+  { path: 'src/app.ts', kind: 'modify', diff: '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,3 @@\n import x from "x";\n-const a = 1;\n+const a = 2;\n export { a };\n' },
+  { path: 'old.txt', kind: 'delete', diff: '--- a/old.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n' },
+];
 
-test('session', async ({ page, request }) => {
-  await pair(page, request);
-  await page.goto('/s/ses_fake_1');
-  await expect(page.getByLabel('Session status')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Conversation' })).toBeVisible();
-  await shot(page, 'session');
-});
+for (const colorScheme of ['light', 'dark'] as const) {
+  test.describe(colorScheme, () => {
+    test.use({ colorScheme });
 
-test('new-session-pi', async ({ page, request }) => {
-  await pair(page, request);
-  await page.getByRole('button', { name: 'New session' }).click();
-  const sheet = page.getByRole('dialog', { name: 'New session' });
-  await sheet.getByRole('radio', { name: 'Pi' }).click();
-  await expect(sheet.getByRole('combobox', { name: 'Model' })).toHaveValue('llamacpp/bonsai-27b');
-  await shot(page, 'new-session-pi');
-});
+    test('pair', async ({ page }) => {
+      await page.goto('/pair');
+      await expect(page.getByRole('button', { name: 'Pair' })).toBeVisible();
+      await shot(page, 'pair');
+    });
 
-test('settings-providers', async ({ page, request }) => {
-  await pair(page, request);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
-  await expect(page.getByRole('switch')).toBeVisible(); // the host section (keep awake) has loaded
-  await shot(page, 'settings-providers');
-});
+    test('home', async ({ page, request }) => {
+      await pair(page, request);
+      await expect(page.getByRole('list', { name: 'Sessions' })).toBeVisible();
+      await shot(page, 'home');
+    });
 
-test('local-chat', async ({ page }) => {
-  await page.goto('/pair');
-  await page.evaluate((provider) => {
-    localStorage.clear();
-    localStorage.setItem('nano-remote/providers/v1', JSON.stringify({ v: 1, providers: [provider], defaultProviderId: provider.id }));
-    localStorage.setItem('nano-remote/provider-keys/v1', JSON.stringify({ v: 1, keys: { [provider.id]: 'sk-fake-key' } }));
-    const at = 1760930100000;
-    const chat = {
-      id: 'chat_1',
-      title: 'Say hi',
-      providerId: provider.id,
-      model: 'fake-reasoner',
-      createdAt: at,
-      updatedAt: at,
-      messages: [
-        { role: 'user', text: 'Say hi in three words.', status: 'complete' },
-        { role: 'assistant', text: 'Hey there, friend!', status: 'complete' },
-      ],
-    };
-    localStorage.setItem('nano-remote/chats/v1', JSON.stringify({ v: 1, chats: [chat] }));
-  }, CLOUD);
-  await page.goto('/c/chat_1');
-  await expect(page.getByRole('switch', { name: 'Thinking' })).toBeVisible();
-  await expect(page.getByText('Hey there, friend!')).toBeVisible();
-  await shot(page, 'local-chat');
-});
+    test('session', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_1');
+      await expect(page.getByLabel('Session status')).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Conversation' })).toBeVisible();
+      await shot(page, 'session');
+    });
+
+    test('new-session-pi', async ({ page, request }) => {
+      await pair(page, request);
+      await page.getByRole('button', { name: 'New session' }).click();
+      const sheet = page.getByRole('dialog', { name: 'New session' });
+      await sheet.getByRole('radio', { name: 'Pi' }).click();
+      await expect(sheet.getByRole('combobox', { name: 'Model' })).toHaveValue('llamacpp/bonsai-27b');
+      await shot(page, 'new-session-pi');
+    });
+
+    test('settings-providers', async ({ page, request }) => {
+      await pair(page, request);
+      await page.getByRole('link', { name: 'Settings', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
+      await expect(page.getByRole('switch')).toBeVisible(); // the host section (keep awake) has loaded
+      await shot(page, 'settings-providers');
+    });
+
+    test('local-chat', async ({ page }) => {
+      await page.goto('/pair');
+      await page.evaluate((provider) => {
+        localStorage.clear();
+        localStorage.setItem('nano-remote/providers/v1', JSON.stringify({ v: 1, providers: [provider], defaultProviderId: provider.id }));
+        localStorage.setItem('nano-remote/provider-keys/v1', JSON.stringify({ v: 1, keys: { [provider.id]: 'sk-fake-key' } }));
+        const at = 1760930100000;
+        const chat = {
+          id: 'chat_1',
+          title: 'Say hi',
+          providerId: provider.id,
+          model: 'fake-reasoner',
+          createdAt: at,
+          updatedAt: at,
+          messages: [
+            { role: 'user', text: 'Say hi in three words.', status: 'complete' },
+            { role: 'assistant', text: 'Hey there, friend!', status: 'complete' },
+          ],
+        };
+        localStorage.setItem('nano-remote/chats/v1', JSON.stringify({ v: 1, chats: [chat] }));
+      }, CLOUD);
+      await page.goto('/c/chat_1');
+      await expect(page.getByRole('switch', { name: 'Thinking' })).toBeVisible();
+      await expect(page.getByText('Hey there, friend!')).toBeVisible();
+      await shot(page, 'local-chat');
+    });
+
+    test('session-streaming', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_3');
+      await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+      await request.post('/test/delay', { data: { method: 'approval/resolve', ms: 0 } });
+      await request.post('/test/run', { data: { sessionId: 'ses_fake_3', text: 'Sketch the README.' } });
+      await expect(page.locator('[data-item="agent"]')).toHaveAttribute('data-streaming', 'true');
+      await page.screenshot({ path: `${out}/${await scheme(page)}-session-streaming.png`, caret: 'hide' });
+      await expect(page.getByRole('alert', { name: 'Needs your decision' })).toBeVisible(); // the turn then waits
+      await shot(page, 'session-after-stream');
+    });
+
+    test('approval', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_2'); // seeded waiting for its command approval
+      await expect(page.getByRole('group', { name: 'Approval: Run this command?' })).toBeVisible();
+      await shot(page, 'approval');
+    });
+
+    test('question', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_3');
+      await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+      await request.post('/test/request', {
+        data: {
+          sessionId: 'ses_fake_3',
+          request: {
+            kind: 'input',
+            isBlocking: true,
+            questions: [
+              {
+                id: 'sections',
+                header: 'Sections',
+                question: 'Which sections should the README have?',
+                options: [
+                  { label: 'Install', description: 'How to install.' },
+                  { label: 'Usage', description: 'How to use it.' },
+                ],
+                multiSelect: true,
+                isOther: true,
+                isSecret: false,
+              },
+            ],
+          },
+        },
+      });
+      const form = page.getByRole('form', { name: 'Question (the agent is waiting)' });
+      await expect(form).toBeVisible();
+      await form.getByRole('checkbox', { name: /Usage/ }).check();
+      await shot(page, 'question');
+    });
+
+    test('changes', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_3');
+      await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+      await request.post('/test/review', { data: { sessionId: 'ses_fake_3', chunks: ['ok\n'] } });
+      const conversation = page.getByRole('region', { name: 'Conversation' });
+      await expect(conversation.locator('[data-item="command"]')).toContainText('npm test');
+      await request.post('/test/review-finish', { data: { sessionId: 'ses_fake_3', changes: CHANGES } });
+      await expect(conversation.locator('[data-item="fileChange"]')).toContainText('src/new.ts');
+      await shot(page, 'session-finished');
+      await conversation.locator('[data-item="fileChange"]').click();
+      const sheet = page.getByRole('dialog', { name: 'File change' });
+      await expect(sheet).toContainText('3 files changed');
+      await shot(page, 'changes');
+      await sheet.getByRole('button', { name: /src\/app\.ts/ }).click();
+      await expect(sheet.getByRole('region', { name: 'Diff of src/app.ts' })).toBeVisible();
+      await shot(page, 'changes-diff');
+    });
+
+  });
+}

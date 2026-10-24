@@ -1,5 +1,5 @@
 // The pieces of archive and delete (session-actions.ts) that Home and the session view share: the actions
-// sheet (a long-press on a row, the session view's "⋯" button), the delete confirmation and the Undo toast.
+// sheet (a long-press on a row, the session view's More button), the delete confirmation and the Undo toast.
 // Styles: .actions-sheet, .confirm-sheet and .undo-toast in HomeScreen.css.
 import { Sheet, useCloseOnEscape } from '../ui/Sheet';
 import type { SessionActions } from './session-actions';

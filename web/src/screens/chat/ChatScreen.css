@@ -85,10 +85,10 @@
 .markdown .code-block {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-inner);
   padding: var(--space-4) var(--space-5);
   overflow-x: auto;
-  font-size: var(--font-sm);
+  font: var(--type-code);
   white-space: pre;
 }
 
@@ -115,7 +115,7 @@
 
 .toast.error {
   background: var(--error);
-  color: #fff;
+  color: var(--primary-text);
 }
 
 .picker-group {

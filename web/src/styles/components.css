@@ -23,7 +23,7 @@
   align-items: flex-end;
   justify-content: center;
   overflow: hidden;
-  font-size: var(--font-md);
+  font: var(--type-footnote);
   color: var(--muted);
   transition: height 0.15s ease-out;
 }
@@ -37,8 +37,8 @@
   height: 32px;
   padding: 0;
   border-radius: 16px; /* one-off: half the switch height */
-  background: var(--line);
-  border-color: var(--line);
+  background: var(--fill-strong);
+  border-color: transparent;
 }
 
 .switch::after {
@@ -55,12 +55,13 @@
   height: 24px;
   border-radius: var(--radius-round);
   background: var(--surface);
+  box-shadow: var(--shadow-md), var(--shadow-ring);
   transition: transform 0.15s ease-out;
 }
 
 .switch[aria-checked='true'] {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .switch[aria-checked='true'] .knob {
@@ -78,8 +79,8 @@
   padding: 0 7px; /* one-off: badge geometry, round at 22 px */
   border-radius: 11px;
   background: var(--error);
-  color: #fff;
-  font-size: var(--font-sm);
+  color: var(--primary-text); /* white on light, ink on the dark palette's light red */
+  font: var(--type-caption);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -120,8 +121,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   will-change: transform;
-  background: var(--surface);
-  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-raised);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   padding: var(--space-8) calc(var(--safe-right) + var(--space-8)) calc(var(--safe-bottom) + var(--space-10)) calc(var(--safe-left) + var(--space-8));
 }
 
@@ -132,7 +133,7 @@
   height: 5px;
   margin: calc(-1 * var(--space-4)) auto var(--space-4);
   border-radius: var(--radius-pill);
-  background: var(--line);
+  background: var(--fill-strong);
 }
 
 .sheet-head {
@@ -147,8 +148,18 @@
   min-width: 0;
 }
 
+.sheet-head h2,
 .detail-title h2 {
   margin: 0;
+  font: var(--type-nav-title);
+  letter-spacing: var(--tracking-title);
+}
+
+/* The sheet's action (Done, Cancel): a blue text button, as on iOS. */
+.sheet-head button.ghost {
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0 var(--space-2);
 }
 
 .detail-subtitle {
@@ -163,8 +174,20 @@
 }
 
 .choice.selected {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+/* Grey secondary text would vanish on the ink chip: it takes the chip's text colour, a little dimmed. */
+.choice.selected .muted {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* Full-width list buttons keep a rounded rectangle: a pill that wide reads as a field. */
+:is(.projects .choice, .dir, .picker-models .choice, .diff-file-row, .candidate) {
+  border-radius: var(--radius-inner);
 }
 
 .back {
@@ -173,10 +196,18 @@
   min-height: var(--touch);
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-3)); /* one-off: the chevron's own inset lines up with the gutter */
+}
+
+/* The line icons (ui/Icon.tsx) sit in the text line and take its colour. */
+.icon {
+  flex: none;
+  display: block;
 }
 
 .pill {
-  font-size: var(--font-sm);
+  font: var(--type-caption);
   font-weight: 600;
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-pill);

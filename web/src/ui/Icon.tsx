@@ -1,4 +1,5 @@
-// The New look's line icons, inlined: only the few the lab needs, so no icon package is added.
+// The line icons of the app and the lab, inlined: only the few they need, so no icon package is added.
+// Styles: .icon in styles/components.css; an icon takes the text colour (currentColor).
 //
 // Shapes from Lucide (https://lucide.dev), ISC licence:
 //   Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT).
@@ -111,7 +112,7 @@ export type IconName = keyof typeof PATHS;
 export function Icon({ name, size = 20, class: extra }: { name: IconName; size?: number; class?: string }) {
   return (
     <svg
-      class={extra === undefined ? `lab-icon lab-icon-${name}` : `lab-icon lab-icon-${name} ${extra}`}
+      class={extra === undefined ? `icon icon-${name}` : `icon icon-${name} ${extra}`}
       width={size}
       height={size}
       viewBox="0 0 24 24"

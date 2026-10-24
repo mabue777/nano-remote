@@ -7,14 +7,17 @@
   padding: 1px 7px; /* one-off: tag geometry */
   border-radius: 6px; /* one-off: tag corner */
   background: var(--error);
-  color: #fff;
-  font-size: var(--font-xs);
+  color: var(--primary-text);
+  font: var(--type-caption);
   font-weight: 700;
   vertical-align: middle;
 }
 
+/* The session's title under the back header: the headline role, not the page's large title (the centred
+   header of a later step makes it the nav title). */
 .session-heading {
   margin-bottom: var(--space-3);
+  font: var(--type-headline);
 }
 
 /* The session view: a fixed-height column; only the conversation scrolls, the composer stays put. */
@@ -104,7 +107,7 @@
 .bg-tasks-title {
   margin: 0;
   padding: var(--space-4) var(--space-6) 0;
-  font-size: var(--font-md);
+  font: var(--type-footnote);
   font-weight: 600;
   color: var(--muted);
 }
@@ -188,6 +191,10 @@
   gap: var(--space-4);
 }
 
+.msg {
+  font: var(--type-body);
+}
+
 .msg p {
   margin: 0;
   white-space: pre-wrap;
@@ -197,15 +204,10 @@
 .msg.user {
   align-self: flex-end;
   max-width: 85%;
-  background: var(--accent);
-  color: var(--accent-text);
-  padding: var(--space-4) var(--space-6);
-  border-radius: 16px 16px 4px 16px; /* one-off: speech-bubble corners */
-}
-
-.msg.user .muted {
-  color: inherit;
-  opacity: 0.8;
+  background: var(--fill);
+  color: var(--text);
+  padding: var(--space-4) var(--space-7);
+  border-radius: var(--radius-bubble);
 }
 
 .turn.sending .msg.user,
@@ -269,7 +271,7 @@
   margin: var(--space-3) 0 0;
   max-height: 240px;
   overflow: auto;
-  font-size: var(--font-sm);
+  font: var(--type-code);
   white-space: pre-wrap;
 }
 
@@ -310,16 +312,27 @@
 }
 
 .paths .kind.add {
-  color: var(--ok);
+  color: var(--diff-add);
 }
 
 .paths .kind.delete {
-  color: var(--error);
+  color: var(--diff-del);
 }
 
 .reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: 0;
   text-align: left;
+}
+
+.reasoning-toggle .chevron {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.reasoning-toggle .chevron.open {
+  transform: rotate(90deg);
 }
 
 .reasoning-text {
@@ -353,7 +366,8 @@ button.jump-pill:active {
   transform: translateX(-50%);
   border-radius: var(--radius-pill);
   min-height: 36px;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg), var(--shadow-ring);
   z-index: 5;
 }
 
@@ -404,9 +418,11 @@ button.stop {
   width: var(--touch);
   height: var(--touch);
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-round);
-  font-size: var(--font-2xl);
-  line-height: 1;
+  color: var(--muted);
 }
 
 .attach-input {
@@ -541,7 +557,7 @@ button.stop {
   height: 96px;
   object-fit: cover;
   border-radius: var(--radius-md);
-  background: rgb(255 255 255 / 0.2);
+  background: var(--fill-strong);
 }
 
 .file-chip {
@@ -551,10 +567,10 @@ button.stop {
   max-width: 100%;
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-pill);
-  background: rgb(255 255 255 / 0.18);
+  background: var(--surface);
   color: inherit;
   text-decoration: none;
-  font-size: var(--font-md);
+  font: var(--type-footnote);
 }
 
 .file-chip .file-name {
@@ -581,12 +597,16 @@ button.stop {
 
 .open-detail {
   align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
   padding: var(--space-1) 0 0;
   color: var(--muted);
 }
 
 .turn-changes {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
   min-height: 32px;
   padding: var(--space-2) 0;
 }

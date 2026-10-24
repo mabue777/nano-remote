@@ -53,7 +53,7 @@
 }
 
 .provider-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-code);
   overflow-wrap: anywhere;
 }
 
@@ -95,11 +95,12 @@
 .preset-grid .preset {
   min-height: 40px;
   padding: 0 var(--space-4);
-  font-size: var(--font-md);
+  font: var(--type-footnote);
+  font-weight: 500;
 }
 
 .detection {
-  font-size: var(--font-md);
+  font: var(--type-footnote);
 }
 
 .test-result {
@@ -134,5 +135,5 @@
 .test-models {
   gap: var(--space-1);
   padding-left: 17px; /* one-off: lines the models up with the status text after the dot */
-  font-size: var(--font-lg);
+  font: var(--type-callout);
 }

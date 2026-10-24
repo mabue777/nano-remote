@@ -132,7 +132,7 @@ for (const cpu of [1, 4]) {
     await measure(page, cdp, 'page', cpu, async () => {
       await row.click();
       await page.waitForTimeout(600);
-      await page.getByRole('link', { name: '‹ Sessions' }).click();
+      await page.getByRole('link', { name: 'Sessions', exact: true }).click();
       await page.waitForTimeout(600);
       await row.click();
       await page.waitForTimeout(600);

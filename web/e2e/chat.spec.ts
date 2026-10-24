@@ -107,7 +107,7 @@ test('unpaired with a provider: Chats is home, a new chat streams a reply in und
   expect(body).toMatchObject({ model: 'fake-reasoner', stream: true, messages: [{ role: 'user', content: 'Say hi in three words.' }] });
 
   // Back on Chats: the row shows title, model, provider and time.
-  await page.getByRole('link', { name: '‹ Chats' }).click();
+  await page.getByRole('link', { name: 'Chats', exact: true }).click();
   const row = page.getByRole('list', { name: 'Chats' }).getByRole('link');
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('Say hi in three words.');
@@ -194,7 +194,7 @@ test('paired: Sessions stays the default, the switch opens Chats with the no-pro
   await tabs.getByRole('tab', { name: 'Chats' }).click();
   await expect(page).toHaveURL(/\/chats$/);
   await expect(page.getByText('Add a model provider to start chatting.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Settings › Providers' })).toHaveAttribute('href', '/settings/providers');
+  await expect(page.getByRole('link', { name: 'Settings Providers' })).toHaveAttribute('href', '/settings/providers');
   await expect(page.getByRole('button', { name: 'New chat' })).toBeDisabled();
   await page.reload();
   await expect(tabs.getByRole('tab', { name: 'Chats' })).toHaveAttribute('aria-selected', 'true');

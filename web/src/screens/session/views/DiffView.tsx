@@ -1,6 +1,7 @@
-// The Changes view of a turn (turn/diff): the list of changed files with kind badges and +/- counts, and
+// The Changes view of a turn (turn/diff): the list of changed files with grey kind words and +/- counts, and
 // one file's diff at a time. The diff keeps code unwrapped: old and new line numbers stay pinned at the
 // left while long lines scroll sideways. State lives in ChangesModel.
+import { Icon } from '../../../ui/Icon';
 import type { ChangedFile, ChangesModel } from './changes-model';
 import { NOT_A_REPOSITORY_TEXT, NOT_SUPPORTED_TEXT } from './changes-model';
 
@@ -47,9 +48,7 @@ export function ChangesView({ model, summary = true }: { model: ChangesModel; su
                         {f.path}
                       </code>
                       <Counts file={f} />
-                      <span class="muted" aria-hidden="true">
-                        ›
-                      </span>
+                      <Icon name="chevron-right" size={16} class="chevron" />
                     </button>
                   </li>
                 ))}
@@ -86,7 +85,8 @@ function FileDiff({ file, onBack }: { file: ChangedFile; onBack: () => void }) {
   return (
     <div class="diff-file-view" data-file-kind={file.kind}>
       <button type="button" class="link small diff-back" onClick={onBack}>
-        ‹ All files
+        <Icon name="back" size={18} />
+        All files
       </button>
       <div class="diff-file-head">
         <KindBadge file={file} />

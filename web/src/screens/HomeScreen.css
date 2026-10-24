@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: var(--font-md);
+  font: var(--type-footnote);
   color: var(--muted);
   text-align: right;
 }
@@ -206,14 +206,14 @@ a.session:active {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* The "Sessions | Chats" switch on Home. */
+/* The "Sessions | Chats" switch on Home: a grey track, the selected half a raised white pill. */
 .segmented {
   display: flex;
   padding: 3px; /* one-off: the segmented control's inner inset */
   margin-bottom: var(--space-7);
-  border: 1px solid var(--line);
-  border-radius: 12px; /* one-off: outer radius around the 10 px buttons */
-  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
 }
 
 .segmented button {
@@ -226,8 +226,9 @@ a.session:active {
 }
 
 .segmented button.selected {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-md), var(--shadow-ring);
 }
 
 .topbar-end {
@@ -242,7 +243,6 @@ a.session:active {
   justify-content: center;
   min-width: var(--touch);
   min-height: var(--touch);
-  font-size: var(--font-xl);
   color: var(--muted);
   text-decoration: none;
 }
@@ -276,7 +276,12 @@ a.session:active {
 
 .archived-toggle .chevron {
   margin-left: auto;
-  color: var(--muted);
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.archived-toggle .chevron.open {
+  transform: rotate(90deg);
 }
 
 .archived .session {
@@ -330,6 +335,7 @@ a.session:active {
   border-radius: var(--radius);
   background: var(--text);
   color: var(--bg);
+  box-shadow: var(--shadow-xl);
 }
 
 .undo-text {
@@ -349,11 +355,12 @@ a.session:active {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: var(--touch);
   padding: 0;
   border: 0;
-  font-size: var(--font-xl);
-  line-height: 1;
 }
 
 .session-actions-error {

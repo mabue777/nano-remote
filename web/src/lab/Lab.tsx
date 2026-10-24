@@ -3,7 +3,8 @@
 // is today's behaviour; Smooth is the proposal. Nothing here touches the host or the real screens; the
 // router loads this file only for /lab. Motion values live in lab.css as custom properties. A "Look" switch at
 // the top of the panel shows the same mini app in today's look (Now) or the redesign (New, NewLook.tsx and
-// new-look.css, scoped under data-look="new"); it combines freely with every technique switch.
+// new-look.css, scoped under data-look="new"); it combines freely with every technique switch. Since look
+// adoption step 1 the app's tokens are the New look's; now-look.css restores the earlier ones for Now.
 import type { RefObject } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
@@ -22,6 +23,7 @@ import { allAt, loadSettings, saveSettings, TECHNIQUES, type LabSettings, type M
 import { watchViewport } from './viewport';
 import './lab.css';
 import './new-look.css';
+import './now-look.css';
 
 type View = 'list' | 'session';
 type SheetName = 'changes' | 'new' | 'details' | 'add' | null;

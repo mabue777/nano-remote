@@ -77,7 +77,10 @@ with them so each file is rewritten once:
 
 1. **Look tokens (items 1, 2, 9, 14 and the icon component, 7).** S–M. Colour, type, shape and icons for every
    screen at once, then one light and dark pass on the iPhone. Do this first, so the motion parts are built on the
-   new look and are not restyled later.
+   new look and are not restyled later. **Done 2026-10-24:** the tokens live in `web/src/styles/tokens.css`, the
+   icons in `web/src/ui/Icon.tsx`; the lab's Now look keeps the earlier design through `web/src/lab/now-look.css`.
+   One value differs from the lab: `--text-tertiary` on light is #737373 (4.74:1 on white) instead of #8f8f8f
+   (3.23:1, below WCAG AA for small text).
 2. **Transcript rows with motion part 2 (item 4, techniques 4, 5 and 9).** M + M. The same render code in
    `SessionScreen.tsx`: flat rows, "previous messages", "Worked for", and Thinking land together with the paced
    streaming, auto-scroll and expand/collapse.

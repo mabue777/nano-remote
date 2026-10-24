@@ -64,7 +64,7 @@ test('effort: default preselected, sent, remembered per agent, hidden without le
     await page.screenshot({ path: `${SHOTS}/session-header-effort-${scheme}.png` });
   }
   await page.emulateMedia({ colorScheme: 'light' });
-  await page.getByRole('link', { name: '‹ Sessions' }).click();
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
 
   // Remembered for Codex on the next sheet.
   sheet = await openSheet(page);

@@ -86,7 +86,7 @@ test('the output view streams a running command as plain wrapped text, follows i
   await expect(sheet).toHaveCount(0);
 });
 
-test('the Changes view lists the files with kind badges; a tapped file shows its diff with line numbers and colors', async ({ page, request }) => {
+test('the Changes view lists the files with kind words; a tapped file shows its diff with line numbers and colors', async ({ page, request }) => {
   await openSession(page, request, 'ses_fake_3');
   await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
   await request.post('/test/review', { data: { sessionId: 'ses_fake_3', chunks: ['ok\n'] } });
@@ -132,12 +132,15 @@ test('the Changes view lists the files with kind badges; a tapped file shows its
     ['add', '', '2'],
     ['context', '3', '3'],
   ]);
-  const background = (kind: string) => body.locator(`[data-line="${kind}"] .code`).first().evaluate((el) => getComputedStyle(el).backgroundColor);
+  const background = (kind: string) => body.locator(`[data-line="${kind}"] .code`).first().evaluate((el) => {
+      const style = getComputedStyle(el);
+      return `${style.backgroundImage} ${style.backgroundColor}`; // the --diff-* tint is a layer over --surface
+    });
   const [added, removed, context] = [await background('add'), await background('remove'), await background('context')];
   expect(added).not.toBe(removed);
   expect(added).not.toBe(context);
   expect(removed).not.toBe(context);
-  await sheet.getByRole('button', { name: '‹ All files' }).click();
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
   await expect(body).toHaveCount(0);
   await expect(files).toHaveCount(4);
 });
@@ -168,7 +171,7 @@ test('a finished turn says "N files changed" and opens its Changes; long lines s
   await request.post('/test/turn-diff', { data: { sessionId: 'ses_fake_1', result: HOST_DIFF } });
   await openSession(page, request, 'ses_fake_1');
   const conversation = page.getByRole('region', { name: 'Conversation' });
-  const line = conversation.getByRole('button', { name: '6 files changed ›' });
+  const line = conversation.getByRole('button', { name: '6 files changed', exact: true });
   await expect(line).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/1-session-files-changed.png` });
   await line.click();
@@ -211,15 +214,15 @@ test('a finished turn says "N files changed" and opens its Changes; long lines s
   expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('td')?.className, { x: box.right - 4, y: box.top + 4 })).toBe('ln');
   await page.screenshot({ path: `${SHOTS}/4-file-diff-scrolled-light.png` });
 
-  await sheet.getByRole('button', { name: '‹ All files' }).click();
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
   await files.nth(5).click();
   await expect(sheet).toContainText("Only the first part of this file's changes is shown.");
-  await sheet.getByRole('button', { name: '‹ All files' }).click();
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
   await files.nth(4).click();
   await expect(sheet).toContainText('Binary file; no text diff.');
 
   await page.emulateMedia({ colorScheme: 'dark' });
-  await sheet.getByRole('button', { name: '‹ All files' }).click();
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
   await page.screenshot({ path: `${SHOTS}/5-changes-list-dark.png` });
   await files.nth(0).click();
   await expect(body).toBeVisible();

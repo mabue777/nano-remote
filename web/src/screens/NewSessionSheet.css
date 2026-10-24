@@ -28,9 +28,6 @@
 }
 
 .effort-choices > .choice.selected {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -71,9 +68,8 @@
 .folder {
   flex: 1;
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  border-radius: var(--radius-inner);
+  background: var(--fill);
 }
 
 .projects,

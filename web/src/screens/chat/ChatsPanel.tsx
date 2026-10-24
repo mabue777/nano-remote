@@ -2,6 +2,8 @@
 // its Chats tab) and by ChatsHome (no host paired). Rules live in ChatsListModel.
 import { useEffect, useMemo } from 'preact/hooks';
 
+import { Icon } from '../../ui/Icon';
+
 import { ChatsListModel, PROVIDER_SETTINGS_PATH, type ChatRow } from './chats-list-model';
 import { useModel } from '../use-model';
 import { usePress } from './hooks';
@@ -45,7 +47,7 @@ export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps
               onNavigate(PROVIDER_SETTINGS_PATH);
             }}
           >
-            Settings › Providers
+            <SettingsPath />
           </a>
         </p>
       )}
@@ -101,5 +103,14 @@ function ChatItem({ row, model, onOpen }: { row: ChatRow; model: ChatsListModel;
         </div>
       )}
     </li>
+  );
+}
+
+/** "Settings > Providers" in a link: a chevron between the two names (read as "Settings Providers"). */
+export function SettingsPath() {
+  return (
+    <>
+      Settings <Icon name="chevron-right" size={14} class="path-chevron" /> Providers
+    </>
   );
 }

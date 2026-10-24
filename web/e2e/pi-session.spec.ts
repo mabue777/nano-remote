@@ -67,7 +67,7 @@ test('pick Pi and a model, start, accept the approval; header and row show the m
   expect(await lastParams(request, 'approval/resolve')).toMatchObject({ decision: 'accept' });
   await page.screenshot({ path: test.info().outputPath('pi-session-390.png') });
 
-  await page.getByRole('link', { name: '‹ Sessions' }).click();
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
   const row = page.getByRole('list', { name: 'Sessions' }).getByRole('link', { name: /Pi phone session/ });
   await expect(row).toBeVisible();
   await expect(row.getByLabel('Model', { exact: true })).toHaveText('qwen/qwen3.5-coder · openrouter');

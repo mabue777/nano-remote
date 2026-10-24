@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
+import { Icon } from '../ui/Icon';
 import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
 import { Switch } from '../ui/Switch';
 import { usePress } from './chat/hooks';
@@ -272,9 +273,7 @@ function ArchivedSection({ model, actions, onOpen }: { model: HomeModel; actions
         <button type="button" class="archived-toggle" aria-expanded={open} aria-controls="archived-list" onClick={() => model.toggleArchived()}>
           <span>Archived</span>
           <span class="count muted">{model.archivedCount}</span>
-          <span class="chevron" aria-hidden="true">
-            {open ? '▾' : '▸'}
-          </span>
+          <Icon name="chevron-right" size={18} class={open ? 'chevron open' : 'chevron'} />
         </button>
       </h2>
       {open && (
@@ -428,7 +427,7 @@ export function SettingsGear({ onClick }: { onClick: () => void }) {
         onClick();
       }}
     >
-      ⚙︎
+      <Icon name="gear" size={22} />
     </a>
   );
 }

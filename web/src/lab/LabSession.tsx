@@ -12,7 +12,7 @@ import { chunksOf, FakeStream } from './fake-stream';
 import { ANSWER, APPROVAL, QUESTION, REPLY, TOOL_ROWS, USER_MESSAGE, type ToolRow } from './fixtures';
 import { workedFor, type Look } from './look';
 import { ChangesRow, NewApprovalCard, NewComposer, NewQuestionCard, NewSessionHeader, NewToolRow, PreviousToggle, WorkedFor, type ApprovalChoice } from './NewLook';
-import { Icon } from './icons';
+import { Icon } from '../ui/Icon';
 import { FrameLoop, FreshSegments, StreamPacer, type Segment } from './pacer';
 import type { LabSettings } from './settings';
 

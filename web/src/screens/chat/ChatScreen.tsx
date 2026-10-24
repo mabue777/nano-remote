@@ -5,6 +5,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import { BackHeader } from '../../ui/BackHeader';
+import { Icon } from '../../ui/Icon';
 import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet, SheetHeader } from '../../ui/Sheet';
 import { Switch } from '../../ui/Switch';
@@ -12,6 +13,7 @@ import { ChatModel, type MessageRow } from './chat-model';
 import { useModel } from '../use-model';
 import { usePress } from './hooks';
 import type { Block, Inline } from './markdown';
+import { SettingsPath } from './ChatsPanel';
 import type { ChatServices } from './services';
 
 /** Within this many px of the bottom counts as "at the bottom" (auto-scroll stays on). */
@@ -64,7 +66,8 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
     <main class="screen session-screen chat-screen">
       <BackHeader href="/chats" label={backLabel} onBack={onBack}>
         <button type="button" class="model-button small" onClick={() => model.openPicker()} aria-haspopup="dialog" aria-label={`Model: ${model.modelLabel}`} disabled={!model.found}>
-          <span class="model-name">{model.modelLabel}</span> ▾
+          <span class="model-name">{model.modelLabel}</span>
+          <Icon name="chevron-down" size={16} />
         </button>
       </BackHeader>
       <div class="session-head chat-head">
@@ -161,7 +164,8 @@ function Message({ row, model }: { row: MessageRow; model: ChatModel }) {
       {row.reasoning !== undefined && (
         <div class="item reasoning" data-item="reasoning">
           <button type="button" class="link reasoning-toggle" aria-expanded={row.reasoning.expanded} onClick={() => model.toggleReasoning(row.index)}>
-            {row.reasoning.expanded ? '▾' : '▸'} Thinking
+            <Icon name="chevron-right" size={16} class={row.reasoning.expanded ? 'chevron open' : 'chevron'} />
+            Thinking
           </button>
           {row.reasoning.expanded && <p class="muted small reasoning-text">{row.reasoning.text}</p>}
         </div>
@@ -204,7 +208,7 @@ function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() 
               onSettings?.();
             }}
           >
-            Add one in Settings › Providers
+            Add one in <SettingsPath />
           </a>
         </p>
       )}

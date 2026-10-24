@@ -2,7 +2,7 @@
    Mobile first: laid out for a 390 px wide phone, then capped at a readable column on larger screens. */
 :root {
   color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-size: 16px; /* the rem base */
   line-height: 1.4;
   /* No font inflation when the phone rotates to landscape. */
@@ -32,13 +32,17 @@ body {
   padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--space-8)) calc(var(--safe-bottom) + var(--space-12)) calc(var(--safe-left) + var(--space-8));
 }
 
+/* Type roles (tokens.css, docs/research/new-look-prototype.md item 9): the page title is the large title,
+   section headings the headline. */
 h1 {
-  font-size: var(--font-3xl);
+  font: var(--type-large-title);
+  letter-spacing: var(--tracking-title);
   margin: 0;
 }
 
 h2 {
-  font-size: 1.05rem; /* one-off: section headings, just above body text */
+  font: var(--type-headline);
+  letter-spacing: var(--tracking-title);
   margin: 0;
 }
 
@@ -47,12 +51,11 @@ h2 {
 }
 
 .small {
-  font-size: var(--font-md);
+  font: var(--type-footnote);
 }
 
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85em; /* relative to the surrounding text */
+  font: var(--type-code);
   overflow-wrap: anywhere;
 }
 
@@ -68,14 +71,16 @@ code {
   padding: var(--space-7) var(--space-8);
 }
 
+/* Buttons are grey pills; the main action of a screen (.primary) is ink: black on light, white on dark. */
 button {
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
   min-height: var(--touch); /* touch target */
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   padding: 0 var(--space-7);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid transparent;
+  background: var(--fill);
   color: var(--text);
 }
 
@@ -84,16 +89,17 @@ button:disabled {
   cursor: default;
 }
 
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-
 button.small {
   min-height: 36px;
-  font-size: var(--font-lg);
+  font: var(--type-callout);
+  font-weight: 500;
+}
+
+button.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+  font-weight: 600;
 }
 
 button.ghost {
@@ -141,10 +147,15 @@ textarea {
   font-size: 16px; /* below 16 px iOS zooms on focus */
   width: 100%;
   padding: var(--space-5) var(--space-6);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background: var(--bg);
+  border-radius: var(--radius-inner);
+  border: 1px solid transparent;
+  background: var(--fill);
   color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
 .form {
@@ -166,7 +177,7 @@ textarea {
 .field > span,
 .field > label,
 .field > legend {
-  font-size: var(--font-md);
+  font: var(--type-footnote);
   font-weight: 600;
   color: var(--muted);
   padding: 0;
@@ -201,7 +212,7 @@ textarea {
 button.danger {
   background: var(--error);
   border-color: var(--error);
-  color: #fff;
+  color: var(--primary-text); /* white on light, ink on the dark palette's light red */
   font-weight: 600;
 }
 

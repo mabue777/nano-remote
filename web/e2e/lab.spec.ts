@@ -131,7 +131,7 @@ for (const mode of ['Now', 'Smooth'] as const) {
     await expect(conversation).toContainText('depends on the old behaviour', { timeout: 15_000 });
 
     // Back to the list.
-    await page.getByRole('link', { name: '‹ Sessions' }).click();
+    await page.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(sessions).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Fix the failing parser test' })).toBeHidden();
   });
@@ -198,8 +198,9 @@ test('Smooth gestures: a sheet dragged down dismisses, a short drag springs back
 test('the lab renders in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/lab?speed=8');
+  await expect(page.locator('.lab')).toHaveAttribute('data-look', 'now'); // the lab's chunk and stylesheets are in
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(bg).toBe('rgb(18, 18, 17)'); // --bg dark, #121211: the app's own palette
+  expect(bg).toBe('rgb(18, 18, 17)'); // --bg dark, #121211: the earlier palette, kept for Now (now-look.css)
   await page.getByRole('list', { name: 'Sessions' }).getByRole('link', { name: /Fix the failing parser test/ }).click();
   await expect(page.getByRole('heading', { name: 'Fix the failing parser test' })).toBeVisible();
 });

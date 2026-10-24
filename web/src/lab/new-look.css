@@ -1,112 +1,12 @@
 /* The lab's New look (/lab, Look: New): the redesign from docs/research/visual-gap-openai-2026-10.md, items 1-9,
    13 and 14. Loaded with the lab's chunk only, and every rule is keyed on data-look="new" on .lab, so nothing
-   reaches the real screens or the lab's Now look. The custom properties below are named as the future tokens in
-   styles/tokens.css would be: the existing names (--bg, --surface, --text, --muted, --line, --accent) get the
-   neutral values, the new ones (--fill, --text-tertiary, --primary, ...) are added. Colours and sizes are the
-   measured iOS values; no OpenAI CSS or assets. Motion uses the shared tokens (--duration-*, --ease-*). */
-
-/* ---------- Tokens (item 1 palette, item 9 type roles, item 14 radii and shadows) ---------- */
-/* body:has(...) lets the page behind the lab (overscroll, below short screens) take the new page colour too;
-   .lab[data-look='new'] alone covers browsers without :has. */
-.lab[data-look='new'],
-body:has(.lab[data-look='new']) {
-  /* Colour, light. */
-  --bg: #ffffff; /* page */
-  --surface: #ffffff; /* boxes on the page; inner boxes in grey cards */
-  --surface-raised: #ffffff; /* sheets, the composer (with --shadow-lg) */
-  --fill: #f3f3f3; /* user bubble, cards, chips, grouped rows */
-  --fill-strong: #e8e8e8; /* pressed rows, the selected chip's ring */
-  --text: #0d0d0d;
-  --muted: #5d5d5d; /* secondary text */
-  --text-tertiary: #8f8f8f; /* placeholder, chevrons, meta */
-  --line: rgb(0 0 0 / 0.1); /* translucent hairline */
-  --line-subtle: rgb(0 0 0 / 0.05);
-  --primary: #0d0d0d; /* the main action of a screen: ink */
-  --primary-text: #ffffff;
-  --accent: #3a83f7; /* links and the running indicator only */
-  --accent-text: #ffffff;
-  --busy: var(--accent);
-  --ok: #00692a;
-  --error: #e02e2a;
-  --warn: #d25e28;
-  --warn-text: #d25e28; /* status pairs (item 10), only "Awaiting approval" uses one here */
-  --warn-bg: #fdf5f1;
-  --diff-add: #00a240;
-  --diff-del: #ba2623;
-  --diff-add-bg: rgb(0 162 64 / 0.15);
-  --diff-del-bg: rgb(186 38 35 / 0.15);
-
-  /* Type roles (item 9): size/line height; titles tighten by --tracking-title. Open system fonts only. */
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-code: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
-  --type-large-title: 700 34px / 41px var(--font-ui);
-  --type-nav-title: 600 17px / 22px var(--font-ui);
-  --type-headline: 600 17px / 22px var(--font-ui);
-  --type-body: 400 17px / 24px var(--font-ui);
-  --type-callout: 400 15px / 20px var(--font-ui);
-  --type-footnote: 400 13px / 18px var(--font-ui);
-  --type-caption: 400 12px / 16px var(--font-ui);
-  --type-code: 400 13px / 18px var(--font-code);
-  --tracking-title: -0.02em;
-
-  /* Radii (item 14) beside the existing --radius-*: the named shapes the redesign needs. */
-  --radius-inner: 12px; /* boxes inside cards, tool output */
-  --radius-bubble: 18px;
-  --radius-card: 20px; /* approval and question cards */
-  --radius-sheet: 20px; /* sheet top corners */
-  --radius-composer: 26px;
-
-  /* Shadows (item 14), the desktop Codex values. */
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.08);
-  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 8px 16px -4px rgb(0 0 0 / 0.12);
-  --shadow-card: 0 4px 16px rgb(0 0 0 / 0.05);
-  --shadow-ring: 0 0 0 0.5px rgb(0 0 0 / 0.1);
-
-  font-family: var(--font-ui);
-}
-
-@media (prefers-color-scheme: dark) {
-  .lab[data-look='new'],
-  body:has(.lab[data-look='new']) {
-    --bg: #0d0d0d;
-    --surface: #212121;
-    --surface-raised: #212121;
-    --fill: #303030;
-    --fill-strong: #414141;
-    --text: #ffffff;
-    --muted: #cdcdcd;
-    --text-tertiary: #afafaf;
-    --line: rgb(255 255 255 / 0.15);
-    --line-subtle: rgb(255 255 255 / 0.1);
-    --primary: #ffffff;
-    --primary-text: #0d0d0d;
-    --accent: #539af8;
-    --accent-text: #0d0d0d;
-    --ok: #04b84c;
-    --error: #f38884;
-    --warn: #f1a275;
-    --warn-text: #f1a275;
-    --warn-bg: #45240d;
-    --diff-add: #40c977;
-    --diff-del: #fa423e;
-    --diff-add-bg: rgb(64 201 119 / 0.23);
-    --diff-del-bg: rgb(250 66 62 / 0.23);
-    --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.5);
-    --shadow-ring: 0 0 0 0.5px rgb(255 255 255 / 0.15);
-  }
-}
+   reaches the real screens or the lab's Now look. Its tokens (palette, type roles, radii, shadows) moved to
+   styles/tokens.css in look adoption step 1. Colours and sizes are the measured iOS values; no OpenAI CSS or
+   assets. Motion uses the shared tokens (--duration-*, --ease-*). */
 
 /* ---------- Shared controls ---------- */
 .lab[data-look='new'] .screen {
   background: var(--bg);
-}
-
-.lab[data-look='new'] .lab-icon {
-  flex: none;
-  display: block;
 }
 
 .lab[data-look='new'] .lab-nl-sr {
@@ -888,7 +788,7 @@ body:has(.lab[data-look='new']) {
   text-align: left;
 }
 
-.lab[data-look='new'] .lab-nl-group-row > .lab-icon:first-child {
+.lab[data-look='new'] .lab-nl-group-row > .icon:first-child {
   color: var(--muted);
 }
 

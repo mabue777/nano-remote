@@ -74,16 +74,21 @@ test('the Look switch flips between Now and New, is remembered, and the motion b
   await expect(page.locator('.lab-nl-row')).toHaveCount(0);
 });
 
-test('the New look keeps the real screens untouched: its tokens exist only under the lab', async ({ page }) => {
+test('the real screens wear the New look tokens (look adoption step 1); the lab Now look keeps the earlier ones', async ({ page }) => {
   await page.goto('/lab');
   await configure(page, 'New', 'Now');
   const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const primary = (selector: string) => page.evaluate((s) => getComputedStyle(document.querySelector(s)!).getPropertyValue('--primary').trim(), selector);
   expect(await bg()).toBe('rgb(255, 255, 255)'); // --bg of the New look
-  expect(await page.evaluate(() => getComputedStyle(document.querySelector('.lab')!).getPropertyValue('--primary').trim())).toBe('#0d0d0d');
-  // On the real pages the lab's stylesheet is not even loaded.
+  expect(await primary('.lab')).toBe('#0d0d0d');
+  await configure(page, 'Now', 'Now');
+  expect(await bg()).toBe('rgb(246, 246, 244)'); // the earlier --bg, from now-look.css
+  expect(await primary('.lab')).toBe('#2f5bd3'); // the earlier blue main button
+  // The real pages load none of the lab's stylesheets and use the app's tokens.
   await page.goto('/pair');
-  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--primary').trim())).toBe('');
-  expect(await bg()).toBe('rgb(246, 246, 244)'); // today's --bg
+  expect(await primary('html')).toBe('#0d0d0d');
+  expect(await bg()).toBe('rgb(255, 255, 255)');
+  expect(await page.evaluate(() => [...document.styleSheets].some((sheet) => [...sheet.cssRules].some((rule) => rule.cssText.includes('data-look'))))).toBe(false);
 });
 
 for (const scheme of ['light', 'dark'] as const) {

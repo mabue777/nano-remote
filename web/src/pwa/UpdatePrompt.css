@@ -12,9 +12,9 @@
   justify-content: space-between;
   gap: var(--space-6);
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-7);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 0.15);
+  box-shadow: var(--shadow-xl), var(--shadow-ring);
   z-index: 20;
 }

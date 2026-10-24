@@ -1,4 +1,5 @@
-/* The item detail and Changes sheets (ItemDetailSheet.tsx, ChangesSheet.tsx): tabs, output view, diff view. */
+/* The item detail and Changes sheets (ItemDetailSheet.tsx, ChangesSheet.tsx): tabs, output view, diff view.
+   The Changes list names each file's kind in a grey word; the diff uses the Codex green and red (--diff-*). */
 
 .detail-sheet {
   display: flex;
@@ -13,8 +14,9 @@
 }
 
 .tab.selected {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
 }
 
 #detail-panel {
@@ -26,8 +28,7 @@
 .mono,
 .output-text,
 .output-command {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--font-sm);
+  font: var(--type-code);
 }
 
 .output-view {
@@ -56,9 +57,9 @@
   margin: 0;
   padding: var(--space-5);
   overflow-y: auto;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  background: var(--fill);
+  border: 0;
+  border-radius: var(--radius-inner);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -105,45 +106,33 @@
 
 .diff-path {
   flex: 1;
+  font: var(--type-callout);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .file-kind {
   flex: none;
-  padding: 1px 7px; /* one-off: tag geometry */
-  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font: var(--type-caption);
   font-weight: 600;
-  font-size: var(--font-xs);
-  border: 1px solid currentColor;
-}
-
-.file-kind.added {
-  color: var(--ok);
-}
-
-.file-kind.deleted {
-  color: var(--error);
-}
-
-.file-kind.modified {
-  color: var(--warn);
-}
-
-.file-kind.renamed {
-  color: var(--accent);
 }
 
 .diff-counts {
   flex: none;
+  font-weight: 600;
 }
 
 .diff-counts .plus {
-  color: var(--ok);
+  color: var(--diff-add);
 }
 
 .diff-counts .minus {
-  color: var(--error);
+  color: var(--diff-del);
+}
+
+.diff-file-row .chevron {
+  color: var(--text-tertiary);
 }
 
 .diff-file-view {
@@ -154,6 +143,9 @@
 
 .diff-back {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .diff-file-head {
@@ -166,7 +158,8 @@
   margin: 0;
 }
 
-/* Code never wraps: the table scrolls sideways while the line numbers stay pinned at the left. */
+/* Code never wraps: the table scrolls sideways while the line numbers stay pinned at the left. The line
+   tints are translucent, so they lie over the opaque --surface (the pinned numbers hide what scrolls under). */
 .diff-scroll {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -179,9 +172,7 @@
   border-collapse: separate;
   border-spacing: 0;
   min-width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78rem; /* one-off: code text, between --font-xs and --font-sm */
-  line-height: 1.45;
+  font: var(--type-code);
 }
 
 .diff-table .diff-line {
@@ -226,26 +217,26 @@
 }
 
 .diff-table .diff-line.add td {
-  background: color-mix(in srgb, var(--ok) 16%, var(--surface));
+  background: linear-gradient(var(--diff-add-bg), var(--diff-add-bg)), var(--surface);
 }
 
 .diff-table .diff-line.add .sign,
 .diff-table .diff-line.add .ln {
-  color: var(--ok);
+  color: var(--diff-add);
 }
 
 .diff-table .diff-line.remove td {
-  background: color-mix(in srgb, var(--error) 14%, var(--surface));
+  background: linear-gradient(var(--diff-del-bg), var(--diff-del-bg)), var(--surface);
 }
 
 .diff-table .diff-line.remove .sign,
 .diff-table .diff-line.remove .ln {
-  color: var(--error);
+  color: var(--diff-del);
 }
 
 .diff-table .diff-line.hunk td {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--muted);
+  background: var(--fill);
 }
 
 .diff-table .diff-line.meta td {

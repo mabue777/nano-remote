@@ -88,7 +88,7 @@ test('new session: agent, model, folder from browsing, title and first message',
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
   await expect(page.getByRole('heading', { name: 'Phone smoke session' })).toBeVisible();
-  await page.getByRole('link', { name: '‹ Sessions' }).click();
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Sessions' }).getByRole('link', { name: /Phone smoke session/ })).toBeVisible();
 });
 

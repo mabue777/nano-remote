@@ -33,3 +33,9 @@
   justify-content: flex-end;
   gap: var(--space-3);
 }
+
+/* The chevron in "Settings > Providers" (SettingsPath) sits in the line of text. */
+.path-chevron {
+  display: inline-block;
+  vertical-align: -2px; /* one-off: centres the 14 px chevron on the text */
+}
