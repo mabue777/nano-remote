@@ -14,6 +14,7 @@ describe('claude config', () => {
       defaultModel: 'opus',
       env: {},
       requestTimeoutMs: 120_000,
+      backgroundQuietMs: 600_000,
       killGraceMs: 2_000,
     });
   });

@@ -34,10 +34,13 @@
 // such a run the same way a death does, and the next turn resumes the session (--resume):
 // - the watchdog: from a user message handed to the engine until the turn's `result`, requestTimeoutMs of
 //   silence (no engine message of any kind) ends the run, unless the silence is expected: a tool is in
-//   progress (long tools are quiet for minutes), an approval or question waits on the user, or a
-//   background task the engine launched (an Agent/Task call, a run_in_background Bash) has not reported
-//   in. Claude Code holds a queued user message without any output while background subagents run, and
-//   killing it then would lose their work; a hang in that state is recovered by Stop (next point).
+//   progress (long tools are quiet for minutes) or an approval or question waits on the user. While a
+//   background task the engine launched (an Agent/Task call, a run_in_background Bash, an armed Monitor)
+//   has not reported in, the limit is backgroundQuietMs instead (default 10 minutes): such a task can keep
+//   the engine busy for a while, but a session with a long-lived Monitor must not lose hang detection.
+//   A live repro (2026-10-24, SDK 0.3.308, Claude Code 2.1.308) answered a message sent while background
+//   subagents ran and the main thread was idle in 1-2 s, and folded one sent during a turn in at the next
+//   tool boundary; the earlier belief that Claude Code holds such a message silently did not reproduce.
 //   Before the first system/init of a query, the init timeout owns the wait instead;
 // - interrupt(): Query.interrupt() gets requestTimeoutMs to answer; without an answer the turn ends
 //   interrupted and the run ends, so Stop always settles.
@@ -618,8 +621,9 @@ export class ClaudeAdapter implements Adapter {
   private onMessage(run: Run, message: Json): void {
     // Any output shows the engine alive; a `result` ends the wait for the user message.
     if (message.type === 'result') run.watching = false;
-    this.touch(run);
+    // After trackBackground: the silence limit depends on the background tasks this message leaves.
     this.trackBackground(run, message);
+    this.touch(run);
     this.trackTaken(message);
     switch (message.type) {
       case 'system':
@@ -663,30 +667,40 @@ export class ClaudeAdapter implements Adapter {
     clearTimeout(run.watchdog);
     run.watchdog = undefined;
     if (!run.watching || !run.initialized || run.gone !== undefined || run !== this.run || this.killed) return;
-    run.watchdog = setTimeout(() => this.bark(run), this.config.requestTimeoutMs);
+    const limit = this.silenceLimit(run);
+    run.watchdog = setTimeout(() => this.bark(run, limit), limit);
     run.watchdog.unref();
   }
 
-  /** requestTimeoutMs of silence: a hang, unless the engine has a reason to be quiet. */
-  private bark(run: Run): void {
+  /**
+   * How long the engine may stay silent from now: backgroundQuietMs while background tasks run and
+   * nothing in the foreground is pending (a foreground tool or a request re-arms at requestTimeoutMs).
+   */
+  private silenceLimit(run: Run): number {
+    if (this.quietReason() === undefined && run.background.size > 0) return this.config.backgroundQuietMs;
+    return this.config.requestTimeoutMs;
+  }
+
+  /** `limit` ms of silence: a hang, unless the engine has a reason to be quiet. */
+  private bark(run: Run, limit: number): void {
     run.watchdog = undefined;
     if (!run.watching || run.gone !== undefined || run !== this.run || this.killed) return;
-    const quiet = this.quietReason(run);
+    const quiet = this.quietReason();
     if (quiet !== undefined) {
-      this.log(`claude silent for ${seconds(this.config.requestTimeoutMs)} while ${quiet}; still waiting`);
+      this.log(`claude silent for ${seconds(limit)} while ${quiet}; still waiting`);
       this.touch(run);
       return;
     }
-    const reason = `${HUNG}: no output for ${seconds(this.config.requestTimeoutMs)} after a message`;
+    const tasks = run.background.size > 0 ? ` while ${run.background.size} background task(s) run` : '';
+    const reason = `${HUNG}: no output for ${seconds(limit)} after a message${tasks}`;
     this.log(`claude ${reason}`);
     this.lost(run, reason);
   }
 
-  /** Why silence is expected now, or undefined when it means a hang. */
-  private quietReason(run: Run): string | undefined {
+  /** Why silence in the foreground is expected now, or undefined when it means a hang. */
+  private quietReason(): string | undefined {
     if ((this.turn?.tools.size ?? 0) > 0) return 'a tool is in progress';
     if (this.requests.size > 0) return 'a request waits on the user';
-    if (run.background.size > 0) return `${run.background.size} background task(s) run`;
     return undefined;
   }
 

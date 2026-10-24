@@ -22,6 +22,11 @@ export interface ClaudeConfig {
    * how long it may stay silent after a user message before the adapter takes it for hung.
    */
   requestTimeoutMs: number;
+  /**
+   * How long the engine may stay silent after a user message while background tasks it launched run (and
+   * no tool is in progress or request waits on the user) before the adapter takes it for hung.
+   */
+  backgroundQuietMs: number;
   /** How long `kill()` waits after SIGTERM before it sends SIGKILL to the process group. */
   killGraceMs: number;
   /**
@@ -50,6 +55,7 @@ export function claudeConfig(overrides: Partial<ClaudeConfig> = {}, env: NodeJS.
     defaultModel: 'opus',
     env: {},
     requestTimeoutMs: 120_000,
+    backgroundQuietMs: 600_000,
     killGraceMs: 2_000,
     ...overrides,
   };

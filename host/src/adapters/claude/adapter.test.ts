@@ -13,7 +13,7 @@ import type { Settings } from '../../generated/common.js';
 import type { AdapterEvent } from '../../core/adapter.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
 import { attachmentFixture, PNG_BYTES } from '../shared/testing/attachments.js';
-import { bundledExecutable, ClaudeAdapter, executablePath, Inbox, loadQuery, type QueryFn } from './adapter.js';
+import { bundledExecutable, ClaudeAdapter, executablePath, HUNG, Inbox, loadQuery, type QueryFn } from './adapter.js';
 import { CANCEL_MESSAGE, DECLINE_MESSAGE } from './mapping.js';
 import { FakeClaude, until, type FakeClaudeOptions } from './testing/fake-query.js';
 
@@ -1120,26 +1120,40 @@ describe('ClaudeAdapter: a hung engine (fake timers)', () => {
     expect(exitedOf(events)).toBeUndefined();
   });
 
-  it('a background subagent holds a later message without output: not killed; after its task-notification, silence fires', async () => {
-    const { fake, adapter, events, cwd, logs } = watch({
-      hang: [1],
-      turns: [
-        [
-          assistant([{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { description: 'find downloads', prompt: 'find', run_in_background: true } }]),
-          toolResult('toolu_agent', { status: 'async_launched', agentId: 'agent_7', description: 'find downloads' }),
-          { text: 'Launched.' },
-        ],
-      ],
-    });
+  const BACKGROUND_QUIET = 600_000;
+  const backgroundAgent = () => [
+    assistant([{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { description: 'find downloads', prompt: 'find', run_in_background: true } }]),
+    toolResult('toolu_agent', { status: 'async_launched', agentId: 'agent_7', description: 'find downloads' }),
+    { text: 'Launched.' },
+  ];
+
+  it('a background task running: a message unanswered for backgroundQuietMs ends the run with the hang reason; shorter silence does not', async () => {
+    const { adapter, events, cwd, logs } = watch({ hang: [1], turns: [backgroundAgent()] });
     await adapter.start(cwd, {});
     await adapter.turnStart(text('look around'), 'c1');
     await settle(() => has(events, 'turn/completed'), 'the first turn');
 
     await adapter.turnStart(text('status?'), 'c2');
-    await vi.advanceTimersByTimeAsync(5 * TIMEOUT);
+    await vi.advanceTimersByTimeAsync(BACKGROUND_QUIET - 1);
     await quiet();
     expect(exitedOf(events)).toBeUndefined();
-    expect(logs).toContain('claude silent for 120 s while 1 background task(s) run; still waiting');
+    await vi.advanceTimersByTimeAsync(1);
+    const exited = await settle(() => exitedOf(events), 'agent/exited');
+    expect(exited.params.reason).toBe('Claude stopped responding (restarted): no output for 600 s after a message while 1 background task(s) run');
+    expect(exited.params.reason.startsWith(HUNG)).toBe(true);
+    expect(logs).toContain(`claude ${exited.params.reason}`);
+  });
+
+  it('backgroundQuietMs is configurable; a task-notification resets the silence and, the task settled, requestTimeoutMs applies again', async () => {
+    const { fake, adapter, events, cwd } = rig({ hang: [1], turns: [backgroundAgent()] }, { requestTimeoutMs: TIMEOUT, backgroundQuietMs: 3 * TIMEOUT });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('look around'), 'c1');
+    await settle(() => has(events, 'turn/completed'), 'the first turn');
+
+    await adapter.turnStart(text('status?'), 'c2');
+    await vi.advanceTimersByTimeAsync(3 * TIMEOUT - 1);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
 
     // Matched by the agent id alone (no tool_use_id on the notification).
     fake.last.send({ type: 'system', subtype: 'task_notification', task_id: 'agent_7', status: 'completed', summary: 'found nothing', output_file: '/tmp/a' });
@@ -1148,7 +1162,20 @@ describe('ClaudeAdapter: a hung engine (fake timers)', () => {
     await quiet();
     expect(exitedOf(events)).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
-    await settle(() => exitedOf(events), 'agent/exited');
+    expect((await settle(() => exitedOf(events), 'agent/exited')).params.reason).toBe('Claude stopped responding (restarted): no output for 120 s after a message');
+  });
+
+  it('a foreground tool in progress beside a background task keeps the engine alive past backgroundQuietMs', async () => {
+    const { fake, adapter, events, cwd, logs } = watch({
+      turns: [[...backgroundAgent().slice(0, 2), assistant([{ type: 'tool_use', id: 'toolu_long', name: 'Bash', input: { command: 'pnpm test' } }]), { hold: true }]],
+    });
+    await adapter.start(cwd, {});
+    await adapter.turnStart(text('go'), 'c1');
+    await settle(() => (fake.last.holdingNow ? true : undefined), 'the long tool');
+    await vi.advanceTimersByTimeAsync(2 * BACKGROUND_QUIET);
+    await quiet();
+    expect(exitedOf(events)).toBeUndefined();
+    expect(logs).toContain('claude silent for 120 s while a tool is in progress; still waiting');
   });
 
   it('a background Bash is tracked by its tool_use id; a foreground Agent and a failed launch are not', async () => {
