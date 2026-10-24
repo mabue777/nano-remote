@@ -205,6 +205,11 @@
         "approvalMode": {
           "type": "string",
           "description": "When the agent asks for approval. Values come from the agent's capabilities.approvalModes; never means approvals are bypassed. Additive within v1."
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How hard the agent thinks (reasoning effort, thinking level). Values come from the model's efforts in model/list. In Session.settings: the level in effect, after any downgrade the engine makes for the model; absent when none is. Additive within v1."
         }
       }
     },
@@ -1340,6 +1345,20 @@
         "provider": {
           "type": "string",
           "description": "The provider that serves the model, for agents that reach many (pi: llamacpp, openrouter, ...). Absent for agents with one provider. Additive within v1."
+        },
+        "efforts": {
+          "type": "array",
+          "description": "The settings.effort values this model honours, lowest first, as the engine names them. Absent when the model has no effort control: clients then offer no effort picker. Additive within v1.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "defaultEffort": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The level the model runs at when settings.effort is absent; one of efforts. Absent when the engine does not report it. Additive within v1."
         }
       }
     },

@@ -61,6 +61,21 @@ describe('PiAgent', () => {
     expect(fake.pids()).toHaveLength(2);
   });
 
+  it('models carry their thinking levels and pi\'s current level fitted to each', async () => {
+    const fake = fakePi({
+      thinkingLevel: 'medium',
+      models: [
+        { provider: 'kimi-coding', id: 'k3', reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } },
+        { provider: 'llamacpp', id: 'bonsai-27b' },
+      ],
+    });
+    const models = await new PiAgent({ config: fake.config }).models();
+    expect(models.map((m) => [m.id, m.efforts, m.defaultEffort])).toEqual([
+      ['kimi-coding/k3', ['low', 'high', 'max'], 'high'],
+      ['llamacpp/bonsai-27b', undefined, undefined],
+    ]);
+  });
+
   it('a pi that cannot list models rejects', async () => {
     const agent = new PiAgent({ config: fakePi({ exitAtBoot: 'broken install' }).config });
     await expect(agent.models()).rejects.toThrow(/broken install/);

@@ -2,7 +2,9 @@
 // rulings R2 to R4). One pi process per session, started in the session's folder.
 //
 //   session/start  -> pi --mode rpc --no-extensions -e <Nano's approval extension> --session-id <new id>,
-//                     then set_model {provider, modelId} when settings.model names `provider/id`
+//                     then set_model {provider, modelId} when settings.model names `provider/id`, then
+//                     set_thinking_level {level} when settings.effort is one of pi's levels (after the model:
+//                     pi fits the level to the model it runs), then get_state for the model and level in effect
 //   resume         -> the same command with the stored --session-id (pi reloads its session file)
 //   turn/start     -> prompt {message, images} (attachments: images read from their path, files as a path line)
 //   turn/steer     -> steer {message, images}
@@ -34,11 +36,13 @@ import {
   approvalAnswer,
   dialogAnswer,
   finishToolItem,
+  isThinkingLevel,
   modelKey,
   obj,
   parseApproval,
   resultText,
   splitModel,
+  thinkingLevels,
   toApproval,
   toPrompt,
   toQuestion,
@@ -86,6 +90,8 @@ export class PiAdapter implements Adapter {
   private cwd = '';
   private settings: Settings = {};
   private model: string | undefined;
+  /** The thinking level get_state reported, for a model that takes one. */
+  private effort: string | undefined;
   /** True from `turnStart` until the turn ended. */
   private running = false;
   private readonly dialogs = new Map<string, PendingDialog>();
@@ -128,9 +134,12 @@ export class PiAdapter implements Adapter {
     await this.connect();
   }
 
-  /** The model the session runs on, as `provider/id` (spec 5.1 Session.settings). */
+  /** The model the session runs on, as `provider/id`, and its thinking level (spec 5.1 Session.settings). */
   effectiveSettings(): Settings {
-    return this.model === undefined ? {} : { model: this.model };
+    const settings: Settings = {};
+    if (this.model !== undefined) settings.model = this.model;
+    if (this.effort !== undefined) settings.effort = this.effort;
+    return settings;
   }
 
   async turnStart(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
@@ -246,8 +255,12 @@ export class PiAdapter implements Adapter {
         if (!target) throw unavailable(`model ${wanted} is not of the form provider/id`);
         await engine.call('set_model', target);
       }
+      // pi turns a level it does not know into `off`, so only its own levels are sent.
+      if (isThinkingLevel(this.settings.effort)) await engine.call('set_thinking_level', { level: this.settings.effort });
       const state = obj(await engine.call('get_state'));
       this.model = modelKey(state.model) ?? this.model;
+      const level = state.thinkingLevel;
+      this.effort = thinkingLevels(state.model).length > 0 && typeof level === 'string' && level !== '' ? level : undefined;
       attached = true;
       return engine;
     } catch (error) {

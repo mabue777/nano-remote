@@ -39,12 +39,18 @@ export interface FakePiModel {
   provider: string;
   id: string;
   name?: string;
+  /** pi's `reasoning`: the model takes a thinking level. */
+  reasoning?: boolean;
+  /** pi's `thinkingLevelMap`: null marks a level unsupported; xhigh and max need an entry. */
+  thinkingLevelMap?: Record<string, string | null>;
 }
 
 export interface FakePiFixture {
   turns?: FakePiTurn[];
   /** `get_available_models`; the first is the default model. */
   models?: FakePiModel[];
+  /** The thinking level of a new session (pi's defaultThinkingLevel), fitted to the model; default off. */
+  thinkingLevel?: string;
   /** Command types the fake answers with `success: false` and this error. */
   fail?: Record<string, string>;
   /** Command types the fake never answers. */

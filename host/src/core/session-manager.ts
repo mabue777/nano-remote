@@ -700,15 +700,22 @@ export class SessionManager {
     return turnId === undefined ? undefined : this.turn(sessionId, turnId);
   }
 
-  /** Merges the adapter's effective settings into Session.settings; journals session/changed only on a change. */
+  /**
+   * Merges the adapter's effective settings into Session.settings; journals session/changed only on a
+   * change. The adapter's report is authoritative for `effort` (spec 5.1): a report without one means no
+   * level is in effect, so a requested level the model ignores is dropped.
+   */
   private reportSettings(sessionId: string, effective: Settings | undefined): void {
     const session = this.journal.session(sessionId);
     if (effective === undefined || session === undefined) return;
     const current = session.settings ?? {};
     const provider = this.providers.get(session.agentId);
     if (provider) effective = honoured(provider, effective);
-    const settings = { ...current, ...effective };
-    if (Object.entries(effective).every(([key, value]) => current[key] === value)) return;
+    const { effort: _requested, ...rest } = current;
+    const settings: Settings = { ...rest, ...effective };
+    const same = (a: Settings, b: Settings): boolean =>
+      Object.keys({ ...a, ...b }).every((key) => a[key] === b[key]);
+    if (same(settings, current)) return;
     this.changeSession(sessionId, { settings });
   }
 

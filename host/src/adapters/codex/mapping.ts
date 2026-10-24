@@ -201,12 +201,24 @@ export function toTurnError(raw: unknown): TurnError {
   return out;
 }
 
-/** Codex `model/list` entries -> protocol ModelInfo, hidden models left out. */
+/** Codex `model/list` entries -> protocol ModelInfo, hidden models left out; `supportedReasoningEfforts` and `defaultReasoningEffort` become `efforts` and `defaultEffort` (spec 4). */
 export function toModels(data: unknown): ModelInfo[] {
   return list(data)
     .map(obj)
     .filter((m) => m.hidden !== true && typeof m.id === 'string')
-    .map((m) => ({ id: str(m.id), displayName: str(m.displayName, str(m.id)), default: m.isDefault === true }));
+    .map((m) => {
+      const model: ModelInfo = { id: str(m.id), displayName: str(m.displayName, str(m.id)), default: m.isDefault === true };
+      const efforts = list(m.supportedReasoningEfforts)
+        .map((e) => str(obj(e).reasoningEffort))
+        .filter((e) => e !== '');
+      const [first, ...more] = efforts;
+      if (first !== undefined) {
+        model.efforts = [first, ...more];
+        const fallback = str(m.defaultReasoningEffort);
+        if (efforts.includes(fallback)) model.defaultEffort = fallback;
+      }
+      return model;
+    });
 }
 
 /** The model a session gets when its settings name none: the engine's default, else its first. */

@@ -156,6 +156,23 @@ describe('codex mapping', () => {
     expect(toModels(undefined)).toEqual([]);
   });
 
+  it('model/list reasoning efforts become efforts and defaultEffort (spec 4)', () => {
+    const levels = (...names: string[]) => names.map((reasoningEffort) => ({ reasoningEffort, description: '' }));
+    expect(
+      toModels([
+        { id: 'k', isDefault: true, supportedReasoningEfforts: levels('none', 'low', 'high', 'max'), defaultReasoningEffort: 'max' },
+        { id: 'g', supportedReasoningEfforts: levels('low', 'high'), defaultReasoningEffort: 'medium' },
+        { id: 'n', supportedReasoningEfforts: [], defaultReasoningEffort: 'medium' },
+        { id: 'j', supportedReasoningEfforts: [{ reasoningEffort: 3 }, { reasoningEffort: '' }] },
+      ]),
+    ).toEqual([
+      { id: 'k', displayName: 'k', default: true, efforts: ['none', 'low', 'high', 'max'], defaultEffort: 'max' },
+      { id: 'g', displayName: 'g', default: false, efforts: ['low', 'high'] },
+      { id: 'n', displayName: 'n', default: false },
+      { id: 'j', displayName: 'j', default: false },
+    ]);
+  });
+
   it('reads the engine version from the userAgent', () => {
     expect(versionFrom('codex_cli_rs/0.163.0-alpha.10.2 (Mac OS 26.0.0; arm64) vscode/1.0')).toBe('0.163.0-alpha.10.2');
     expect(versionFrom('something else')).toBeUndefined();

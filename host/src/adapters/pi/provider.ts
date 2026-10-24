@@ -108,7 +108,7 @@ export class PiAgent implements AgentProvider {
     try {
       engine.start(['--no-session'], homedir());
       const [available, state] = await Promise.all([engine.call('get_available_models'), engine.call('get_state')]);
-      const models = toModels(obj(available).models, obj(state).model);
+      const models = toModels(obj(available).models, obj(state).model, obj(state).thinkingLevel);
       this.cached = { models, at: this.now() };
       return models;
     } finally {

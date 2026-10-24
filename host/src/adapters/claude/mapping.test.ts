@@ -16,6 +16,7 @@ import {
   resultText,
   sessionModel,
   sessionPolicy,
+  fitEffort,
   staticModels,
   toModels,
   toRequest,
@@ -245,6 +246,33 @@ describe('turn end, usage and models', () => {
     ]);
     expect(toModels(raw, 'nothing-matches').map((m) => m.default)).toEqual([true, false]);
     expect(toModels(undefined, 'opus')).toEqual([]);
+  });
+
+  it('models: supportedEffortLevels become efforts in Claude order, without a defaultEffort', () => {
+    const raw = [
+      { value: 'opus', supportsEffort: true, supportedEffortLevels: ['max', 'low', 'medium', 'high', 'xhigh'] },
+      { value: 'claude-opus-4-6', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'max', 'turbo'] },
+      { value: 'claude-haiku-4-5-20251001' },
+      { value: 'off', supportsEffort: false, supportedEffortLevels: ['low'] },
+    ];
+    expect(toModels(raw, 'opus')).toEqual([
+      { id: 'opus', displayName: 'opus', default: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'claude-opus-4-6', displayName: 'claude-opus-4-6', default: false, efforts: ['low', 'medium', 'high', 'max'] },
+      { id: 'claude-haiku-4-5-20251001', displayName: 'claude-haiku-4-5-20251001', default: false },
+      { id: 'off', displayName: 'off', default: false },
+    ]);
+  });
+
+  it.each([
+    ['unset', undefined, ['low', 'high'], undefined],
+    ['not a Claude level', 'turbo', undefined, undefined],
+    ['a model the list did not name', 'xhigh', undefined, 'xhigh'],
+    ['a level the model has', 'medium', ['low', 'medium', 'high'], 'medium'],
+    ['the highest level below', 'xhigh', ['low', 'medium', 'high', 'max'], 'high'],
+    ['the lowest when none is below', 'low', ['high', 'max'], 'high'],
+    ['a model without effort', 'low', [], undefined],
+  ])('fitEffort: %s', (_name, requested, levels, expected) => {
+    expect(fitEffort(requested, levels)).toBe(expected);
   });
 
   it('the static list marks the configured default', () => {

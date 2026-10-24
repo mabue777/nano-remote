@@ -27,6 +27,8 @@ interface ThreadRecord {
   model: string;
   /** The thread's `approvalPolicy` (thread/start, updated by thread/resume); `never` runs commands unasked. */
   approvalPolicy?: string;
+  /** The thread's reasoning effort (config.model_reasoning_effort, updated by turn/start effort). */
+  effort?: string | null;
   turns: TurnRecord[];
 }
 interface State {
@@ -329,6 +331,12 @@ function thread(params: Json): ThreadRecord {
   return found;
 }
 
+/** `config.model_reasoning_effort` of thread/start or thread/resume, when given. */
+function configEffort(params: Json): string | undefined {
+  const effort = (params.config as Json | undefined)?.model_reasoning_effort;
+  return typeof effort === 'string' ? effort : undefined;
+}
+
 function handle(method: string, params: Json): Json {
   switch (method) {
     case 'initialize':
@@ -348,8 +356,8 @@ function handle(method: string, params: Json): Json {
         description: '',
         hidden: m.hidden ?? false,
         isDefault: m.isDefault ?? false,
-        defaultReasoningEffort: 'medium',
-        supportedReasoningEfforts: [],
+        defaultReasoningEffort: m.defaultEffort ?? 'medium',
+        supportedReasoningEfforts: (m.efforts ?? []).map((reasoningEffort) => ({ reasoningEffort, description: '' })),
       }));
       return start + size < models.length ? { data, nextCursor: String(start + size) } : { data, nextCursor: null };
     }
@@ -359,19 +367,23 @@ function handle(method: string, params: Json): Json {
         cwd: String(params.cwd ?? ''),
         model: String(params.model ?? ''),
         approvalPolicy: String(params.approvalPolicy ?? ''),
+        effort: configEffort(params) ?? fixture.threadEffort ?? null,
         turns: [],
       };
       state.threads[record.id] = record;
       saveState();
       queueMicrotask(() => notify('thread/started', { thread: { id: record.id } }));
-      return { thread: { id: record.id, turns: [] }, model: record.model, cwd: record.cwd };
+      return { thread: { id: record.id, turns: [] }, model: record.model, cwd: record.cwd, reasoningEffort: record.effort ?? null };
     }
     case 'thread/resume': {
       const record = thread(params);
       if (typeof params.approvalPolicy === 'string') record.approvalPolicy = params.approvalPolicy;
+      const effort = configEffort(params);
+      if (effort !== undefined) record.effort = effort;
+      saveState();
       const page = params.initialTurnsPage as { limit?: number } | undefined;
       const turns = record.turns.slice(-(page?.limit ?? record.turns.length));
-      return { thread: { id: record.id, turns }, model: String(params.model ?? record.model), cwd: record.cwd };
+      return { thread: { id: record.id, turns }, model: String(params.model ?? record.model), cwd: record.cwd, reasoningEffort: record.effort ?? null };
     }
     case 'turn/start':
       if (running) throw new Error('a turn is already running');

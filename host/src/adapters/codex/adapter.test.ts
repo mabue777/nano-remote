@@ -132,6 +132,46 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
     });
   });
 
+  describe('effort (settings.effort)', () => {
+    it('reaches thread/start as config and every turn/start as effort; the thread reply is reported', async () => {
+      const r = rig({ turns: [[{ reply: 'one' }], [{ reply: 'two' }]] });
+      await r.adapter.start(cwd(), { effort: 'low' });
+      expect(r.fake.sent('thread/start')[0]).toMatchObject({ config: { model_reasoning_effort: 'low' } });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'on-request', sandbox: 'workspace-write', effort: 'low' });
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      await r.next('turn/completed');
+      await r.adapter.turnStart(text('b'), 'cm-2');
+      await until(() => r.events.filter((e) => e.method === 'turn/completed').length === 2 || undefined, 'second turn');
+      expect(r.fake.sent('turn/start').map((p) => p.effort)).toEqual(['low', 'low']);
+    });
+
+    it('is left out when unset; the engine default the thread reports is in effect', async () => {
+      const r = rig({ threadEffort: 'high', turns: [[{ reply: 'ok' }]] });
+      const dir = cwd();
+      await r.adapter.start(dir, {});
+      expect(r.fake.sent('thread/start')[0]).toEqual({ cwd: dir, approvalPolicy: 'on-request', sandbox: 'workspace-write', model: 'gpt-fake-luna' });
+      expect(r.adapter.effectiveSettings()).toMatchObject({ effort: 'high' });
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      await r.next('turn/completed');
+      expect(r.fake.sent('turn/start')[0]).not.toHaveProperty('effort');
+      const none = rig();
+      await none.adapter.start(cwd(), {});
+      expect(none.adapter.effectiveSettings()).not.toHaveProperty('effort');
+    });
+
+    it('thread/resume carries it again and reports the resumed thread level', async () => {
+      const fake = fakeCodex();
+      const first = rig({}, { fake });
+      const dir = cwd();
+      const threadId = await first.adapter.start(dir, { effort: 'max' });
+      await first.adapter.kill();
+      const second = rig({}, { fake });
+      await second.adapter.resume(threadId, dir, { effort: 'max' });
+      expect(fake.sent('thread/resume')[0]).toMatchObject({ threadId, config: { model_reasoning_effort: 'max' } });
+      expect(second.adapter.effectiveSettings()).toMatchObject({ effort: 'max' });
+    });
+  });
+
   it('a turn: turn/start with clientUserMessageId, items and deltas, usage, completed; user items skipped', async () => {
     const r = rig({ turns: [[{ reasoning: 'thinking' }, { run: { command: 'ls', output: 'a\n' } }, { reply: 'Hello there', chunks: 2 }]] });
     await r.adapter.start(cwd(), {});

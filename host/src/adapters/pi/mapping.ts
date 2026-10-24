@@ -75,16 +75,57 @@ export function splitModel(key: string): { provider: string; modelId: string } |
 }
 
 /** pi `get_available_models` entries -> protocol ModelInfo with the provider name; `current` is the default. */
-export function toModels(models: unknown, current: unknown): ModelInfo[] {
+export function toModels(models: unknown, current: unknown, level?: unknown): ModelInfo[] {
   const currentKey = modelKey(current);
   const out: ModelInfo[] = [];
   for (const raw of list(models)) {
     const key = modelKey(raw);
     if (key === undefined) continue;
     const m = obj(raw);
-    out.push({ id: key, displayName: str(m.name) || str(m.id), default: key === currentKey, provider: str(m.provider) });
+    const model: ModelInfo = { id: key, displayName: str(m.name) || str(m.id), default: key === currentKey, provider: str(m.provider) };
+    const [first, ...more] = thinkingLevels(raw);
+    if (first !== undefined) {
+      model.efforts = [first, ...more];
+      if (typeof level === 'string') model.defaultEffort = fitThinkingLevel(raw, level);
+    }
+    out.push(model);
   }
   return out;
+}
+
+// ---- thinking levels (spec 4 ModelInfo.efforts, 5.1 settings.effort) -----------------------------
+
+/** pi's thinking levels, lowest first (pi-agent-core ThinkingLevel, pi 1.4.0). */
+export const PI_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+export const isThinkingLevel = (value: unknown): value is string => (PI_THINKING_LEVELS as readonly unknown[]).includes(value);
+
+/**
+ * The thinking levels pi offers for a model, as pi computes them (pi-ai getSupportedThinkingLevels): none
+ * for a model without `reasoning` (pi would offer only `off`, which is no choice); else every level whose
+ * `thinkingLevelMap` entry is not null, xhigh and max only when the map names them.
+ */
+export function thinkingLevels(model: unknown): string[] {
+  const m = obj(model);
+  if (m.reasoning !== true) return [];
+  const map = obj(m.thinkingLevelMap);
+  return PI_THINKING_LEVELS.filter((level) => {
+    const mapped = map[level];
+    if (mapped === null) return false;
+    return level === 'xhigh' || level === 'max' ? mapped !== undefined : true;
+  });
+}
+
+/** A level fitted to a model the way pi does on a model switch (pi-ai clampThinkingLevel): up first, then down. */
+export function fitThinkingLevel(model: unknown, level: string): string {
+  const available = thinkingLevels(model);
+  if (available.length === 0) return 'off';
+  if (available.includes(level)) return level;
+  const at = (PI_THINKING_LEVELS as readonly string[]).indexOf(level);
+  if (at === -1) return available[0]!;
+  const above = PI_THINKING_LEVELS.slice(at).find((l) => available.includes(l));
+  const below = [...PI_THINKING_LEVELS.slice(0, at)].reverse().find((l) => available.includes(l));
+  return above ?? below ?? available[0]!;
 }
 
 // ---- items ---------------------------------------------------------------------------------------

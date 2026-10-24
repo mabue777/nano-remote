@@ -43,7 +43,18 @@ export type FakeTurn = FakeStep[];
 export interface FakeFixture {
   turns?: FakeTurn[];
   /** `model/list` entries (Codex `Model` shape, reduced). */
-  models?: { id: string; displayName?: string; isDefault?: boolean; hidden?: boolean }[];
+  models?: {
+    id: string;
+    displayName?: string;
+    isDefault?: boolean;
+    hidden?: boolean;
+    /** `supportedReasoningEfforts` as plain levels (default none). */
+    efforts?: string[];
+    /** `defaultReasoningEffort` (default `medium`). */
+    defaultEffort?: string;
+  }[];
+  /** The reasoning effort of a thread that names none (the user's config.toml); default null. */
+  threadEffort?: string;
   /** Split `model/list` into pages of this size. */
   modelPageSize?: number;
   userAgent?: string;

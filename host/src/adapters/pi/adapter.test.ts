@@ -11,7 +11,7 @@ import { RpcError } from '../../errors.js';
 import { attachmentFixture, PNG_BYTES } from '../shared/testing/attachments.js';
 import { PiAdapter } from './adapter.js';
 import { fakePi, until, type FakePi } from './testing/fake-pi-config.js';
-import type { FakePiFixture } from './testing/fixture.js';
+import type { FakePiFixture, FakePiModel } from './testing/fixture.js';
 
 const adapters: PiAdapter[] = [];
 afterEach(async () => {
@@ -76,6 +76,54 @@ describe('PiAdapter start and resume', () => {
       { id: 'nano-1', type: 'set_model', provider: 'openrouter', modelId: '~deepseek/deepseek-v4-flash-latest' },
     ]);
     expect(r.adapter.effectiveSettings()).toEqual({ model: 'openrouter/~deepseek/deepseek-v4-flash-latest' });
+  });
+
+  describe('effort (settings.effort as the thinking level)', () => {
+    const models: FakePiModel[] = [
+      { provider: 'kimi-coding', id: 'k3', reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } },
+      { provider: 'google', id: 'gemini-3.1-pro-preview', reasoning: true, thinkingLevelMap: { off: null, minimal: null, xhigh: null, max: null } },
+      { provider: 'llamacpp', id: 'bonsai-27b', reasoning: false },
+    ];
+    const types = (r: Rig) => r.fake.log().flatMap((e) => (e.record ? [e.record.type] : []));
+
+    it('set_thinking_level after set_model reaches pi; get_state reports the level in effect', async () => {
+      const r = rig({ models });
+      await r.adapter.start(r.fake.cwd, { model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      expect(types(r)).toEqual(['set_model', 'set_thinking_level', 'get_state']);
+      expect(r.fake.sent('set_thinking_level')).toEqual([expect.objectContaining({ level: 'low' })]);
+      expect(r.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+    });
+
+    it('pi fits a level the model lacks, and that is what the session reports', async () => {
+      const r = rig({ models });
+      await r.adapter.start(r.fake.cwd, { effort: 'medium' });
+      expect(r.fake.sent('set_thinking_level')).toEqual([expect.objectContaining({ level: 'medium' })]);
+      expect(r.adapter.effectiveSettings()).toEqual({ model: 'kimi-coding/k3', effort: 'high' });
+    });
+
+    it('is not sent when unset or not a pi level; pi\'s own level is reported, none for a model without reasoning', async () => {
+      const r = rig({ models, thinkingLevel: 'max' });
+      await r.adapter.start(r.fake.cwd, {});
+      expect(types(r)).toEqual(['get_state']);
+      expect(r.adapter.effectiveSettings()).toEqual({ model: 'kimi-coding/k3', effort: 'max' });
+      const odd = rig({ models });
+      await odd.adapter.start(odd.fake.cwd, { effort: 'turbo' });
+      expect(odd.fake.sent('set_thinking_level')).toEqual([]);
+      const plain = rig({ models });
+      await plain.adapter.start(plain.fake.cwd, { model: 'llamacpp/bonsai-27b', effort: 'high' });
+      expect(plain.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
+    });
+
+    it('resume sets it again', async () => {
+      const fake = fakePi({ models });
+      const a = rig({}, fake);
+      const id = await a.adapter.start(fake.cwd, { effort: 'low' });
+      await a.adapter.kill();
+      const b = rig({}, fake);
+      await b.adapter.resume(id, fake.cwd, { effort: 'max' });
+      expect(fake.sent('set_thinking_level').at(-1)).toMatchObject({ level: 'max' });
+      expect(b.adapter.effectiveSettings()).toMatchObject({ effort: 'max' });
+    });
   });
 
   it('an unknown or malformed model fails the start with agent_unavailable and stops pi', async () => {

@@ -13,6 +13,8 @@ import type {
   TurnError,
   Usage,
 } from '../../generated/common.js';
+import type { EffortLevel } from '@anthropic-ai/claude-agent-sdk';
+
 import type { AdapterApprovalRequest, AdapterInputPart, AdapterInputRequest, AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
 import type { ClaudeConfig } from '../../config/claude.js';
 import { fileLine, inlineImage } from '../shared/attachments.js';
@@ -328,9 +330,38 @@ export function toModels(raw: unknown, defaultModel: string): ModelInfo[] {
   const models = list(raw)
     .map(obj)
     .filter((m) => typeof m.value === 'string' && m.value !== '' && m.value !== 'default')
-    .map((m) => ({ id: str(m.value), displayName: str(m.displayName, str(m.value)), default: m.value === defaultModel }));
+    .map((m) => {
+      const model: ModelInfo = { id: str(m.value), displayName: str(m.displayName, str(m.value)), default: m.value === defaultModel };
+      // supportedEffortLevels, in Claude's order; no defaultEffort: the engine does not report one (spec 4).
+      const levels = m.supportsEffort === false ? [] : CLAUDE_EFFORTS.filter((level) => list(m.supportedEffortLevels).includes(level));
+      const [first, ...more] = levels;
+      if (first !== undefined) model.efforts = [first, ...more];
+      return model;
+    });
   if (!models.some((m) => m.default) && models.length > 0) models[0]!.default = true;
   return models;
+}
+
+/** Claude Code's effort levels, lowest first (SDK EffortLevel). */
+export const CLAUDE_EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+const isEffort = (value: unknown): value is EffortLevel => CLAUDE_EFFORTS.includes(value as EffortLevel);
+
+/**
+ * The effort a session sends for a requested level (spec 5.1 settings.effort), fitted to the model's levels
+ * the way Claude Code downgrades silently: the level itself when the model has it, else the highest level
+ * below it, else the model's lowest. Undefined when nothing is requested, the request is not a Claude level,
+ * or the model has no effort control (`levels` empty). Unknown `levels` (a model the list did not name)
+ * let a Claude level through as it is.
+ */
+export function fitEffort(requested: unknown, levels: readonly string[] | undefined): EffortLevel | undefined {
+  if (!isEffort(requested)) return undefined;
+  if (levels === undefined) return requested;
+  const offered = CLAUDE_EFFORTS.filter((level) => levels.includes(level));
+  if (offered.includes(requested)) return requested;
+  const rank = CLAUDE_EFFORTS.indexOf(requested);
+  const below = offered.filter((level) => CLAUDE_EFFORTS.indexOf(level) < rank);
+  return below[below.length - 1] ?? offered[0];
 }
 
 /** Used when the SDK cannot list models. */

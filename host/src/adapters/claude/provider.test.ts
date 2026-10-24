@@ -74,6 +74,29 @@ describe('ClaudeAgent', () => {
     expect(fake.queries).toHaveLength(1);
   });
 
+  it('lists each model\'s effort levels, and its adapters fit a session\'s effort to them', async () => {
+    const fake = new FakeClaude({
+      models: [
+        { value: 'opus', displayName: 'Opus 5.5', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        { value: 'claude-opus-4-6', displayName: 'Opus 4.6', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
+      ],
+    });
+    const agent = new ClaudeAgent({ config: claudeConfig({ configDir: configDir(), killGraceMs: 200 }, {}), query: fake.query });
+    expect((await agent.models()).map((m) => m.efforts)).toEqual([
+      ['low', 'medium', 'high', 'xhigh', 'max'],
+      ['low', 'medium', 'high', 'max'],
+    ]);
+    const adapter = agent.createAdapter();
+    await adapter.start(configDir(), { model: 'claude-opus-4-6', effort: 'xhigh' });
+    expect(fake.last.options.effort).toBe('high');
+    expect(adapter.effectiveSettings()).toMatchObject({ effort: 'high' });
+    await adapter.kill();
+    const unknown = agent.createAdapter();
+    await unknown.start(configDir(), { model: 'claude-new-9', effort: 'xhigh' });
+    expect(fake.last.options.effort).toBe('xhigh');
+    await unknown.kill();
+  });
+
   it('falls back to the static list, uncached, when the engine cannot list models', async () => {
     const logs: string[] = [];
     const fake = new FakeClaude({ models: new Error('not logged in') });

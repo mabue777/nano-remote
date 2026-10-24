@@ -595,13 +595,15 @@ export class FakeHost {
         if (params.agentId !== 'codex' && params.agentId !== 'claude') {
           throw new HostError({ code: 'agent_unavailable', message: `${params.agentId} is not available`, data: { agentId: params.agentId } });
         }
+        // Effort levels per model (spec 4): Codex's default model has levels and a default, its mini none;
+        // Claude lists levels without a default.
         const models =
           params.agentId === 'codex'
             ? [
-                { id: 'gpt-5.5-codex', displayName: 'GPT-5.5 Codex', default: true },
+                { id: 'gpt-5.5-codex', displayName: 'GPT-5.5 Codex', default: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
                 { id: 'gpt-5.5-mini', displayName: 'GPT-5.5 mini', default: false },
               ]
-            : [{ id: 'claude-opus', displayName: 'Claude Opus', default: true }];
+            : [{ id: 'claude-opus', displayName: 'Claude Opus', default: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }];
         return { result: { models } };
       }
       case 'project/list':

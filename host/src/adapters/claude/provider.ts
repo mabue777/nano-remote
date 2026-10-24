@@ -6,7 +6,9 @@
 // user message (about 4 s, no tokens spent), so no user message is needed. Only when the engine cannot
 // answer at all (not installed, not signed in, timed out) does the provider fall back to a static list
 // (opus, sonnet, haiku; not cached, so the next call asks again). The SDK's `default` row is left out:
-// sessions get the configured default model (mapping.ts toModels).
+// sessions get the configured default model (mapping.ts toModels). Each model carries its
+// supportedEffortLevels as `efforts` (no `defaultEffort`: the engine reports none); adapters fit a
+// session's effort to them.
 //
 // Version: the SDK package version until a session's system/init reports the Claude Code version.
 import { existsSync, readFileSync } from 'node:fs';
@@ -81,6 +83,10 @@ export class ClaudeAgent implements AgentProvider {
       config: this.config,
       ...(this.options.query ? { query: this.options.query } : {}),
       onVersion: (version) => this.learnVersion(version),
+      efforts: (model) => {
+        const listed = this.cached?.find((m) => m.id === model);
+        return listed === undefined ? undefined : (listed.efforts ?? []);
+      },
       ...(this.options.log ? { log: this.options.log } : {}),
     });
   }

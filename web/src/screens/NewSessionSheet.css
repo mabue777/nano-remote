@@ -12,6 +12,32 @@
   margin: 0;
 }
 
+/* The effort picker: one segment per level, as many per line as fit (pi offers up to seven). */
+.effort-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: var(--space-2);
+}
+
+.effort-choices > .choice {
+  min-width: 0;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effort-choices > .choice.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.effort-field > .effort-hint {
+  margin: var(--space-3) 0 0;
+}
+
 /* The bypass row on the new-session sheet: label on the left, the 52 x 32 switch at the right edge. */
 .field.bypass-row {
   flex-direction: row;

@@ -21,6 +21,7 @@ interface SessionRecord {
   id: string;
   model: FakePiModel;
   messages: Json[];
+  thinkingLevel?: string;
 }
 interface State {
   sessions: Record<string, SessionRecord>;
@@ -35,6 +36,26 @@ const models: FakePiModel[] = fixture.models ?? [
   { provider: 'llamacpp', id: 'bonsai-27b', name: 'Bonsai 27B' },
   { provider: 'openrouter', id: '~deepseek/deepseek-v4-flash-latest', name: 'DeepSeek V4 Flash' },
 ];
+// pi's own level rules (pi-ai getSupportedThinkingLevels and clampThinkingLevel, pi 1.4.0).
+const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+function supported(model: FakePiModel): string[] {
+  if (!model.reasoning) return ['off'];
+  return LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    return level === 'xhigh' || level === 'max' ? mapped !== undefined : true;
+  });
+}
+function clamp(model: FakePiModel, level: string): string {
+  const available = supported(model);
+  if (available.includes(level)) return level;
+  const at = LEVELS.indexOf(level);
+  if (at === -1) return available[0] ?? 'off';
+  for (let i = at; i < LEVELS.length; i++) if (available.includes(LEVELS[i]!)) return LEVELS[i]!;
+  for (let i = at - 1; i >= 0; i--) if (available.includes(LEVELS[i]!)) return LEVELS[i]!;
+  return available[0] ?? 'off';
+}
+
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
   const i = argv.indexOf(name);
@@ -303,7 +324,7 @@ async function handle(record: Json): Promise<void> {
     case 'get_state':
       return respond(id, type, {
         model: { ...session.model, name: session.model.name ?? session.model.id },
-        thinkingLevel: 'off',
+        thinkingLevel: clamp(session.model, session.thinkingLevel ?? fixture.thinkingLevel ?? 'off'),
         isStreaming: running !== undefined,
         sessionId: session.id,
         messageCount: session.messages.length,
@@ -319,9 +340,14 @@ async function handle(record: Json): Promise<void> {
         return;
       }
       session.model = model;
+      session.thinkingLevel = clamp(model, session.thinkingLevel ?? fixture.thinkingLevel ?? 'off');
       saveState();
       return respond(id, type, model);
     }
+    case 'set_thinking_level':
+      session.thinkingLevel = clamp(session.model, String(record.level));
+      saveState();
+      return respond(id, type);
     case 'get_session_stats':
       return respond(
         id,

@@ -7,6 +7,10 @@
 // agent when an older host sends no capabilities.
 // Agents that reach many providers (pi) list hundreds of models, each with a `provider` (spec 4): the
 // picker groups them by provider and offers a search field once the list is long.
+// Effort: the chosen model's `efforts` (spec 4 model/list) are offered under the model, none when it lists
+// none. The level preselected is this agent's last choice when the model offers it, else the model's
+// `defaultEffort`; a model without `defaultEffort` (Claude) also offers "Auto", which sends no effort and
+// leaves the level to the agent. The chosen level goes in settings.effort.
 import type {
   Agent,
   DirEntry,
@@ -25,6 +29,28 @@ import { errorText, Model } from './model';
 
 /** localStorage key of the agent's last "Bypass approvals" choice. */
 export const bypassKey = (agentId: string): string => `nano-remote/bypass/${agentId}`;
+
+/** localStorage key of the agent's last effort choice ("" for Auto). */
+export const effortKey = (agentId: string): string => `nano-remote/effort/${agentId}`;
+
+/** An effort level as a short label: "xhigh" reads "XHigh", "medium" "Medium". */
+export function effortLabel(level: string): string {
+  if (level === 'xhigh') return 'XHigh';
+  return level === '' ? level : `${level[0]!.toUpperCase()}${level.slice(1)}`;
+}
+
+/**
+ * The level preselected for a model: the remembered one when the model offers it ("" for Auto when the
+ * model has no default), else the model's default; undefined (Auto) when it has neither, or no efforts.
+ */
+export function pickEffort(model: ModelInfo | undefined, remembered: string | null | undefined): string | undefined {
+  const efforts: readonly string[] = model?.efforts ?? [];
+  if (efforts.length === 0) return undefined;
+  if (remembered !== null && remembered !== undefined && efforts.includes(remembered)) return remembered;
+  const fallback = model?.defaultEffort;
+  if (remembered === '' && fallback === undefined) return undefined;
+  return fallback !== undefined && efforts.includes(fallback) ? fallback : undefined;
+}
 
 export interface NewSessionClient {
   request<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>): Promise<T>;
@@ -105,12 +131,14 @@ export function startParams(form: {
   message: string;
   bypass?: boolean;
   pinModel?: boolean;
+  effort?: string;
 }): SessionStartParams {
   const params: SessionStartParams = { agentId: form.agentId, cwd: form.cwd };
   const title = form.title.trim();
   if (title !== '') params.title = title;
   if (form.model !== undefined && (form.model !== form.defaultModel || form.pinModel === true)) params.settings = { model: form.model };
   if (form.bypass === true) params.settings = { ...params.settings, approvalMode: 'never' };
+  if (form.effort !== undefined && form.effort !== '') params.settings = { ...params.settings, effort: form.effort };
   const message = form.message.trim();
   if (message !== '') params.input = [{ type: 'text', text: message }];
   return params;
@@ -132,6 +160,8 @@ export class NewSessionModel extends Model {
   modelsLoading = false;
   /** The model search text (shown from SEARCH_FROM models on). */
   modelFilter = '';
+  /** The chosen effort level; undefined is Auto (the agent decides). */
+  effort: string | undefined;
   projects: ProjectEntry[] = [];
   cwd: string | undefined;
   browser: Browser | undefined;
@@ -169,6 +199,16 @@ export class NewSessionModel extends Model {
   /** True when the list is long enough to need the search field. */
   get modelSearch(): boolean {
     return this.models.length >= SEARCH_FROM;
+  }
+
+  /** The levels the chosen model offers; empty: no effort picker. */
+  get efforts(): readonly string[] {
+    return this.model?.efforts ?? [];
+  }
+
+  /** "Auto" is offered: the model has levels but names no default (the agent picks it). */
+  get effortAuto(): boolean {
+    return this.efforts.length > 0 && this.model?.defaultEffort === undefined;
   }
 
   /** The "Bypass approvals" switch is shown: the chosen agent honours approvalMode "never". */
@@ -211,6 +251,7 @@ export class NewSessionModel extends Model {
     this.bypass = this.readBypass(agentId);
     this.models = [];
     this.modelId = undefined;
+    this.effort = undefined;
     this.modelFilter = '';
     this.modelsLoading = true;
     const request = ++this.modelRequest;
@@ -220,6 +261,7 @@ export class NewSessionModel extends Model {
       if (request !== this.modelRequest) return;
       this.models = result.models;
       this.modelId = (result.models.find((m) => m.default) ?? result.models[0])?.id;
+      this.effort = pickEffort(this.model, this.readEffort(agentId));
     } catch {
       // the agent cannot list models (not_supported): no picker, the agent's default is used
       if (request !== this.modelRequest) return;
@@ -231,7 +273,30 @@ export class NewSessionModel extends Model {
   selectModel(modelId: string): void {
     if (!this.models.some((m) => m.id === modelId)) return;
     this.modelId = modelId;
+    this.effort = pickEffort(this.model, this.agentId === undefined ? undefined : this.readEffort(this.agentId));
     this.changed();
+  }
+
+  /** Chooses a level the model offers, or Auto (undefined, only when offered); remembered for the agent. */
+  selectEffort(level: string | undefined): void {
+    if (level === undefined ? !this.effortAuto : !this.efforts.includes(level)) return;
+    this.effort = level;
+    if (this.agentId !== undefined) {
+      try {
+        this.storage?.setItem(effortKey(this.agentId), level ?? '');
+      } catch {
+        // storage full or disabled: the choice still holds for this sheet
+      }
+    }
+    this.changed();
+  }
+
+  private readEffort(agentId: string): string | null {
+    try {
+      return this.storage?.getItem(effortKey(agentId)) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   setModelFilter(filter: string): void {
@@ -320,6 +385,7 @@ export class NewSessionModel extends Model {
           message: this.message,
           bypass: this.bypass && this.bypassOffered,
           pinModel: typeof this.model?.provider === 'string',
+          effort: this.efforts.length > 0 ? this.effort : undefined,
         }),
       );
       return result.session.sessionId;

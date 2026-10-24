@@ -29,7 +29,7 @@ import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } fr
 import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, type AgentsSource } from '../capabilities';
 import { backgroundTasksText, folderOf, statusOf, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
-import { modelLabel } from '../new-session-model';
+import { effortLabel, modelLabel } from '../new-session-model';
 import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
 import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
@@ -503,6 +503,12 @@ export class SessionModel extends Model {
   get model(): string | undefined {
     const id = this.view?.session?.settings?.model;
     return typeof id === 'string' && id !== '' ? modelLabel(id) : undefined;
+  }
+
+  /** The effort level in effect (settings.effort, spec 5.1) as a label, once opened; undefined when none is. */
+  get effort(): string | undefined {
+    const level = this.view?.session?.settings?.effort;
+    return typeof level === 'string' && level !== '' ? effortLabel(level) : undefined;
   }
 
   /** The session's agent as the host lists it; undefined until known (or on an older host's list). */

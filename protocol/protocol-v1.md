@@ -213,11 +213,30 @@ and at least one of the two is true.
 `Session.backgroundTasks` and marks messages that wait behind them `queued` (section 5.1). Claude Code
 declares it; Codex and Pi declare false. Absent means false.
 
-### `model/list {agentId}` → `{models:[{id, displayName, default, provider?}]}`.
+### `model/list {agentId}` → `{models:[{id, displayName, default, provider?, efforts?, defaultEffort?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
 lists every model it has credentials for, with ids of the form `provider/model` (pi's own `--model` form,
 for example `llamacpp/bonsai-27b`) and `provider` set (`llamacpp`). `session/start` with that id in
 `settings.model` starts the session on it. Agents with one provider leave `provider` out.
+
+`efforts` and `defaultEffort` (additive within v1) say how hard the model can be told to think (reasoning
+effort, thinking level): `efforts` lists the `settings.effort` values it honours, lowest first, in the
+engine's own names; `defaultEffort` is the level it runs at when `session/start` names none. They sit on the
+model, not on `Agent.capabilities`, because every engine reports them per model and they differ between
+models of one agent (Codex `model/list` `supportedReasoningEfforts` and `defaultReasoningEffort`; Claude
+`supportedModels()` `supportedEffortLevels`, where an older model lacks `xhigh` and some have none; pi's
+per-model thinking levels). A model without effort control has no `efforts`, and clients then show no
+effort picker. `defaultEffort` is absent when the engine does not report a default: Claude Code does not
+(its defaults live in its documentation), and clients then preselect no level and leave the choice to the
+agent. Values per agent:
+- Codex: the model's `supportedReasoningEfforts` (for example `none`, `low`, `high`, `max`) and its
+  `defaultReasoningEffort`.
+- Claude Code: `low` | `medium` | `high` | `xhigh` | `max`, as far as the model supports them; no
+  `defaultEffort`.
+- pi: `off` | `minimal` | `low` | `medium` | `high` | `xhigh` | `max`, the levels pi offers for the model
+  (computed as pi does from the model's `reasoning` and `thinkingLevelMap`); a model without reasoning has
+  no `efforts`. `defaultEffort` is pi's current level fitted to the model the way pi fits it on a model
+  switch.
 
 ### `fs/readDirectory {path}` → `{entries:[{name, kind:"dir"|"file", path}]}`; `project/list` →
 `{projects:[{path, name, lastUsedAt, sessions}]}` (recent working folders, for the folder picker; capture P3).
@@ -251,7 +270,7 @@ session lists any (the engines are gone), and archiving or deleting a session en
 `cancelled`. Stopping a turn (`turn/interrupt`) cancels them too: Claude Code ends its background
 subagents on interrupt, and they are then listed `cancelled`. Clients ask before Stop while any runs.
 
-**Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model` and `approvalMode`).
+**Session** = SessionSummary plus `settings` (`{model, approvalMode, sandbox, ...}` as the adapter reports them, opaque to the client except `model`, `approvalMode` and `effort`).
 `approvalMode` (additive within v1) may be set in `session/start` settings and is reported back as in effect.
 Its values come from the agent's `capabilities.approvalModes` (section 4); the host stores and reports an
 `approvalMode` only when the agent honours that value, so a session never claims a mode its agent ignores.
@@ -264,6 +283,22 @@ access to what the Mac user can reach) and is reported back as `never`, so clien
 `default` mode, reported as `default`.
 Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through Nano's approval extension
 (section 11), and a Pi session reports no `approvalMode`.
+
+`effort` (additive within v1) may be set in `session/start` settings to one of the model's `efforts`
+(section 4 `model/list`) and is reported back as in effect: the level the engine runs at after any
+downgrade it makes for the model, or absent when none is (a model without effort control). The adapter's
+report is authoritative for this key, so a session never claims a level its model ignores. Changing it in an
+open session is out of v1.
+- Codex: sent as the thread's `model_reasoning_effort` config on `thread/start` and `thread/resume` and as
+  `effort` on every `turn/start`; reported as the `reasoningEffort` the thread answers with (also when
+  `session/start` named none: the engine's configured default). Codex does not downgrade a level its model
+  lacks.
+- Claude Code: sent as the SDK's `effort` option, after the host fits it to the model's
+  `supportedEffortLevels` the way Claude Code does (the highest supported level not above the requested one,
+  else the lowest); left out for a model without effort control. Reported only when sent: the engine does
+  not report its default level.
+- pi: `set_thinking_level` after the model is set, then reported as the `thinkingLevel` of `get_state` (pi
+  fits the level to the model itself). A value pi does not know is not sent.
 
 **Turn**
 ```json
@@ -591,7 +626,7 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 
 | Protocol | Codex (app-server over stdio, verified by capture and spike) | Claude Code (Agent SDK, verified by the adapter's live test) | Kimi (ACP, post-v1, fake-model spike only) | Pi (`pi --mode rpc`, JSONL over stdio, Phase 5b) |
 |---|---|---|---|---|
-| `session/start` | `thread/start` | `query()` with a new session | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id` |
+| `session/start` | `thread/start` (`settings.effort` as `config.model_reasoning_effort`) | `query()` with a new session (`settings.effort` as `options.effort`) | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id`, then `set_thinking_level {level}` when `settings.effort` is set |
 | `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal | the same command with the stored `--session-id` (pi reloads its session file; `get_messages` returns the history) + host Journal. `--session <id>` is not used: it exits with "No session found" for a session whose first prompt never ran |
 | `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn | `prompt {message, images}`; no turn id, the host assigns one; `agent_settled` ends the turn |
 | `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely | `steer {message, images}`: queued, delivered before the next model call, then reported by pi as a user message (the host journals its own) |

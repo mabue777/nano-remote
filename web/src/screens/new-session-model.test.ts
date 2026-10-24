@@ -3,7 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { exampleMessage } from '../../test/fixtures';
 import { FakeTransport, rpcError, settle } from '../../test/replica-doubles';
 import type { SessionStartParams } from '../generated/methods';
-import { bypassKey, foldersOf, groupModels, modelLabel, NewSessionModel, parentOf, SEARCH_FROM, startParams } from './new-session-model';
+import {
+  bypassKey,
+  effortKey,
+  effortLabel,
+  foldersOf,
+  groupModels,
+  modelLabel,
+  NewSessionModel,
+  parentOf,
+  pickEffort,
+  SEARCH_FROM,
+  startParams,
+} from './new-session-model';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -415,5 +427,115 @@ describe('Pi in the new session sheet', () => {
       settings: { model: 'openrouter/qwen/qwen3.5-coder' },
       input: [{ type: 'text', text: 'Fix the test' }],
     });
+  });
+});
+
+describe('Effort in the new session sheet', () => {
+  const EFFORT_MODELS = [
+    { id: 'gpt-6-sol', displayName: 'GPT-6 Sol', default: true, efforts: ['low', 'medium', 'high', 'xhigh'] as [string, ...string[]], defaultEffort: 'medium' },
+    { id: 'gpt-6-mini', displayName: 'GPT-6 mini', default: false },
+    { id: 'gpt-6-luna', displayName: 'GPT-6 Luna', default: false, efforts: ['none', 'high'] as [string, ...string[]], defaultEffort: 'high' },
+  ];
+  const CLAUDE_MODELS = [{ id: 'opus', displayName: 'Opus', default: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] as [string, ...string[]] }];
+
+  function effortRules(client: FakeTransport) {
+    client.rule('agent/list', () => ({ agents: AGENTS }));
+    client.rule('project/list', () => ({ projects: PROJECTS }));
+    client.rule('model/list', ({ agentId }) => ({ models: agentId === 'codex' ? EFFORT_MODELS : CLAUDE_MODELS }));
+  }
+
+  it('effortLabel and pickEffort', () => {
+    expect(effortLabel('xhigh')).toBe('XHigh');
+    expect(effortLabel('medium')).toBe('Medium');
+    expect(effortLabel('')).toBe('');
+    const [sol, mini, luna] = EFFORT_MODELS;
+    expect(pickEffort(sol, null)).toBe('medium');
+    expect(pickEffort(sol, 'xhigh')).toBe('xhigh');
+    expect(pickEffort(sol, 'max')).toBe('medium');
+    expect(pickEffort(sol, '')).toBe('medium');
+    expect(pickEffort(mini, 'high')).toBeUndefined();
+    expect(pickEffort(luna, undefined)).toBe('high');
+    expect(pickEffort(undefined, 'high')).toBeUndefined();
+    expect(pickEffort(CLAUDE_MODELS[0], null)).toBeUndefined();
+    expect(pickEffort(CLAUDE_MODELS[0], '')).toBeUndefined();
+    expect(pickEffort(CLAUDE_MODELS[0], 'max')).toBe('max');
+    expect(pickEffort({ ...sol!, defaultEffort: 'turbo' }, null)).toBeUndefined();
+  });
+
+  it('startParams carries a chosen effort and leaves out Auto', () => {
+    const base = { agentId: 'codex', cwd: '/w', title: '', model: 'm', defaultModel: 'm', message: '' };
+    expect(startParams({ ...base, effort: 'high' })).toEqual({ agentId: 'codex', cwd: '/w', settings: { effort: 'high' } });
+    expect(startParams({ ...base, effort: '' })).toEqual({ agentId: 'codex', cwd: '/w' });
+    expect(startParams({ ...base, model: 'x', bypass: true, effort: 'low' }).settings).toEqual({ model: 'x', approvalMode: 'never', effort: 'low' });
+  });
+
+  it('shows the model default preselected, sends the choice and remembers it per agent', async () => {
+    const { client, model, started, storage } = setup();
+    effortRules(client);
+    await model.load();
+    expect(model.efforts).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(model.effortAuto).toBe(false);
+    expect(model.effort).toBe('medium');
+    model.selectEffort('xhigh');
+    expect(storage.data.get(effortKey('codex'))).toBe('xhigh');
+    await model.submit();
+    expect(started[0]).toEqual({ agentId: 'codex', cwd: '/Users/me/Desktop/phone-test', settings: { effort: 'xhigh' } });
+
+    const again = setup(memoryStorage(Object.fromEntries(storage.data)));
+    effortRules(again.client);
+    await again.model.load();
+    expect(again.model.effort).toBe('xhigh');
+    // A model without that level gets its own default; one without levels hides the picker.
+    again.model.selectModel('gpt-6-luna');
+    expect(again.model.effort).toBe('high');
+    again.model.selectModel('gpt-6-mini');
+    expect(again.model.efforts).toEqual([]);
+    expect(again.model.effort).toBeUndefined();
+    await again.model.submit();
+    expect(again.started[0]).toEqual({ agentId: 'codex', cwd: '/Users/me/Desktop/phone-test', settings: { model: 'gpt-6-mini' } });
+  });
+
+  it('ignores levels the model does not offer, and Auto where the model has a default', async () => {
+    const { client, model, storage } = setup();
+    effortRules(client);
+    await model.load();
+    model.selectEffort('max');
+    model.selectEffort(undefined);
+    expect(model.effort).toBe('medium');
+    expect(storage.data.has(effortKey('codex'))).toBe(false);
+  });
+
+  it('a model without a default offers Auto, preselected, which sends no effort; Auto is remembered too', async () => {
+    const { client, model, started, storage } = setup();
+    effortRules(client);
+    await model.load();
+    await model.selectAgent('claude');
+    expect(model.effortAuto).toBe(true);
+    expect(model.effort).toBeUndefined();
+    model.selectEffort('max');
+    expect(model.effort).toBe('max');
+    model.selectEffort(undefined);
+    expect(storage.data.get(effortKey('claude'))).toBe('');
+    expect(model.effort).toBeUndefined();
+    await model.submit();
+    expect(started[0]).toEqual({ agentId: 'claude', cwd: '/Users/me/Desktop/phone-test' });
+  });
+
+  it('storage that throws neither loses the choice for this sheet nor breaks the picker', async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('denied');
+      },
+      setItem: () => {
+        throw new Error('full');
+      },
+    };
+    const client = new FakeTransport();
+    effortRules(client);
+    const model = new NewSessionModel(client, { startSession: vi.fn() }, broken);
+    await model.load();
+    expect(model.effort).toBe('medium');
+    model.selectEffort('low');
+    expect(model.effort).toBe('low');
   });
 });

@@ -16,6 +16,9 @@ import {
   splitModel,
   toApproval,
   toFileChanges,
+  fitThinkingLevel,
+  isThinkingLevel,
+  thinkingLevels,
   toModels,
   toPrompt,
   toQuestion,
@@ -67,6 +70,30 @@ describe('pi mapping', () => {
     expect(splitModel('bonsai')).toBeUndefined();
     expect(splitModel('/x')).toBeUndefined();
     expect(splitModel('x/')).toBeUndefined();
+  });
+
+  it('thinking levels per model as pi computes them, and the current level fitted to each as default', () => {
+    // thinkingLevelMap entries as pi 1.4.0 lists them (get_available_models, 2026-10-24).
+    const gemini = { provider: 'google', id: 'gemini-3.1-pro-preview', reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: null, max: null } };
+    const kimi = { provider: 'kimi-coding', id: 'k3', reasoning: true, thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } };
+    const plain = { provider: 'google', id: 'gemini-2.5-pro', reasoning: true };
+    const none = { provider: 'llamacpp', id: 'bonsai-27b', reasoning: false };
+    expect(thinkingLevels(gemini)).toEqual(['low', 'medium', 'high']);
+    expect(thinkingLevels(kimi)).toEqual(['low', 'high', 'max']);
+    expect(thinkingLevels(plain)).toEqual(['off', 'minimal', 'low', 'medium', 'high']);
+    expect(thinkingLevels(none)).toEqual([]);
+    expect(fitThinkingLevel(kimi, 'medium')).toBe('high');
+    expect(fitThinkingLevel(gemini, 'max')).toBe('high');
+    expect(fitThinkingLevel(gemini, 'bogus')).toBe('low');
+    expect(fitThinkingLevel(none, 'high')).toBe('off');
+    expect(toModels([gemini, kimi, none], kimi, 'medium')).toEqual([
+      { id: 'google/gemini-3.1-pro-preview', displayName: 'gemini-3.1-pro-preview', default: false, provider: 'google', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      { id: 'kimi-coding/k3', displayName: 'k3', default: true, provider: 'kimi-coding', efforts: ['low', 'high', 'max'], defaultEffort: 'high' },
+      { id: 'llamacpp/bonsai-27b', displayName: 'bonsai-27b', default: false, provider: 'llamacpp' },
+    ]);
+    expect(toModels([gemini], kimi)[0]).not.toHaveProperty('defaultEffort');
+    expect(isThinkingLevel('xhigh')).toBe(true);
+    expect(isThinkingLevel('turbo')).toBe(false);
   });
 
   it('items: bash is a command, write and edit file changes, everything else a tool call', () => {

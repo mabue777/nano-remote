@@ -22,6 +22,11 @@
 // and `plan` the Claude modes of the same name, anything else `default`. Only `default` with
 // `settingSources: []` sends every tool call to canUseTool: with the operator's own settings loaded, auto
 // mode approves silently and a deny rule hides AskUserQuestion (spikes/host-drive/NOTES.md).
+// settings.effort goes in as the SDK's `effort` option, first fitted to the model's supportedEffortLevels
+// the way Claude Code downgrades it (mapping.ts fitEffort), and left out for a model without effort control.
+// Claude Code reports no applied level (probed with SDK 0.3.308 and Claude Code 2.1.308: system/init has
+// no `effort` in SDK runs, and Query has no get_settings call), so the fitted level is what the session
+// reports, and nothing when settings.effort is unset.
 //
 // Supervision: the adapter spawns the Claude Code executable itself (spawnClaudeCodeProcess), detached in
 // its own process group. When it dies on its own the adapter emits `status/changed {error}` and
@@ -100,6 +105,7 @@ import path from 'node:path';
 
 import type {
   CanUseTool,
+  EffortLevel,
   Options,
   PermissionResult,
   Query,
@@ -118,6 +124,7 @@ import {
   CANCEL_MESSAGE,
   childEnv,
   completeToolItem,
+  fitEffort,
   permissionAnswer,
   questionAnswer,
   sessionModel,
@@ -193,6 +200,11 @@ export interface ClaudeAdapterOptions {
   query?: QueryFn;
   /** Called with `claude_code_version` from every system/init. */
   onVersion?: (version: string) => void;
+  /**
+   * The effort levels of a model as the engine listed them: [] for a model without effort control,
+   * undefined while the model is not known (the request then goes through as it is).
+   */
+  efforts?: (model: string) => readonly string[] | undefined;
   log?: (message: string) => void;
 }
 
@@ -441,7 +453,16 @@ export class ClaudeAdapter implements Adapter {
 
   /** The settings the session runs with: `model` and `approvalMode` as mapped (spec 5.1 Session.settings). */
   effectiveSettings(): Settings {
-    return { model: sessionModel(this.settings, this.config), approvalMode: sessionPolicy(this.settings).approvalMode };
+    const settings: Settings = { model: sessionModel(this.settings, this.config), approvalMode: sessionPolicy(this.settings).approvalMode };
+    const effort = this.effort();
+    if (effort !== undefined) settings.effort = effort;
+    return settings;
+  }
+
+  /** The effort the session runs at: settings.effort fitted to the model's levels (spec 5.1). */
+  private effort(): EffortLevel | undefined {
+    const model = sessionModel(this.settings, this.config);
+    return fitEffort(this.settings.effort, this.options.efforts?.(model));
   }
 
   // ---- engine lifecycle ------------------------------------------------------------------------
@@ -502,6 +523,8 @@ export class ClaudeAdapter implements Adapter {
       spawnClaudeCodeProcess: (spawnOptions) => this.spawn(run, spawnOptions) as SpawnedProcess,
     };
     if (permissionMode === 'bypassPermissions') options.allowDangerouslySkipPermissions = true;
+    const effort = this.effort();
+    if (effort !== undefined) options.effort = effort;
     const executable = executablePath(this.config);
     if (executable !== undefined) options.pathToClaudeCodeExecutable = executable;
     if (this.config.attachmentsDir !== undefined) options.additionalDirectories = [this.config.attachmentsDir];

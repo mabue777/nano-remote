@@ -184,6 +184,13 @@ describe('SessionModel: what the screen shows', () => {
     expect(codex.model.model).toBe('gpt-5.5-codex');
   });
 
+  it('effort: the header names the level in effect from Session.settings.effort', async () => {
+    expect((await setup({ over: { session: session({ lastSeq: 0, settings: { model: 'opus' } }) } })).model.effort).toBeUndefined();
+    expect((await setup({ over: { session: session({ lastSeq: 0, settings: { effort: '' } }) } })).model.effort).toBeUndefined();
+    const high = await setup({ over: { session: session({ lastSeq: 0, settings: { model: 'opus', effort: 'xhigh' } }) } });
+    expect(high.model.effort).toBe('XHigh');
+  });
+
   it('an unknown session shows placeholders; a failed open shows why', async () => {
     const client = new FakeTransport();
     const replica = new Replica({ client, storage: null });

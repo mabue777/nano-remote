@@ -5,7 +5,7 @@ import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { Sheet, SheetHeader } from '../ui/Sheet';
 import { Switch } from '../ui/Switch';
-import { NewSessionModel } from './new-session-model';
+import { effortLabel, NewSessionModel } from './new-session-model';
 import { useModel } from './use-model';
 
 export interface NewSessionSheetProps {
@@ -95,6 +95,25 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
               </p>
             )}
           </div>
+        )}
+
+        {model.efforts.length > 0 && (
+          <fieldset class="field effort-field">
+            <legend>Effort</legend>
+            <div class="effort-choices" role="radiogroup" aria-label="Effort">
+              {model.effortAuto && (
+                <EffortChoice label="Auto" checked={model.effort === undefined} onPick={() => model.selectEffort(undefined)} />
+              )}
+              {model.efforts.map((level) => (
+                <EffortChoice key={level} label={effortLabel(level)} checked={model.effort === level} onPick={() => model.selectEffort(level)} />
+              ))}
+            </div>
+            <p class="small muted effort-hint">
+              {model.model?.defaultEffort !== undefined
+                ? `${effortLabel(model.model.defaultEffort)} is this model's default.`
+                : 'Auto leaves the level to the agent.'}
+            </p>
+          </fieldset>
         )}
 
         <div class="field">
@@ -195,6 +214,14 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
         </button>
       </form>
     </Sheet>
+  );
+}
+
+function EffortChoice({ label, checked, onPick }: { label: string; checked: boolean; onPick: () => void }) {
+  return (
+    <button type="button" role="radio" aria-checked={checked} class={`choice${checked ? ' selected' : ''}`} onClick={onPick}>
+      {label}
+    </button>
   );
 }
 

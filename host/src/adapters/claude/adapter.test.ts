@@ -32,7 +32,12 @@ interface Rig {
   cwd: string;
 }
 
-function rig(fakeOptions: FakeClaudeOptions = {}, config: Partial<ClaudeConfig> = {}, query?: QueryFn): Rig {
+function rig(
+  fakeOptions: FakeClaudeOptions = {},
+  config: Partial<ClaudeConfig> = {},
+  query?: QueryFn,
+  efforts?: (model: string) => readonly string[] | undefined,
+): Rig {
   const fake = new FakeClaude(fakeOptions);
   const cfg = claudeConfig(
     { configDir: mkdtempSync(path.join(tmpdir(), 'nano-claude-cfg-')), requestTimeoutMs: 15_000, killGraceMs: 300, ...config },
@@ -40,7 +45,7 @@ function rig(fakeOptions: FakeClaudeOptions = {}, config: Partial<ClaudeConfig> 
   );
   const versions: string[] = [];
   const logs: string[] = [];
-  const adapter = new ClaudeAdapter({ query: query ?? fake.query, config: cfg, onVersion: (v) => versions.push(v), log: (m) => logs.push(m) });
+  const adapter = new ClaudeAdapter({ query: query ?? fake.query, config: cfg, onVersion: (v) => versions.push(v), log: (m) => logs.push(m), efforts });
   adapters.push(adapter);
   const events: AdapterEvent[] = [];
   adapter.onEvent((e) => events.push(e));
@@ -122,6 +127,47 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
     await turnEnd(events);
     expect(methods(events)).not.toContain('engine/session');
     expect(adapter.effectiveSettings()).toEqual({ model: 'sonnet', approvalMode: 'default' });
+  });
+
+  describe('effort (settings.effort)', () => {
+    // As supportedModels() listed them on 2026-10-24: Opus 4.6 lacks xhigh, Haiku 4.5 has no effort control.
+    const levels: Record<string, readonly string[]> = {
+      opus: ['low', 'medium', 'high', 'xhigh', 'max'],
+      'claude-opus-4-6': ['low', 'medium', 'high', 'max'],
+      'claude-haiku-4-5-20251001': [],
+    };
+    const efforts = (model: string) => levels[model];
+
+    it('reaches the query options and comes back in the effective settings', async () => {
+      const { fake, adapter, cwd } = rig({}, {}, undefined, efforts);
+      await adapter.start(cwd, { effort: 'xhigh' });
+      expect(fake.last.options.effort).toBe('xhigh');
+      expect(adapter.effectiveSettings()).toEqual({ model: 'opus', approvalMode: 'default', effort: 'xhigh' });
+    });
+
+    it('is left out when unset, and then no level is reported', async () => {
+      const { fake, adapter, cwd } = rig({}, {}, undefined, efforts);
+      await adapter.start(cwd, {});
+      expect(fake.last.options).not.toHaveProperty('effort');
+      expect(adapter.effectiveSettings()).not.toHaveProperty('effort');
+    });
+
+    it('is downgraded for the model as Claude Code does, and left out for a model without effort', async () => {
+      const older = rig({}, {}, undefined, efforts);
+      await older.adapter.start(older.cwd, { model: 'claude-opus-4-6', effort: 'xhigh' });
+      expect(older.fake.last.options.effort).toBe('high');
+      expect(older.adapter.effectiveSettings()).toMatchObject({ effort: 'high' });
+      const none = rig({}, {}, undefined, efforts);
+      await none.adapter.start(none.cwd, { model: 'claude-haiku-4-5-20251001', effort: 'low' });
+      expect(none.fake.last.options).not.toHaveProperty('effort');
+      expect(none.adapter.effectiveSettings()).not.toHaveProperty('effort');
+    });
+
+    it('resume sends it again', async () => {
+      const { fake, adapter, cwd } = rig({}, {}, undefined, efforts);
+      await adapter.resume('sess-known', cwd, { effort: 'low' });
+      expect(fake.last.options).toMatchObject({ resume: 'sess-known', effort: 'low' });
+    });
   });
 
   it('approvalMode never maps to bypassPermissions with allowDangerouslySkipPermissions; tools run unasked', async () => {

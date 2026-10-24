@@ -485,6 +485,18 @@ describe('agent capabilities', () => {
     const started = await honouring.manager.start({ agentId: 'fake', cwd });
     expect(started.session.settings).toEqual({ approvalMode: 'on-request' });
   });
+
+  it('the adapter decides settings.effort: its downgrade replaces the request, its silence drops it', async () => {
+    const downgraded = make({ adapter: { effectiveSettings: { effort: 'high' } } });
+    const a = await downgraded.manager.start({ agentId: 'fake', cwd, settings: { model: 'm', effort: 'xhigh' } });
+    expect(a.session.settings).toEqual({ model: 'm', effort: 'high' });
+    const ignored = make({ adapter: { effectiveSettings: { approvalMode: 'on-request' } } });
+    const b = await ignored.manager.start({ agentId: 'fake', cwd, settings: { effort: 'low' } });
+    expect(b.session.settings).toEqual({ approvalMode: 'on-request' });
+    const kept = make({ adapter: { effectiveSettings: { effort: 'low' } } });
+    const c = await kept.manager.start({ agentId: 'fake', cwd, settings: { effort: 'low' } });
+    expect(c.session.settings).toEqual({ effort: 'low' });
+  });
 });
 
 describe('background tasks (spec 5.1 Session.backgroundTasks)', () => {

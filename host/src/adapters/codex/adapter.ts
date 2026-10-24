@@ -1,8 +1,14 @@
 // The Codex adapter: drives one Codex thread through `codex app-server` (protocol-v1.md section 11).
 //
-//   session/start  -> thread/start {cwd, approvalPolicy, sandbox, model}   (settings.approvalMode, settings.sandbox)
+//   session/start  -> thread/start {cwd, approvalPolicy, sandbox, model, config}   (settings.approvalMode, settings.sandbox,
+//                     settings.effort as config.model_reasoning_effort)
 //   resume         -> thread/resume {threadId, ..., initialTurnsPage {limit 5, itemsView "full"}}
-//   turn/start     -> turn/start {threadId, input, clientUserMessageId}
+//   turn/start     -> turn/start {threadId, input, clientUserMessageId, effort}
+//
+// Effort (spec 5.1 settings.effort): thread/start takes no effort field of its own (app-server types of
+// codex-cli 0.163.0-alpha.11.1), so it goes in as the thread's model_reasoning_effort config; turn/start
+// has `effort` ("for this turn and subsequent turns") and gets it on every turn. The level in effect is the
+// `reasoningEffort` that thread/start and thread/resume answer with.
 //   turn/steer     -> turn/steer {threadId, expectedTurnId, input, clientUserMessageId}
 //   turn/interrupt -> turn/interrupt {threadId, turnId}
 //   approvals      <- item/{commandExecution,fileChange,permissions}/requestApproval (engine decisions forwarded)
@@ -87,6 +93,11 @@ export function sessionPolicy(settings: Settings, config: CodexConfig): { approv
   return { approvalPolicy, sandbox };
 }
 
+/** The requested reasoning effort (settings.effort), when the session names one. */
+export function sessionEffort(settings: Settings): string | undefined {
+  return typeof settings.effort === 'string' && settings.effort !== '' ? settings.effort : undefined;
+}
+
 export class CodexAdapter implements Adapter {
   private readonly config: CodexConfig;
   private readonly options: CodexAdapterOptions;
@@ -98,6 +109,8 @@ export class CodexAdapter implements Adapter {
   private cwd = '';
   private settings: Settings = {};
   private model: string | undefined;
+  /** The thread's reasoning effort as the engine last reported it (thread/start, thread/resume). */
+  private reportedEffort: string | undefined;
   /** The engine's id of the running turn, once known; `running` is true from `turnStart` to its end. */
   private turnId: string | undefined;
   private running = false;
@@ -135,6 +148,7 @@ export class CodexAdapter implements Adapter {
     this.remember(cwd, settings);
     const engine = await this.connect();
     const result = (await engine.call('thread/start', { cwd, ...(await this.policy(engine)) })) as Json;
+    this.learnEffort(result);
     this.threadId = str((result.thread as Json | undefined)?.id);
     if (this.threadId === '') throw unavailable('thread/start returned no thread id');
     return this.threadId;
@@ -151,11 +165,10 @@ export class CodexAdapter implements Adapter {
     this.running = true;
     this.turnId = undefined;
     this.items.clear();
-    const call = engine.call('turn/start', {
-      threadId: this.threadId,
-      input: toUserInput(input),
-      clientUserMessageId: clientMessageId,
-    });
+    const params: Json = { threadId: this.threadId, input: toUserInput(input), clientUserMessageId: clientMessageId };
+    const effort = sessionEffort(this.settings);
+    if (effort !== undefined) params.effort = effort;
+    const call = engine.call('turn/start', params);
     this.turnStarting = call;
     this.held = [];
     try {
@@ -262,12 +275,13 @@ export class CodexAdapter implements Adapter {
       const info = await engine.start();
       this.options.onEngine?.(info.userAgent);
       if (this.threadId !== '') {
-        await engine.call('thread/resume', {
+        const resumed = await engine.call('thread/resume', {
           threadId: this.threadId,
           cwd: this.cwd,
           ...(await this.policy(engine)),
           initialTurnsPage: { limit: RESUME_TURNS, itemsView: 'full' },
         });
+        this.learnEffort(resumed as Json);
       }
       attached = true;
       return engine;
@@ -279,13 +293,21 @@ export class CodexAdapter implements Adapter {
     }
   }
 
-  /** The settings the engine session runs with: `approvalMode` and `sandbox` (spec 5.1 Session.settings). */
+  /** The settings the engine session runs with: `approvalMode`, `sandbox`, `effort` (spec 5.1 Session.settings). */
   effectiveSettings(): Settings {
     const { approvalPolicy, sandbox } = sessionPolicy(this.settings, this.config);
-    return { approvalMode: approvalPolicy, sandbox };
+    const settings: Settings = { approvalMode: approvalPolicy, sandbox };
+    if (this.reportedEffort !== undefined) settings.effort = this.reportedEffort;
+    return settings;
   }
 
-  /** Approval policy, sandbox and model for thread/start and thread/resume. */
+  /** The `reasoningEffort` of a thread/start or thread/resume reply (null: the thread has none). */
+  private learnEffort(result: Json | undefined): void {
+    const effort = result?.reasoningEffort;
+    this.reportedEffort = typeof effort === 'string' && effort !== '' ? effort : undefined;
+  }
+
+  /** Approval policy, sandbox, model and reasoning effort for thread/start and thread/resume. */
   private async policy(engine: Engine): Promise<Json> {
     const { approvalPolicy, sandbox } = sessionPolicy(this.settings, this.config);
     this.model ??= typeof this.settings.model === 'string' && this.settings.model !== '' ? this.settings.model : undefined;
@@ -297,6 +319,8 @@ export class CodexAdapter implements Adapter {
     }
     const out: Json = { approvalPolicy, sandbox };
     if (this.model !== undefined) out.model = this.model;
+    const effort = sessionEffort(this.settings);
+    if (effort !== undefined) out.config = { model_reasoning_effort: effort };
     return out;
   }
 

@@ -143,9 +143,11 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             </>
           )}
         </p>
-        {model.model !== undefined && (
-          <p class="muted small session-model" aria-label="Model">
-            {model.model}
+        {(model.model !== undefined || model.effort !== undefined) && (
+          <p class="muted small session-model">
+            {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
+            {model.model !== undefined && model.effort !== undefined && ' · '}
+            {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
           </p>
         )}
       </div>
