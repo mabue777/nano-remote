@@ -87,8 +87,12 @@ export const hooks = {
     if (same) return;
     host.schedule(() => {
       if (typeof previous?.cleanup === 'function') previous.cleanup();
-      host.slots[index] = { deps, cleanup: effect() } satisfies Effect;
+      // Recorded before the effect runs: a state change inside it re-renders at once, and that render must
+      // see this effect as done rather than run it a second time.
+      const record: Effect = { deps, cleanup: undefined };
+      host.slots[index] = record;
       host.effects.add(index);
+      record.cleanup = effect();
     });
   },
 };

@@ -140,6 +140,7 @@ export const ENDPOINT_STORAGE_KEY = 'nano-remote/push/endpoint';
 export class PushModel {
   private stateValue: PushState;
   private testValue: TestState = { kind: 'idle' };
+  private versionValue = 0;
   private readonly listeners = new Set<() => void>();
   private readonly cleanup: (() => void)[] = [];
   /** Bumped by every user action, so a sync that finishes late does not undo it. */
@@ -159,6 +160,11 @@ export class PushModel {
       }),
     );
     if (options.client.host !== undefined) void this.sync();
+  }
+
+  /** Bumped on every change, so a view that subscribes late can tell it missed one (useModel). */
+  get version(): number {
+    return this.versionValue;
   }
 
   get state(): PushState {
@@ -304,6 +310,7 @@ export class PushModel {
   }
 
   private changed(): void {
+    this.versionValue += 1;
     for (const listener of [...this.listeners]) listener();
   }
 }

@@ -8,7 +8,7 @@ import { PRESETS } from '../../../chat/providers/presets';
 import type { FetchLike } from '../../../chat/providers/probe';
 import { BackHeader } from '../../../ui/BackHeader';
 import { Sheet } from '../../../ui/Sheet';
-import { useLiveModel } from '../../chat/hooks';
+import { useModel } from '../../use-model';
 import { KeepAwakeSection } from '../host/KeepAwakeSection';
 import type { KeepAwakeLink } from '../host/keep-awake-model';
 import type { ChatServices } from '../../chat/services';
@@ -26,7 +26,7 @@ export interface ProviderSettingsScreenProps {
 }
 
 export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }: ProviderSettingsScreenProps) {
-  const model = useLiveModel(
+  const model = useModel(
     useMemo(
       () =>
         new ProviderSettingsModel({

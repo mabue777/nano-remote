@@ -3,11 +3,11 @@
 import { useEffect, useMemo } from 'preact/hooks';
 
 import { Switch } from '../../../ui/Switch';
-import { useLiveModel } from '../../chat/hooks';
+import { useModel } from '../../use-model';
 import { KEEP_AWAKE_NOTE, KEEP_AWAKE_TITLE, KeepAwakeModel, type KeepAwakeLink } from './keep-awake-model';
 
 export function KeepAwakeSection({ link }: { link: KeepAwakeLink }) {
-  const model = useLiveModel(useMemo(() => new KeepAwakeModel(link), [link]));
+  const model = useModel(useMemo(() => new KeepAwakeModel(link), [link]));
   useEffect(() => {
     model.start();
     return () => model.dispose();

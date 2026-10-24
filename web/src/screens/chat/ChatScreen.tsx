@@ -8,7 +8,8 @@ import { BackHeader } from '../../ui/BackHeader';
 import { Sheet, SheetHeader } from '../../ui/Sheet';
 import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
-import { useLiveModel, usePress } from './hooks';
+import { useModel } from '../use-model';
+import { usePress } from './hooks';
 import type { Block, Inline } from './markdown';
 import type { ChatServices } from './services';
 
@@ -26,7 +27,7 @@ export interface ChatScreenProps {
 }
 
 export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: ChatScreenProps) {
-  const model = useLiveModel(
+  const model = useModel(
     useMemo(
       () =>
         new ChatModel({

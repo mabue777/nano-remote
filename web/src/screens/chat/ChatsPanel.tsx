@@ -3,7 +3,8 @@
 import { useEffect, useMemo } from 'preact/hooks';
 
 import { ChatsListModel, PROVIDER_SETTINGS_PATH, type ChatRow } from './chats-list-model';
-import { useLiveModel, usePress } from './hooks';
+import { useModel } from '../use-model';
+import { usePress } from './hooks';
 import type { ChatServices } from './services';
 
 export interface ChatsPanelProps {
@@ -14,7 +15,7 @@ export interface ChatsPanelProps {
 }
 
 export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps) {
-  const model = useLiveModel(useMemo(() => new ChatsListModel({ chats: services.chats, providers: services.providers }), [services]));
+  const model = useModel(useMemo(() => new ChatsListModel({ chats: services.chats, providers: services.providers }), [services]));
   useEffect(() => () => model.dispose(), [model]);
   const rows = model.rows;
   const empty = model.empty;
