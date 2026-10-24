@@ -148,3 +148,40 @@ A browser push message that Nano Host signs with its own VAPID key and sends
 to a client's stored subscription. It carries only a title, a one-line body
 and a link into the app, never session content.
 _Avoid_: APNs, push wake, notification service
+
+### Lanes (BROCODE, ADR 0008)
+
+**BROCODE**:
+The orchestration service on the host that runs tracked coding work in lanes
+and leaves the human-only decisions to a human. Nano Host is one of its
+clients; it reads and decides only through BROCODE's own contract.
+_Avoid_: orchestrator, backend, the service
+
+**Lane**:
+One tracked piece of BROCODE work, a tracker task dispatched to a worker,
+from Queued to a terminal outcome. The phone watches lanes and decides on
+them; it never dispatches them.
+_Avoid_: session (an agent conversation), job, task (the tracker's word)
+
+**Step**:
+Where a lane is in BROCODE's workflow: Queued, Preparing, Working, Checking,
+Reviewing, Merging, Completed.
+_Avoid_: phase, stage, status
+
+**Condition**:
+Whether a lane can proceed: Active, Waiting, Paused, Needs attention, Unknown,
+or its terminal outcome (Completed, Stopped, Failed). "Needs you" on the phone
+means Reviewing, Needs attention, or a waiting worker question.
+_Avoid_: status, state
+
+**Review decision**:
+The human's ruling on a lane in Reviewing: approve the merge, or request
+changes with a reason. Recorded once in BROCODE; the first recorded decision
+wins. Not an approval request, which is an agent's mid-turn permission ask.
+_Avoid_: approval, approve (alone), merge (as the decision's name)
+
+**Worker question**:
+A structured question a BROCODE worker raises and waits on: what is blocked,
+the options, the evidence, a recommendation. Not an input request, which is
+an agent's question inside a session.
+_Avoid_: input request, prompt, pending request
