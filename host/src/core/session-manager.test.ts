@@ -727,6 +727,8 @@ describe('recovery after a host restart', () => {
     const reopened = new Journal({ path: file, now: () => clock });
     const after = new SessionManager({ journal: reopened, agents: [new FakeAgent()], store, now: () => clock });
     open.push({ journal: reopened, manager: after });
+    expect(reopened.turn(session.sessionId, turn.turnId)?.status).toBe('inProgress'); // the owner recovers
+    after.recover();
     expect(reopened.turn(session.sessionId, turn.turnId)).toMatchObject({
       status: 'failed',
       completedAt: 600,

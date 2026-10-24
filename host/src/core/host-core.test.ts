@@ -571,6 +571,90 @@ describe('turns and requests', () => {
   });
 });
 
+describe('restart recovery', () => {
+  it('runs once the core is built: its events reach the observer and the session/updated path, no observer error', async () => {
+    const { SessionStore } = await import('./store.js');
+    const { HOST } = await import('./testing/harness.js');
+    const { HostCore } = await import('./host-core.js');
+    const { DeviceStore } = await import('../devices/store.js');
+    const { PresenceRegistry } = await import('../stream/presence.js');
+    const { PushNotifier } = await import('../push/notifier.js');
+    const dir = mkdtempSync(path.join(tmpdir(), 'nano-core-recover-'));
+    const file = path.join(dir, 'journal.sqlite');
+    const store = new SessionStore(file);
+
+    // A host that died while a turn waited on an approval and a background task was running.
+    const first = new Journal({ path: file });
+    const before = new HostCore({ journal: first, agents: [new FakeAgent({ script: [[{ approval: {} }]] })], host: HOST, store });
+    const { session } = await before.sessions.start({ agentId: 'fake', cwd: dir, title: 'Fix the parser' });
+    const sessionId = session.sessionId;
+    const turn = await before.sessions.turnStart(sessionId, text('a'), randomUUID());
+    first.append(sessionId, {
+      method: 'session/changed',
+      params: {
+        session: {
+          ...first.session(sessionId)!,
+          backgroundTasks: [{ id: 'toolu_a', title: 'npm test', status: 'running', startedAt: 1 }],
+          lastSeq: first.head(sessionId) + 1,
+        },
+      },
+    });
+    expect(first.summary(sessionId)?.status).toBe('waiting_approval');
+    first.close(); // no close(): a crash leaves the turn running
+
+    const journal = new Journal({ path: file });
+    const head = journal.head(sessionId);
+    const devices = new DeviceStore({ path: ':memory:' });
+    const { device } = devices.create({ displayName: 'phone', platform: 'ios-web' });
+    devices.push.subscribe(device.clientId, { endpoint: 'https://web.push.apple.com/phone', keys: { p256dh: 'k', auth: 'a' } });
+    const sent: { clientId: string; body: string; topic: string | undefined }[] = [];
+    let core: InstanceType<typeof HostCore> | undefined;
+    const notifier = new PushNotifier({
+      subscriptions: devices.push,
+      presence: new PresenceRegistry(),
+      sender: {
+        send: (clientId, _subscription, payload, options = {}) => {
+          sent.push({ clientId, body: payload.body, topic: options.topic });
+          return Promise.resolve({ outcome: 'delivered', status: 201 });
+        },
+      },
+      title: (id) => core!.sessions.summary(id)?.title,
+    });
+    const observed: JournalEvent[] = [];
+    const logged: string[] = [];
+    core = new HostCore({
+      journal,
+      agents: [new FakeAgent()],
+      host: HOST,
+      store,
+      log: (message) => logged.push(message),
+      onJournalEvent: (event) => {
+        observed.push(event);
+        notifier.handle(event);
+      },
+    });
+    await notifier.idle();
+
+    // Every recovery event went through the observer, in Journal order.
+    const recovered = journal.since(sessionId, head).events;
+    expect(recovered.map((e) => e.method)).toEqual(['session/changed', 'request/resolved', 'turn/completed', 'status/changed']);
+    expect(observed).toEqual(recovered);
+    expect(journal.turn(sessionId, turn.turnId)).toMatchObject({ status: 'failed', error: { code: 'host_restarted' } });
+    const cancelled = recovered[0]!.params as { session: { backgroundTasks: { status: string }[] } };
+    expect(cancelled.session.backgroundTasks.map((t) => t.status)).toEqual(['cancelled']);
+    // Push: the failed turn is announced; the restart-cancelled task is not "Background tasks finished".
+    expect(sent).toEqual([{ clientId: device.clientId, body: 'Turn failed', topic: turn.turnId }]);
+    // No observer (or session/updated) failure was logged: the core was whole when recovery ran.
+    expect(logged).toEqual([]);
+
+    await notifier.close();
+    await core.close();
+    journal.close();
+    devices.close();
+    store.close();
+  });
+});
+
 describe('HostCore without a stream server', () => {
   function context(streamId = 'stream-1') {
     const closers: (() => void)[] = [];

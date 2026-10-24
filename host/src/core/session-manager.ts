@@ -143,7 +143,6 @@ export class SessionManager {
       ...(options.startSnapshotWaitMs !== undefined ? { startWaitMs: options.startSnapshotWaitMs } : {}),
     });
     for (const provider of options.agents) this.providers.set(provider.id, provider);
-    this.recover();
   }
 
   // ---- agents ----------------------------------------------------------------------------------
@@ -957,8 +956,10 @@ export class SessionManager {
   /**
    * After a host restart no engine is attached: turns that were running are journaled as failed, their
    * pending requests withdrawn, and the sessions set idle, so clients never wait on a dead prompt.
+   * The owner calls it once, after construction: the events it journals reach `onEvent`, whose owner
+   * (HostCore) must be fully built to handle them.
    */
-  private recover(): void {
+  recover(): void {
     for (const summary of this.everySession()) {
       this.recoverTasks(summary.sessionId);
       const busy = summary.status === 'running' || summary.status === 'waiting_approval' || summary.status === 'waiting_input';

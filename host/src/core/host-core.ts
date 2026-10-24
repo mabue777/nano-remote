@@ -88,6 +88,8 @@ export class HostCore {
       const off = provider.onStateChange?.(() => this.notifyHostStatusChanged());
       if (off) this.unwatch.push(off);
     }
+    // Last: restart recovery journals events, and onJournalEvent needs the whole core (sessions included).
+    this.sessions.recover();
   }
 
   /** Lets the core send notifications on the server's streams. */

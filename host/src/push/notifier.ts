@@ -5,11 +5,14 @@
 //   turn/completed (final status)     only when the client has no open stream at that moment
 //   status/changed to error           only when the client has no open stream at that moment
 //   session/changed: the last running background task ended (Session.backgroundTasks, spec 5.1)
-//                                     only when the client has no open stream at that moment
+//                                     finished or failed (the engine ended it), and only when the client
+//                                     has no open stream at that moment. Never for tasks ended `cancelled`:
+//                                     the host journals those itself when it kills an engine, shuts down
+//                                     or recovers after a restart, and nothing finished.
 //   request/resolved, anything else   never
 //
-// The background rule needs the session's previous count of running tasks: the notifier keeps it in
-// memory from the session/changed events it sees (it starts at zero, like the tasks after a restart).
+// The background rule needs the session's previously running tasks: the notifier keeps their ids in
+// memory from the session/changed events it sees (it starts with none, like the tasks after a restart).
 //
 //   const notifier = new PushNotifier({ subscriptions: devices.push, presence, sender, title });
 //   const core = new HostCore({ ..., onJournalEvent: (event) => notifier.handle(event) });
@@ -64,17 +67,28 @@ export interface PushPlan {
   onlyDisconnected: boolean;
 }
 
-/** How many of a session/changed event's background tasks are running. */
-export function runningTasks(event: JournalEvent): number {
-  if (event.method !== 'session/changed') return 0;
-  return (event.params.session.backgroundTasks ?? []).filter((task) => task.status === 'running').length;
+/** The ids of a session/changed event's running background tasks. */
+export function runningTasks(event: JournalEvent): Set<string> {
+  if (event.method !== 'session/changed') return new Set();
+  return new Set((event.params.session.backgroundTasks ?? []).filter((task) => task.status === 'running').map((task) => task.id));
+}
+
+/**
+ * True when a session/changed event ends the last of the `runningBefore` tasks and at least one of them
+ * ended finished or failed. Cancelled ones (kill, shutdown, restart recovery) never count.
+ */
+function backgroundFinished(event: JournalEvent, runningBefore: ReadonlySet<string>): boolean {
+  if (event.method !== 'session/changed' || runningBefore.size === 0) return false;
+  const tasks = event.params.session.backgroundTasks ?? [];
+  if (tasks.some((task) => task.status === 'running')) return false;
+  return tasks.some((task) => runningBefore.has(task.id) && (task.status === 'finished' || task.status === 'failed'));
 }
 
 /**
  * The rules table (spec 9) as a pure function: undefined means the event never pushes. `runningBefore`
- * is the session's count of running background tasks before this event.
+ * are the ids of the session's running background tasks before this event.
  */
-export function planFor(event: JournalEvent, runningBefore = 0): PushPlan | undefined {
+export function planFor(event: JournalEvent, runningBefore: ReadonlySet<string> = new Set()): PushPlan | undefined {
   const sessionId = event.params.sessionId;
   switch (event.method) {
     case 'approval/request':
@@ -104,7 +118,7 @@ export function planFor(event: JournalEvent, runningBefore = 0): PushPlan | unde
       if (event.params.status !== 'error') return undefined;
       return { kind: 'error', sessionId, body: PUSH_BODY.error, topic: sessionId, ttl: PUSH_TTL.completion, onlyDisconnected: true };
     case 'session/changed':
-      if (runningBefore === 0 || runningTasks(event) > 0) return undefined;
+      if (!backgroundFinished(event, runningBefore)) return undefined;
       return { kind: 'background', sessionId, body: PUSH_BODY.background, topic: `${sessionId}.background`, ttl: PUSH_TTL.completion, onlyDisconnected: true };
     default:
       return undefined;
@@ -146,8 +160,8 @@ export class PushNotifier {
   private readonly schedule: (work: () => void) => void;
   private readonly isPaired: (clientId: string) => boolean;
   private readonly inFlight = new Set<Promise<void>>();
-  /** Running background tasks per session, from the session/changed events seen so far. */
-  private readonly running = new Map<string, number>();
+  /** Ids of the running background tasks per session, from the session/changed events seen so far. */
+  private readonly running = new Map<string, Set<string>>();
   private closed = false;
 
   constructor(private readonly options: PushNotifierOptions) {
@@ -160,10 +174,10 @@ export class PushNotifier {
   handle(event: JournalEvent): void {
     if (this.closed) return;
     const sessionId = event.params.sessionId;
-    const before = this.running.get(sessionId) ?? 0;
+    const before = this.running.get(sessionId) ?? new Set<string>();
     if (event.method === 'session/changed') {
       const now = runningTasks(event);
-      if (now > 0) this.running.set(sessionId, now);
+      if (now.size > 0) this.running.set(sessionId, now);
       else this.running.delete(sessionId);
     }
     const plan = planFor(event, before);

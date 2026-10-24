@@ -208,6 +208,18 @@ describe('push rules (spec 9)', () => {
     expect(sender.sent).toHaveLength(1);
   });
 
+  it('background tasks the host cancels (kill, shutdown, restart recovery) never push "Background tasks finished"', async () => {
+    pair('phone');
+    // The host cancels every running task at once; an earlier finished one does not make it a finish.
+    await emit(tasks('running', 'running'), tasks('finished', 'running'), tasks('finished', 'cancelled'));
+    // Restart recovery: the notifier starts empty and sees the journaled list, then the cancel.
+    await emit(tasks('running'), tasks('cancelled'));
+    expect(sender.sent).toEqual([]);
+    // The engine ending the last one finished or failed still pushes.
+    await emit(tasks('running'), tasks('failed'));
+    expect(sender.sent.map((s) => s.payload.body)).toEqual(['Background tasks finished']);
+  });
+
   it('background tasks ending do not push to a client with an open stream, nor without tasks ever running', async () => {
     const phone = pair('phone');
     await emit(tasks('finished'));
