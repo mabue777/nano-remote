@@ -71,3 +71,4 @@
 {"id":"int-5cf86ab0ce7f03eab2734498616dbdb5","kind":"field_change","created_at":"2026-10-23T17:44:27.782601Z","actor":"mabue77","issue_id":"brocode-i7e.3","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-90d93ba14bbd28ff78327011f590ef53","kind":"field_change","created_at":"2026-10-24T05:52:11.365223Z","actor":"mabue77","issue_id":"brocode-clw","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-9576a6f4e6561d59fe0e3f9aaf9c250e","kind":"field_change","created_at":"2026-10-24T06:31:50.168107Z","actor":"mabue77","issue_id":"brocode-ln9.5","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-6b00751976a1478d9ac184f13851de15","kind":"field_change","created_at":"2026-10-24T08:31:27.499471Z","actor":"mabue77","issue_id":"brocode-yk2","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
