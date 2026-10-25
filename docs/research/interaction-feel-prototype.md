@@ -73,12 +73,13 @@ not whether they run smoothly.
 
 All of it is in `web/src/lab/`. It loads in its own chunk, so the real screens never load its code or styles.
 
-- Tested logic, at 100% coverage under the 90% threshold for `src/lab/**`: the stream buffer and fade pieces
-  (`pacer.ts`), FLIP and leaving rows (`flip.ts`), the auto-scroll follower (`autoscroll.ts`), the visible
-  viewport (`viewport.ts`), the switches (`settings.ts`), and the seeded fake stream (`fake-stream.ts`). Finger
-  speed, release decision, settle time and rubber band (`gesture.ts`), the spring as a CSS `linear()` easing
-  (`spring.ts`), reduced motion and CSS times (`motion.ts`), the drag listener (`drag.ts`) and the haptic trick
-  (`haptic.ts`) moved to `src/ui/motion/` when the app adopted them (see below); the lab imports them from there.
+- Tested logic, at 100% coverage under the 90% threshold for `src/lab/**`: the visible viewport
+  (`viewport.ts`), the switches (`settings.ts`), and the seeded fake stream (`fake-stream.ts`). The stream
+  buffer and fade pieces (`pacer.ts`), FLIP and leaving rows (`flip.ts`), the auto-scroll follower
+  (`autoscroll.ts`), finger speed, release decision, settle time and rubber band (`gesture.ts`), the spring as
+  a CSS `linear()` easing (`spring.ts`), reduced motion and CSS times (`motion.ts`), the drag listener
+  (`drag.ts`) and the haptic trick (`haptic.ts`) moved to `src/ui/motion/` when the app adopted them (see
+  below); the lab imports them from there, and its FLIP hook from `screens/session/motion-hooks.tsx`.
 - Screens, covered by the Playwright smoke `web/e2e/lab.spec.ts`: `Lab.tsx` (the shell, list, panel and
   sheets' content), `LabSession.tsx` (session and composer), `LabSheet.tsx`, and `dom.tsx` (shared DOM glue).
   They reuse the real classes, `BackHeader` and `SheetHeader`, so the lab looks like today's app.
@@ -132,6 +133,21 @@ real app as in the lab's Smooth mode.
 - The lab's Now mode switches the app's press feedback off again (`lab.css`), so the comparison still works.
 - The spring comes to rest after 471 ms by `springCurve`, not the 520 ms the lab's notes estimated; the sheet
   plays the measured duration.
+
+Part 2 of 3 (2026-10-25): streaming text with "Thinking" (4), auto-scroll (5) and expand and collapse (9) run
+in the session view and local chat as in the lab's Smooth mode, together with the New look's transcript rows.
+
+- **Streaming text.** `ui/motion/pacer.ts` gained `TextReveal`: it takes the Replica's whole message text on
+  every change, paces what was appended and shows a rewritten text (a snapshot after a reload, a replay that
+  differs) at once, so no delta is lost or shown twice. Local chat parses the paced text as markdown and fades
+  the newest words on the last block only.
+- **Auto-scroll.** `useAutoScroll` in `screens/session/motion-hooks.tsx` watches one element that holds all
+  of the conversation (turns, steers, the approval and question cards), so after a turn ends the view reaches
+  the card; this fixes the lab's Now defect. The page lands at the bottom at once; after that new content
+  glides. The jump pill is a round arrow that fades and rises.
+- **Expand and collapse.** `useFlip` moved from the lab; tool rows, thinking rows, background tasks and the
+  "previous messages" fold use it. A turn that ends folds with the same motion: the screen measures the rows
+  when the model reports the change, before it renders.
 
 ## New look prototype
 

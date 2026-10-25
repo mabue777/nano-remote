@@ -81,15 +81,18 @@ test('every transcript item kind wraps a 120-character unbroken token inside its
     },
   });
 
+  // The finished turn folds its work; open it and every row's content.
   const conversation = page.getByRole('region', { name: 'Conversation' });
+  await conversation.getByRole('button', { name: '6 previous messages' }).click();
   for (const kind of ['user', 'reasoning', 'agent', 'command', 'fileChange', 'tool', 'plan', 'other']) {
     await expect(conversation.locator(`[data-item="${kind}"]`)).toHaveCount(1);
   }
-  const reasoning = conversation.locator('[data-item="reasoning"]');
-  await reasoning.getByRole('button', { name: /Thinking/ }).click();
-  await expect(reasoning.locator('.reasoning-text')).toContainText(TOKEN.slice(0, 40));
+  for (const kind of ['reasoning', 'command', 'fileChange', 'tool', 'plan']) {
+    const row = conversation.locator(`[data-item="${kind}"]`);
+    await row.getByRole('button', { expanded: false }).click();
+    await expect(row.locator('.row-body')).toContainText(TOKEN.slice(0, 40));
+  }
   await expect(conversation.locator('[data-item="agent"]')).toContainText(TOKEN.slice(0, 40));
-  await expect(conversation.locator('[data-item="fileChange"]')).toContainText(TOKEN.slice(0, 40));
 
   expect(await overflows(page, '[data-item]')).toEqual([]);
   expect(await pageWidth(page)).toBeLessThanOrEqual(390);

@@ -83,7 +83,13 @@ with them so each file is rewritten once:
    (3.23:1, below WCAG AA for small text).
 2. **Transcript rows with motion part 2 (item 4, techniques 4, 5 and 9).** M + M. The same render code in
    `SessionScreen.tsx`: flat rows, "previous messages", "Worked for", and Thinking land together with the paced
-   streaming, auto-scroll and expand/collapse.
+   streaming, auto-scroll and expand/collapse. **Done 2026-10-25:** the rows are `screens/session/TranscriptRows.tsx`
+   (styles `transcript.css`), their wording and the fold `transcript.ts`, the motion hooks `motion-hooks.tsx`; the
+   pacer, FLIP and follower moved from the lab to `ui/motion/`, and the lab imports them. Choices the lab left
+   open: the fold keeps a turn's user messages and its last agent message in view and folds everything else;
+   a finished thinking row says "Thought"; an interrupted turn says "Stopped after …" instead of "Interrupted";
+   agent messages no longer open the detail sheet (the turn's "N files changed" line and a command's "Full
+   output" do); Thinking also hides while the session waits for an approval or an answer.
 3. **Floating composer with sending (item 3, technique 6).** M. One shared composer for session and local chat;
    sending's entrance comes with it. Keyboard (7) only after the operator confirms it on the iPhone.
 4. **Approval and question cards (items 5, 13).** M + S. Their answered state reuses the expand/collapse helper

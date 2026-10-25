@@ -14,7 +14,7 @@ import { hapticTick } from '../ui/motion/haptic';
 import { SheetHeader } from '../ui/Sheet';
 import { CrossFade, motionOf, reducedMotion, useDrag, useFlip } from './dom';
 import { ACTIVITY, CHANGES, DIFF_LINES, SESSIONS, type LabSession as Session } from './fixtures';
-import { drop, withLeaving, type Shown } from './flip';
+import { drop, withLeaving, type Shown } from '../ui/motion/flip';
 import { LabSession } from './LabSession';
 import { LabSheet } from './LabSheet';
 import { ALL_HOSTS, hostsOf, loadLook, onHost, saveLook, type Look } from './look';

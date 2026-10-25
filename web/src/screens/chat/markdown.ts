@@ -120,3 +120,29 @@ function inlineText(inlines: Inline[]): string {
     })
     .join('');
 }
+
+/**
+ * The newest text of a streaming reply fades in on the last block only (markdown elsewhere would need the
+ * fade threaded through every element). `fresh` is the reply's newest text, at its end. When the last block
+ * ends in plain text that ends with `fresh`, returns the blocks with that text cut off the last block, for
+ * the view to append it as fading pieces; otherwise null (show the blocks as they are, without a fade).
+ */
+export function withoutFreshTail(blocks: readonly Block[], fresh: string): Block[] | null {
+  if (fresh === '' || blocks.length === 0) return null;
+  const last = blocks[blocks.length - 1]!;
+  const cut = (inlines: Inline[]): Inline[] | null => {
+    const end = inlines[inlines.length - 1];
+    if (end?.kind !== 'text' || !end.text.endsWith(fresh)) return null;
+    const rest = end.text.slice(0, end.text.length - fresh.length);
+    return [...inlines.slice(0, -1), ...(rest === '' ? [] : [{ kind: 'text' as const, text: rest }])];
+  };
+  let next: Block | null = null;
+  if (last.kind === 'p' || last.kind === 'h' || last.kind === 'quote') {
+    const inlines = cut(last.inlines);
+    if (inlines !== null) next = { ...last, inlines };
+  } else if (last.kind === 'ul' || last.kind === 'ol') {
+    const inlines = cut(last.items[last.items.length - 1] ?? []);
+    if (inlines !== null) next = { ...last, items: [...last.items.slice(0, -1), inlines] };
+  }
+  return next === null ? null : [...blocks.slice(0, -1), next];
+}

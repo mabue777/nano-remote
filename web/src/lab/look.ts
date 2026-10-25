@@ -1,7 +1,8 @@
 // The lab's "Look" switch (Now = today's look, New = the redesign from docs/research/visual-gap-openai-2026-10.md)
-// and the few rules the New look adds: the "Worked for 3m 12s" label, the one trailing status indicator per
-// session row, and the host chips that filter the list. Kept apart from the technique switches: All Now / All
-// Smooth never change the look, so every look combines with every motion setting.
+// and the few rules the New look adds: the one trailing status indicator per session row and the host chips
+// that filter the list. The "Worked for" and "previous messages" wording moved to screens/session/transcript.ts.
+// Kept apart from the technique switches: All Now / All Smooth never change the look, so every look combines
+// with every motion setting.
 import type { StorageLike } from '../replica/storage';
 import type { LabSession, Tone } from './fixtures';
 
@@ -25,19 +26,8 @@ export function saveLook(storage: StorageLike | null, look: Look): void {
   }
 }
 
-/** "Worked for 12s", "Worked for 3m 12s", "Worked for 3h 42m" (the iOS Codex wording); a stopped turn passes its own lead. */
-export function workedFor(ms: number, lead = 'Worked for'): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${lead} ${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${lead} ${minutes}m ${seconds % 60}s`;
-  return `${lead} ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-/** "1 previous message", "3 previous messages". */
-export function previousMessages(count: number): string {
-  return `${count} previous message${count === 1 ? '' : 's'}`;
-}
+// "Worked for 3m 12s" and "N previous messages" moved to the session view, which adopted them.
+export { previousMessages, workedFor } from '../screens/session/transcript';
 
 /** The one thing at the end of a session row: a spinner, a tinted pill, a "?" bubble, an alert, or nothing. */
 export type Indicator = { kind: 'spinner' | 'question' | 'alert' | 'none'; label: string } | { kind: 'pill'; label: string };

@@ -27,6 +27,15 @@ test.beforeEach(async ({ request }) => {
   await request.post('/test/reset');
 });
 
+/** Unfolds the finished turn, opens its command's row, and its "Full output". */
+async function openCommandSheet(page: Page): Promise<void> {
+  const conversation = page.getByRole('region', { name: 'Conversation' });
+  await conversation.getByRole('button', { name: /previous message/ }).click();
+  const command = conversation.locator('[data-item="command"]');
+  await command.getByRole('button', { expanded: false }).click();
+  await command.getByRole('button', { name: 'Full output' }).click();
+}
+
 async function openSession(page: Page, request: APIRequestContext, sessionId: string): Promise<void> {
   const code = ((await (await request.post('/test/code')).json()) as { code: string }).code;
   await page.goto(`/pair#code=${code}`);
@@ -41,9 +50,13 @@ test('the output view streams a running command as plain wrapped text, follows i
   await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
   await request.post('/test/review', { data: { sessionId: 'ses_fake_3', chunks: CHUNKS } });
 
+  // The command's row opens its output under it; "Full output" opens the sheet.
   const conversation = page.getByRole('region', { name: 'Conversation' });
-  await expect(conversation.locator('[data-item="command"]')).toContainText('npm test');
-  await conversation.getByRole('button', { name: 'Details of command' }).click();
+  const command = conversation.locator('[data-item="command"]');
+  await expect(command).toContainText('Running npm test');
+  await command.getByRole('button', { name: 'Running npm test' }).click();
+  await expect(command.locator('.row-output')).toContainText('test 1 passed');
+  await command.getByRole('button', { name: 'Full output' }).click();
 
   const sheet = page.getByRole('dialog', { name: 'Command' });
   await expect(sheet).toBeVisible();
@@ -94,10 +107,14 @@ test('the Changes view lists the files with kind words; a tapped file shows its 
   await expect(conversation.locator('[data-item="command"]')).toContainText('npm test');
   await request.post('/test/review-finish', { data: { sessionId: 'ses_fake_3', changes: CHANGES } });
 
-  // Tapping the file change item itself opens the sheet on Changes.
+  // The finished turn folds its work; the file change row lists the files, and "Show changes" opens the
+  // sheet on Changes.
+  await conversation.getByRole('button', { name: '2 previous messages' }).click();
   const fileChange = conversation.locator('[data-item="fileChange"]');
+  await expect(fileChange).toContainText('Edited 4 files');
+  await fileChange.getByRole('button', { name: 'Edited 4 files' }).click();
   await expect(fileChange).toContainText('src/new.ts');
-  await fileChange.click();
+  await fileChange.getByRole('button', { name: 'Show changes' }).click();
   const sheet = page.getByRole('dialog', { name: 'File change' });
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText('4 files changed');
@@ -238,27 +255,21 @@ test('a session folder outside git: the Changes view says it needs a repository'
   const conversation = page.getByRole('region', { name: 'Conversation' });
   await expect(conversation.locator('li[data-turn-status]')).toHaveAttribute('data-turn-status', 'completed');
   await expect(conversation.locator('.turn-changes')).toHaveCount(0); // no count without a repository
-  await conversation.getByRole('button', { name: 'Details of agent message' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Agent message' });
+  await openCommandSheet(page);
+  const sheet = page.getByRole('dialog', { name: 'Command' });
+  await sheet.getByRole('tab', { name: 'Changes' }).click();
   await expect(sheet).toContainText('Changes need a git repository in the session folder.');
   await page.screenshot({ path: `${SHOTS}/7-not-a-repository.png` });
 });
 
-test('an agent without diffs says so, and any item opens the sheet', async ({ page, request }) => {
+test('an agent without diffs says so in the command sheet', async ({ page, request }) => {
   await request.post('/test/no-diffs', { data: { sessionId: 'ses_fake_1' } });
   await openSession(page, request, 'ses_fake_1');
   const conversation = page.getByRole('region', { name: 'Conversation' });
   await expect(conversation.locator('li[data-turn-status]')).toHaveAttribute('data-turn-status', 'completed');
 
-  await conversation.getByRole('button', { name: 'Details of agent message' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Agent message' });
-  await expect(sheet).toContainText('This agent does not provide diffs.');
-  await expect(sheet.getByRole('tab')).toHaveCount(0); // no output for a message
-  await page.keyboard.press('Escape');
-  await expect(sheet).toHaveCount(0);
-
   // The finished command's output, from the seeded turn.
-  await conversation.getByRole('button', { name: 'Details of command' }).click();
+  await openCommandSheet(page);
   const command = page.getByRole('dialog', { name: 'Command' });
   await expect(command.getByLabel('Command output')).toHaveText('Created hello.txt');
   await command.getByRole('tab', { name: 'Changes' }).click();

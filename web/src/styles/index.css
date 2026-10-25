@@ -9,6 +9,7 @@
 @import '../screens/HomeScreen.css';
 @import '../screens/NewSessionSheet.css';
 @import '../screens/session/SessionScreen.css';
+@import '../screens/session/transcript.css';
 @import '../screens/session/approvals/RequestCards.css';
 @import '../screens/session/views/views.css';
 @import '../pwa/UpdatePrompt.css';

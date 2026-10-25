@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseInline, parseMarkdown } from './markdown';
+import { parseInline, parseMarkdown, withoutFreshTail } from './markdown';
 
 describe('parseMarkdown', () => {
   it('splits paragraphs at blank lines and keeps line breaks inside one', () => {
@@ -87,5 +87,26 @@ describe('parseInline', () => {
     expect(parseInline('half **open')).toEqual([{ kind: 'text', text: 'half **open' }]);
     expect(parseInline('[x](javascript:alert(1))')).toEqual([{ kind: 'text', text: '[x](javascript:alert(1))' }]);
     expect(parseInline('2 * 3 * 4')).toEqual([{ kind: 'text', text: '2 * 3 * 4' }]);
+  });
+});
+
+describe('withoutFreshTail', () => {
+  it('cuts the fresh text off the last paragraph, heading, quote or list item', () => {
+    expect(withoutFreshTail(parseMarkdown('One.\n\nTwo **b** three'), ' three')).toEqual([
+      { kind: 'p', inlines: [{ kind: 'text', text: 'One.' }] },
+      { kind: 'p', inlines: [{ kind: 'text', text: 'Two ' }, { kind: 'strong', text: 'b' }] },
+    ]);
+    expect(withoutFreshTail(parseMarkdown('# Title'), 'Title')).toEqual([{ kind: 'h', level: 1, inlines: [] }]);
+    expect(withoutFreshTail(parseMarkdown('> quoted'), 'ted')).toEqual([{ kind: 'quote', inlines: [{ kind: 'text', text: 'quo' }] }]);
+    expect(withoutFreshTail(parseMarkdown('- a\n- bee'), 'ee')).toEqual([{ kind: 'ul', items: [[{ kind: 'text', text: 'a' }], [{ kind: 'text', text: 'b' }]] }]);
+    expect(withoutFreshTail(parseMarkdown('1. one'), 'ne')).toEqual([{ kind: 'ol', start: 1, items: [[{ kind: 'text', text: 'o' }]] }]);
+  });
+
+  it('no fade when there is nothing fresh, the last block is code, or the text does not end the block', () => {
+    expect(withoutFreshTail(parseMarkdown('Hi'), '')).toBeNull();
+    expect(withoutFreshTail([], 'x')).toBeNull();
+    expect(withoutFreshTail(parseMarkdown('```\ncode'), 'code')).toBeNull();
+    expect(withoutFreshTail(parseMarkdown('a **bold**'), 'bold**')).toBeNull();
+    expect(withoutFreshTail([{ kind: 'ul', items: [] }], 'x')).toBeNull();
   });
 });

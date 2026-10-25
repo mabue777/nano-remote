@@ -1,0 +1,314 @@
+/* The transcript in the new look (docs/research/new-look-prototype.md, item 4), as the lab's New look
+   (web/src/lab/new-look.css, .lab-nl-*) built it: flat one-line rows, "N previous messages", the "Worked for"
+   hairline, the shimmering "Thinking", the paced answer and the jump pill. Shared by the session view and
+   local chat (TranscriptRows.tsx). Only transform and opacity animate, plus the Thinking shimmer. */
+
+.msg.agent {
+  padding: var(--space-2) 0;
+}
+
+/* One line: icon, verb phrase in secondary grey (the target in the text colour), tag, chevron. */
+.row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: var(--type-callout);
+  text-align: left;
+}
+
+button.row-line:active,
+button.previous-toggle:active {
+  transform: none; /* full-width rows only dim */
+}
+
+.row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row-target {
+  color: var(--text);
+}
+
+.row-tag {
+  flex: none;
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.row-tag.error {
+  color: var(--error);
+}
+
+.row-tag.ok {
+  color: var(--ok);
+}
+
+.row-tag.busy {
+  color: var(--busy);
+}
+
+.row-line .chevron,
+.previous-toggle .chevron {
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.row-line .chevron.open {
+  transform: rotate(90deg);
+}
+
+.previous-toggle .chevron.open {
+  transform: rotate(180deg);
+}
+
+.spin {
+  animation: row-spin 0.9s linear infinite;
+}
+
+@keyframes row-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The open part, under the text: past the 18 px icon and its gap. */
+.row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-4) 28px; /* one-off: under the text, past the icon and gap */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.row-body > p {
+  margin: 0;
+}
+
+.row-meta {
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+}
+
+.row-output,
+.row-body .reasoning-text,
+.row-body .plan-text {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--radius-inner);
+  background: var(--fill);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row-output {
+  font: var(--type-code);
+}
+
+.row-body .reasoning-text,
+.row-body .plan-text {
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.row-body .paths {
+  margin: 0;
+  font: var(--type-footnote);
+}
+
+.row-more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+}
+
+/* "3 previous messages ⌄" */
+.previous-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: var(--type-callout);
+}
+
+/* "Worked for 3m 12s" with a hairline to the right. */
+.worked-for {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-2) 0;
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+}
+
+.worked-for::after {
+  content: '';
+  flex: 1;
+  border-top: 0.5px solid var(--line);
+}
+
+/* "Thinking": grey at body size, a slow highlight passing over it; a thinking row's verb shimmers the same. */
+.thinking {
+  align-self: flex-start;
+  margin: 0;
+  font: var(--type-body);
+  font-weight: 500;
+}
+
+.thinking,
+.shimmer {
+  color: transparent;
+  background: linear-gradient(90deg, var(--text-tertiary) 0 35%, var(--text) 50%, var(--text-tertiary) 65% 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: thinking-shimmer var(--duration-shimmer) linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* The newest words of a streaming answer fade in. */
+.fresh {
+  animation: fresh-in 320ms var(--ease-standard) both;
+}
+
+@keyframes fresh-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* An opened part fades in and settles. */
+.reveal {
+  animation: reveal-in var(--duration-relaxed) var(--ease-enter) both;
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* "Jump to latest": a round button that fades and rises in instead of popping. */
+.jump-latest {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 132px); /* one-off: just above the composer */
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-lg), var(--shadow-ring);
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-moderate) var(--ease-standard),
+    transform var(--duration-moderate) var(--ease-standard);
+}
+
+.jump-latest.shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+button.jump-latest.shown:active {
+  transform: translate(-50%, 0) scale(0.97);
+}
+
+/* The background tasks strip: the same flat rows, above the conversation; scrolls on its own when long. */
+.bg-tasks {
+  flex: none;
+  max-height: 30dvh;
+  overflow-y: auto;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.bg-tasks-title {
+  margin: 0;
+  font: var(--type-footnote);
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.bg-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bg-task-time {
+  flex: none;
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bg-task-activity {
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking,
+  .shimmer {
+    animation: none;
+    color: var(--text-tertiary);
+    background: none;
+  }
+
+  .fresh,
+  .reveal,
+  .spin {
+    animation: none;
+  }
+}

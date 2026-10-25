@@ -1,7 +1,9 @@
 // The session page, /s/:sessionId: the turn list, the pending-request banner, the approval and question
-// cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this
-// file renders them and owns only the DOM work (scrolling, the pull-down gesture, keeping the reading
-// position when older turns are put in front).
+// cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All
+// state and rules live in SessionModel and ApprovalsModel; this file renders them and owns only the DOM work
+// (auto-scroll, the pull-down gesture, keeping the reading position when older turns are put in front, and
+// the expand and collapse motion). The transcript is the new look's (Transcript.tsx): flat one-line rows that
+// open under themselves, "Thinking", the paced answer, "Worked for" and the "N previous messages" fold.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
@@ -17,13 +19,17 @@ import { useModel } from '../use-model';
 import { ApprovalsModel } from './approvals/approvals-model';
 import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import type { AttachmentEntry } from './attachments/composer';
+import { collapse, reducedMotion, useAutoScroll, useFlip, type Flip } from './motion-hooks';
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 import { SessionSettingsSheet } from './SessionSettingsSheet';
+import { AgentMessage, FlatRow, JumpPill, PreviousToggle, Thinking, WorkedFor } from './TranscriptRows';
+import { layoutTurn, rowLine } from './transcript';
+import { cleanOutput } from './views/ansi';
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
 
-/** Within this many px of the bottom counts as "at the bottom" (auto-scroll stays on). */
-const BOTTOM_SLACK = 48;
+/** A command's open row shows at most this many of its last output lines; Full output has the rest. */
+const OUTPUT_LINES = 60;
 
 export interface SessionScreenProps {
   sessionId: string;
@@ -81,12 +87,28 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   }, [model, tasksShown]);
 
   const scroller = useRef<HTMLElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const landed = useRef(false);
   const keep = useRef<{ height: number; top: number } | undefined>(undefined);
   const lastScrollRequest = useRef(-1);
+  // Auto-scroll: eases to new content while the reader is at the bottom, lets go at the first touch.
+  const scroll = useAutoScroll(scroller, content, (following) => model.setAtBottom(following));
+  const flip = useFlip(scroller, !reducedMotion());
 
-  // After every render: keep the reading position when older turns were put in front, else follow the
-  // bottom while the user has not scrolled away (and always after a send or the jump pill).
+  // A turn that ends folds its work behind "N previous messages": measure the rows before that renders, so
+  // the rest slides into place instead of jumping.
+  useLayoutEffect(() => {
+    let folded = model.foldedTurns;
+    return model.subscribe(() => {
+      const next = model.foldedTurns;
+      if (next === folded) return;
+      folded = next;
+      flip.prepare();
+    });
+  }, [model, flip]);
+
+  // After every render: keep the reading position when older turns were put in front; follow the bottom
+  // again after a send or the jump pill.
   useLayoutEffect(() => {
     const element = scroller.current;
     if (element === null) return;
@@ -95,15 +117,16 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       keep.current = undefined;
       return;
     }
-    if (model.atBottom || lastScrollRequest.current !== model.scrollRequest) {
+    if (lastScrollRequest.current !== model.scrollRequest) {
+      if (lastScrollRequest.current !== -1) scroll.jump();
       lastScrollRequest.current = model.scrollRequest;
-      element.scrollTop = element.scrollHeight;
     }
-    // Landing here (a notification's link, or a tap on a waiting row): the first pending card comes into
-    // view once, with its top edge showing when it is taller than the conversation. Blocking questions are
-    // pinned above the composer already.
+    // Landing here (a notification's link, or a tap on a waiting row): at the bottom, and the first pending
+    // card comes into view once, with its top edge showing when it is taller than the conversation. Blocking
+    // questions are pinned above the composer already.
     if (!landed.current && model.loaded) {
       landed.current = true;
+      scroll.snap();
       const card = element.querySelector<HTMLElement>('.request-card');
       if (card !== null && typeof card.scrollIntoView === 'function') {
         card.scrollIntoView({ block: card.offsetHeight > element.clientHeight ? 'start' : 'end' });
@@ -206,7 +229,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
           </span>
         </div>
       )}
-      <BackgroundTasks rows={model.backgroundTasks} model={model} />
+      <BackgroundTasks rows={model.backgroundTasks} model={model} flip={flip} scroller={scroller} />
       {model.openError !== undefined && (
         <p class="error" role="alert">
           {model.openError}
@@ -217,12 +240,19 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         class="conversation"
         aria-label="Conversation"
         ref={scroller}
-        onScroll={(event) => {
-          const element = event.currentTarget as HTMLElement;
-          model.setAtBottom(element.scrollHeight - element.scrollTop - element.clientHeight <= BOTTOM_SLACK);
+        onScroll={scroll.handlers.onScroll}
+        onTouchStart={(event) => {
+          scroll.handlers.onTouchStart();
+          pull.handlers.onTouchStart(event);
         }}
-        {...pull.handlers}
+        onTouchMove={pull.handlers.onTouchMove}
+        onTouchEnd={() => {
+          pull.handlers.onTouchEnd();
+          scroll.handlers.onTouchEnd();
+        }}
+        onTouchCancel={scroll.handlers.onTouchCancel}
       >
+        <div ref={content} class="conversation-content">
         <PullIndicator distance={pull.distance} pullLabel="Pull for earlier turns" releaseLabel="Release to load earlier turns" />
         {model.hasOlder && (
           <div class="older">
@@ -241,7 +271,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         ) : (
           <ol class="turns" aria-label="Turns">
             {turns.map((turn) => (
-              <Turn key={turn.turnId} turn={turn} model={model} />
+              <Turn key={turn.turnId} turn={turn} model={model} flip={flip} scroller={scroller} />
             ))}
           </ol>
         )}
@@ -252,14 +282,13 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             ))}
           </ul>
         )}
-        <InlineRequests model={requests} />
+        <div data-flip-key="requests">
+          <InlineRequests model={requests} />
+        </div>
+        </div>
       </section>
 
-      {model.showJumpToLatest && (
-        <button type="button" class="jump-pill" onClick={() => model.jumpToLatest()}>
-          Jump to latest ↓
-        </button>
-      )}
+      <JumpPill shown={scroll.pill} onJump={() => model.jumpToLatest()} />
 
       <PinnedQuestions model={requests} />
       <Composer model={model} running={running} />
@@ -295,10 +324,14 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   );
 }
 
-/** The strip of background tasks: one row each (title, elapsed time, status); a tap shows the activity. */
-function BackgroundTasks({ rows, model }: { rows: BackgroundTaskRow[]; model: SessionModel }) {
+/** The strip of background tasks: one flat row each (title, elapsed time, status); a tap shows the activity. */
+function BackgroundTasks({ rows, model, flip, scroller }: { rows: BackgroundTaskRow[]; model: SessionModel; flip: Flip; scroller: { current: HTMLElement | null } }) {
   if (rows.length === 0) return null;
   const running = rows.filter((row) => row.status === 'running').length;
+  const toggle = (row: BackgroundTaskRow) => {
+    if (!row.expanded) flip(() => model.toggleTask(row.id));
+    else collapse(scroller.current?.parentElement ?? null, `task/${row.id}`, flip, () => model.toggleTask(row.id), !reducedMotion());
+  };
   return (
     <section class="bg-tasks" aria-labelledby="bg-tasks-title">
       <h2 id="bg-tasks-title" class="bg-tasks-title small">
@@ -307,18 +340,26 @@ function BackgroundTasks({ rows, model }: { rows: BackgroundTaskRow[]; model: Se
       <ul class="bg-task-list">
         {rows.map((row) => (
           <li key={row.id} class="bg-task" data-status={row.status}>
-            <button type="button" class="bg-task-row" aria-expanded={row.expanded} onClick={() => model.toggleTask(row.id)}>
-              <span class="bg-task-title">{row.title}</span>
-              <span class="bg-task-time small muted">{row.elapsed}</span>
-              <span class={`state small ${row.tone}`}>{row.state}</span>
+            <button type="button" class="bg-task-row row-line" aria-expanded={row.expanded} onClick={() => toggle(row)}>
+              <Icon name={TASK_ICON[row.status]} size={18} class={row.status === 'running' ? 'row-icon spin' : 'row-icon'} />
+              <span class="bg-task-title row-text">{row.title}</span>
+              <span class="bg-task-time small">{row.elapsed}</span>
+              <span class={`row-tag ${row.tone}`}>{row.state}</span>
+              <Icon name="chevron-right" size={16} class={row.expanded ? 'chevron open' : 'chevron'} />
             </button>
-            {row.expanded && <p class="bg-task-activity small muted">{row.activity ?? 'No activity reported yet.'}</p>}
+            {row.expanded && (
+              <p class="bg-task-activity row-body reveal" data-body={`task/${row.id}`}>
+                {row.activity ?? 'No activity reported yet.'}
+              </p>
+            )}
           </li>
         ))}
       </ul>
     </section>
   );
 }
+
+const TASK_ICON = { running: 'spinner', finished: 'check', cancelled: 'x', failed: 'alert', ended: 'x' } as const;
 
 /** Stop while background tasks run: stopping the turn cancels them too, so it asks first. */
 function StopConfirm({ model }: { model: SessionModel }) {
@@ -340,20 +381,33 @@ function StopConfirm({ model }: { model: SessionModel }) {
   );
 }
 
-function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
+interface TurnProps {
+  turn: TurnRow;
+  model: SessionModel;
+  flip: Flip;
+  scroller: { current: HTMLElement | null };
+}
+
+function Turn({ turn, model, flip, scroller }: TurnProps) {
+  const layout = layoutTurn(turn.items, turn.final);
+  const foldable = turn.final && layout.work.length > 0;
+  const shown = (item: ItemRow) => <ItemView key={item.itemId} item={item} model={model} flip={flip} scroller={scroller} />;
   return (
     <li class={`turn ${turn.status}`} data-turn-status={turn.status}>
-      {turn.items.map((item) => (
-        <OpenableItem key={item.itemId} item={item} model={model} />
-      ))}
+      {layout.lead.map(shown)}
+      {foldable && <PreviousToggle count={layout.work.length} open={turn.unfolded} flipKey={`${turn.turnId}/previous`} onToggle={() => flip(() => model.toggleFold(turn.turnId))} />}
+      {(!foldable || turn.unfolded) && layout.work.map(shown)}
+      {turn.workedFor !== undefined && <WorkedFor label={turn.workedFor} flipKey={`${turn.turnId}/worked`} />}
+      {layout.answer !== undefined && shown(layout.answer)}
+      {turn.thinking && <Thinking flipKey={`${turn.turnId}/thinking`} />}
       {turn.changes !== undefined && (
-        <button type="button" class="link small turn-changes" onClick={() => model.openChanges(turn.turnId)}>
+        <button type="button" class="link small turn-changes" data-flip-key={`${turn.turnId}/changes`} onClick={() => model.openChanges(turn.turnId)}>
           {turn.changes}
           <Icon name="chevron-right" size={16} />
         </button>
       )}
       {turn.label !== '' && (
-        <p class={`turn-state small ${turn.tone}${turn.queued === true ? ' queued' : ''}`} {...(turn.queued === true ? { role: 'status' } : {})}>
+        <p class={`turn-state small ${turn.tone}${turn.queued === true ? ' queued' : ''}`} data-flip-key={`${turn.turnId}/state`} {...(turn.queued === true ? { role: 'status' } : {})}>
           {turn.label}
         </p>
       )}
@@ -384,87 +438,49 @@ function Turn({ turn, model }: { turn: TurnRow; model: SessionModel }) {
   );
 }
 
-/** What a short label of an item says, for the button that opens its detail sheet. */
-const ITEM_NAME: Record<ItemRow['kind'], string> = {
-  user: 'message',
-  agent: 'agent message',
-  reasoning: 'thinking',
-  command: 'command',
-  fileChange: 'file change',
-  tool: 'tool call',
-  plan: 'plan',
-  other: 'activity',
-};
-
-/**
- * An item of the turn list that opens the detail sheet: a tap anywhere on it that does not hit one of its
- * own controls, or its details button (keyboard and screen readers).
- */
-function OpenableItem({ item, model }: { item: ItemRow; model: SessionModel }) {
-  if (!model.hasDetail(item.kind)) {
-    return (
-      <div class={`item-row ${item.kind === 'user' ? 'user' : ''}`} data-item-id={item.itemId}>
-        <Item item={item} model={model} />
-      </div>
-    );
-  }
-  return (
-    <div
-      class={`item-row ${item.kind === 'user' ? 'user' : ''}`}
-      data-item-id={item.itemId}
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest('button, a, summary, input, textarea, select') !== null) return;
-        if (window.getSelection()?.isCollapsed === false) return; // selecting text, not opening
-        model.openItem(item.itemId);
-      }}
-    >
-      <Item item={item} model={model} />
-      <button type="button" class="link small open-detail" aria-label={`Details of ${ITEM_NAME[item.kind]}`} onClick={() => model.openItem(item.itemId)}>
-        {item.kind === 'command' ? 'Output' : 'Details'}
-        <Icon name="chevron-right" size={16} />
-      </button>
-    </div>
-  );
+/** The last `max` lines of a command's output, without terminal codes. */
+function outputTail(output: string, max = OUTPUT_LINES): string {
+  const lines = cleanOutput(output).replace(/\n+$/, '').split('\n');
+  return lines.length > max ? lines.slice(-max).join('\n') : lines.join('\n');
 }
 
-function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
-  switch (item.kind) {
-    case 'user':
-      return (
-        <div class="msg user" data-item={item.kind}>
+/** One item of a turn: a message, or a flat row that opens its content under it. */
+function ItemView({ item, model, flip, scroller }: { item: ItemRow; model: SessionModel; flip: Flip; scroller: { current: HTMLElement | null } }) {
+  if (item.kind === 'user') {
+    return (
+      <div class="item-row user" data-item-id={item.itemId} data-flip-key={item.itemId}>
+        <div class="msg user" data-item="user">
           <SentAttachments images={item.images} files={item.files} />
           {item.text !== '' && <p>{item.text}</p>}
         </div>
-      );
-    case 'agent':
-      return (
-        <div class="msg agent" data-item={item.kind} data-streaming={item.streaming ? 'true' : 'false'}>
-          <p>{item.text}</p>
-        </div>
-      );
-    case 'reasoning':
-      return (
-        <div class="item reasoning" data-item={item.kind}>
-          <button type="button" class="link reasoning-toggle" aria-expanded={item.expanded} onClick={() => model.toggleReasoning(item.itemId)}>
-            <Icon name="chevron-right" size={16} class={item.expanded ? 'chevron open' : 'chevron'} />
-            Thinking{item.summary !== '' ? `: ${item.summary.split('\n')[0]}` : ''}
-          </button>
-          {item.expanded && <p class="muted small reasoning-text">{item.text !== '' ? item.text : item.summary}</p>}
-        </div>
-      );
+      </div>
+    );
+  }
+  if (item.kind === 'agent') return <AgentMessage itemId={item.itemId} text={item.text} streaming={item.streaming} />;
+  const open = item.kind === 'other' ? false : item.expanded;
+  const toggle = () => {
+    if (!open) flip(() => model.toggleItem(item.itemId));
+    else collapse(scroller.current, item.itemId, flip, () => model.toggleItem(item.itemId), !reducedMotion());
+  };
+  const detail = model.hasDetail(item.kind) ? (label: string) => (
+    <button type="button" class="link small row-more" onClick={() => model.openItem(item.itemId)}>
+      {label}
+      <Icon name="chevron-right" size={16} />
+    </button>
+  ) : () => null;
+  const line = rowLine(item);
+  switch (item.kind) {
     case 'command':
       return (
-        <div class="item command" data-item={item.kind}>
-          <div class="item-line">
-            <span class={`state small ${item.tone}`}>{item.state}</span>
-            <code class="summary">{item.summary}</code>
-          </div>
-        </div>
+        <FlatRow line={line} rowKey={item.itemId} kind="command" expandable open={open} onToggle={toggle}>
+          {item.meta !== '' && <p class="row-meta">{item.meta}</p>}
+          {item.output !== '' ? <pre class="row-output">{outputTail(item.output)}</pre> : <p class="row-meta">{item.tone === 'busy' ? 'No output yet.' : 'No output.'}</p>}
+          {detail('Full output')}
+        </FlatRow>
       );
     case 'fileChange':
       return (
-        <div class="item file-change" data-item={item.kind}>
-          <span class={`state small ${item.tone}`}>{item.state === 'Done' ? 'Changed' : item.state}</span>
+        <FlatRow line={line} rowKey={item.itemId} kind="fileChange" expandable open={open} onToggle={toggle}>
           <ul class="paths" aria-label="Changed files">
             {item.files.map((file) => (
               <li key={file.path}>
@@ -472,30 +488,33 @@ function Item({ item, model }: { item: ItemRow; model: SessionModel }) {
               </li>
             ))}
           </ul>
-        </div>
+          {detail('Show changes')}
+        </FlatRow>
       );
     case 'tool':
       return (
-        <div class="item tool" data-item={item.kind}>
-          <div class="item-line">
-            <span class={`state small ${item.tone}`}>{item.state}</span>
-            <code class="summary">{item.summary}</code>
-          </div>
+        <FlatRow line={line} rowKey={item.itemId} kind="tool" expandable={item.error !== undefined || model.diffs} open={open} onToggle={toggle}>
           {item.error !== undefined && <p class="error small">{item.error}</p>}
-        </div>
+          {detail('Details')}
+        </FlatRow>
       );
+    case 'reasoning': {
+      const text = item.text !== '' ? item.text : item.summary;
+      return (
+        <FlatRow line={line} rowKey={item.itemId} kind="reasoning" expandable={text !== ''} open={open} onToggle={toggle} shimmer={item.streaming}>
+          <p class="reasoning-text">{text}</p>
+        </FlatRow>
+      );
+    }
     case 'plan':
       return (
-        <div class="item plan" data-item={item.kind}>
-          <p class="small">{item.text}</p>
-        </div>
+        <FlatRow line={line} rowKey={item.itemId} kind="plan" expandable={item.text !== ''} open={open} onToggle={toggle}>
+          <p class="plan-text">{item.text}</p>
+          {detail('Details')}
+        </FlatRow>
       );
     case 'other':
-      return (
-        <div class="item other muted small" data-item={item.kind}>
-          {item.label}
-        </div>
-      );
+      return <FlatRow line={line} rowKey={item.itemId} kind="other" expandable={false} open={false} onToggle={toggle} />;
   }
 }
 

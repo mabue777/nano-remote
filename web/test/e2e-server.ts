@@ -9,7 +9,9 @@
 // Test hooks: `POST /test/code` issues a fresh code; `POST /test/expire` issues one that is already
 // expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them) and empties
 // the request log;
-// `POST /test/run {sessionId, text}` starts a scripted turn the way the desktop would;
+// `POST /test/run {sessionId, text, answer?, deltas?}` starts a scripted turn the way the desktop would
+// (`answer` replaces its streamed text, in `deltas` item/delta events); `POST /test/kill` drops every
+// socket without a close frame (the app reconnects and replays from its cursor);
 // `POST /test/resolve {sessionId, decision}` answers its approval from another device;
 // `POST /test/touch {sessionId, agoSeconds}` sets a session's updatedAt to that many seconds ago;
 // `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
@@ -172,7 +174,10 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/provider-chats':
               return json(200, { chats: provider.chats });
             case '/test/run':
-              host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.');
+              host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.', { ...(body.answer !== undefined ? { answer: body.answer } : {}), ...(body.deltas !== undefined ? { deltas: body.deltas } : {}) });
+              return json(200, { ok: true });
+            case '/test/kill':
+              host.kill();
               return json(200, { ok: true });
             case '/test/resolve':
               host.resolveElsewhere(body.sessionId, body.decision ?? 'accept');

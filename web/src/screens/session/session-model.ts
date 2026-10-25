@@ -41,6 +41,7 @@ import { ComposerAttachments, type AttachmentRules, type PickedFile } from './at
 import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
 import { SessionSettingsModel, type SettingsReplica } from './settings-model';
+import { workedFor } from './transcript';
 import { filesChangedText } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
@@ -73,16 +74,16 @@ export type ItemRow =
   | { kind: 'user'; itemId: string; text: string; images: AttachmentView[]; files: AttachmentView[] }
   | { kind: 'agent'; itemId: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; itemId: string; summary: string; text: string; expanded: boolean; streaming: boolean }
-  | { kind: 'command'; itemId: string; summary: string; state: string; tone: Tone; output: string }
-  | { kind: 'fileChange'; itemId: string; files: { path: string; kind: string }[]; state: string; tone: Tone }
-  | { kind: 'tool'; itemId: string; summary: string; state: string; tone: Tone; error?: string }
-  | { kind: 'plan'; itemId: string; text: string }
+  | { kind: 'command'; itemId: string; summary: string; command: string; meta: string; state: string; tone: Tone; output: string; expanded: boolean }
+  | { kind: 'fileChange'; itemId: string; files: { path: string; kind: string }[]; state: string; tone: Tone; expanded: boolean }
+  | { kind: 'tool'; itemId: string; summary: string; state: string; tone: Tone; error?: string; expanded: boolean }
+  | { kind: 'plan'; itemId: string; text: string; expanded: boolean }
   | { kind: 'other'; itemId: string; label: string };
 
 export interface TurnRow {
   turnId: string;
   status: TurnView['status'];
-  /** "Working…", "Interrupted", "Failed", "Sending…", "Not sent"; empty for a completed turn. */
+  /** "Interrupted", "Failed", "Sending…", "Not sent", a queued notice; empty for a running or completed turn. */
   label: string;
   tone: Tone;
   items: ItemRow[];
@@ -94,6 +95,14 @@ export interface TurnRow {
   changes?: string;
   /** Its message waits in the engine behind background tasks (userMessage `queued`); `label` says so. */
   queued?: boolean;
+  /** The turn has ended (completed, interrupted, failed): its work folds behind "N previous messages". */
+  final: boolean;
+  /** "Worked for 3m 12s" ("Stopped after …" when interrupted) once the turn has ended. */
+  workedFor?: string;
+  /** The agent works and no answer text streams yet: the grey "Thinking" line shows. */
+  thinking: boolean;
+  /** A finished turn's work is shown (the user opened "N previous messages"). */
+  unfolded: boolean;
 }
 
 /** How long an ended background task stays in the strip after it ended, in seconds. */
@@ -224,10 +233,15 @@ function stateOf(status: Item['status'], done = 'Done'): { state: string; tone: 
 
 /** The command's one-line summary: the command itself, then exit code and duration once known. */
 export function commandSummary(item: Extract<Item, { type: 'command' }>): string {
-  const parts = [oneLine(unwrapShell(item.command))];
+  return [oneLine(unwrapShell(item.command)), ...commandMeta(item)].join(' · ');
+}
+
+/** Exit code and duration, once known. */
+function commandMeta(item: Extract<Item, { type: 'command' }>): string[] {
+  const parts: string[] = [];
   if (typeof item.exitCode === 'number') parts.push(`exit ${item.exitCode}`);
   if (typeof item.durationMs === 'number') parts.push(formatDuration(item.durationMs));
-  return parts.join(' · ');
+  return parts;
 }
 
 /** The last segment of an image URL as a name: `/v1/blob/blb_x` -> `blb_x`; data URLs are "image". */
@@ -269,10 +283,20 @@ export function itemRow(item: Item, expanded: boolean): ItemRow {
     case 'command': {
       const { state, tone } = stateOf(item.status, typeof item.exitCode === 'number' && item.exitCode !== 0 ? 'Failed' : 'Done');
       const failedExit = item.status === 'completed' && typeof item.exitCode === 'number' && item.exitCode !== 0;
-      return { kind: 'command', itemId, summary: commandSummary(item), state, tone: failedExit ? 'error' : tone, output: item.output };
+      return {
+        kind: 'command',
+        itemId,
+        summary: commandSummary(item),
+        command: oneLine(unwrapShell(item.command)),
+        meta: commandMeta(item).join(' · '),
+        state,
+        tone: failedExit ? 'error' : tone,
+        output: item.output,
+        expanded,
+      };
     }
     case 'fileChange':
-      return { kind: 'fileChange', itemId, files: item.changes.map((c) => ({ path: c.path, kind: c.kind })), ...stateOf(item.status) };
+      return { kind: 'fileChange', itemId, files: item.changes.map((c) => ({ path: c.path, kind: c.kind })), ...stateOf(item.status), expanded };
     case 'toolCall': {
       const error = stringOf(item.error);
       const name = item.server !== undefined && item.server !== '' ? `${item.server}/${item.tool}` : item.tool;
@@ -282,10 +306,11 @@ export function itemRow(item: Item, expanded: boolean): ItemRow {
         summary: name,
         ...stateOf(error !== '' ? 'failed' : item.status),
         ...(error !== '' ? { error: oneLine(error, 160) } : {}),
+        expanded,
       };
     }
     case 'plan':
-      return { kind: 'plan', itemId, text: item.text };
+      return { kind: 'plan', itemId, text: item.text, expanded };
     default: {
       // `other`, and item types newer than this client (spec 12): shown collapsed by name.
       const type = (item as { type: string }).type;
@@ -297,7 +322,7 @@ export function itemRow(item: Item, expanded: boolean): ItemRow {
 function turnLabel(turn: TurnView): { label: string; tone: Tone } {
   switch (turn.status) {
     case 'inProgress':
-      return { label: 'Working…', tone: 'busy' };
+      return { label: '', tone: 'busy' };
     case 'interrupted':
       return { label: 'Interrupted', tone: 'muted' };
     case 'failed':
@@ -311,20 +336,48 @@ function turnLabel(turn: TurnView): { label: string; tone: Tone } {
   }
 }
 
-export function turnRow(turn: TurnView, items: Readonly<Record<string, Item>>, expanded: ReadonlySet<string>): TurnRow {
+/** The turn has ended on the host: completed, interrupted or failed. */
+function isFinal(turn: TurnView): boolean {
+  return turn.optimistic === undefined && (turn.status === 'completed' || turn.status === 'interrupted' || turn.status === 'failed');
+}
+
+/** What turnRow needs to know besides the turn: open items and turns, and whether the agent waits for the user. */
+export interface TurnRowContext {
+  /** Items whose row is open (output, reasoning text, files). */
+  expanded: ReadonlySet<string>;
+  /** Finished turns whose work is unfolded. */
+  unfolded?: ReadonlySet<string>;
+  /** The session waits for an approval or an answer: nobody is thinking. */
+  waiting?: boolean;
+}
+
+export function turnRow(turn: TurnView, items: Readonly<Record<string, Item>>, { expanded, unfolded, waiting }: TurnRowContext): TurnRow {
+  const final = isFinal(turn);
+  const rows = turn.items.flatMap((id) => {
+    const item = items[id];
+    if (item === undefined) return [];
+    const row = itemRow(item, expanded.has(id));
+    // An interrupted or failed turn may leave text items unfinished: they no longer stream.
+    if ((row.kind === 'agent' || row.kind === 'reasoning') && turn.status !== 'inProgress') row.streaming = false;
+    return [row];
+  });
+  const last = rows.at(-1);
+  // The answer's words stream, or a thinking row streams (its own verb shimmers): no separate "Thinking".
+  const answering = (last?.kind === 'agent' && last.streaming && last.text !== '') || (last?.kind === 'reasoning' && last.streaming);
   const row: TurnRow = {
     turnId: turn.turnId,
     status: turn.status,
     ...turnLabel(turn),
-    items: turn.items.flatMap((id) => {
-      const item = items[id];
-      if (item === undefined) return [];
-      const row = itemRow(item, expanded.has(id));
-      // An interrupted or failed turn may leave text items unfinished: they no longer stream.
-      if ((row.kind === 'agent' || row.kind === 'reasoning') && turn.status !== 'inProgress') row.streaming = false;
-      return [row];
-    }),
+    items: rows,
+    final,
+    thinking: turn.status === 'inProgress' && waiting !== true && !answering,
+    unfolded: unfolded?.has(turn.turnId) ?? false,
   };
+  if (final && typeof turn.completedAt === 'number' && typeof turn.startedAt === 'number') {
+    const interrupted = turn.status === 'interrupted';
+    row.workedFor = workedFor((turn.completedAt - turn.startedAt) * 1000, interrupted ? 'Stopped after' : undefined);
+    if (interrupted) row.label = '';
+  }
   if (turn.status === 'failed' && turn.error !== null) row.error = turn.error.message !== '' ? turn.error.message : turn.error.code;
   if (turn.optimistic !== undefined) {
     const error = turn.optimistic.error;
@@ -427,6 +480,7 @@ export class SessionModel extends Model {
   private readonly replica: SessionReplica;
   private readonly agents: AgentsSource | undefined;
   private readonly expanded = new Set<string>();
+  private readonly unfolded = new Set<string>();
   private readonly steers = new Map<string, Steer>();
   private readonly unsubscribe: (() => void)[] = [];
   private started = false;
@@ -645,13 +699,16 @@ export class SessionModel extends Model {
     const view = this.view;
     if (view === undefined) return [];
     const running = this.runningTasks;
+    const status = this.statusInputs.status;
+    const waiting = status === 'waiting_approval' || status === 'waiting_input' || this.pending.total > 0;
     return view.turns.map((turn) => {
-      const row = turnRow(turn, view.items, this.expanded);
+      const row = turnRow(turn, view.items, { expanded: this.expanded, unfolded: this.unfolded, waiting });
       const queued = turn.status === 'inProgress' && turn.items.some((id) => (view.items[id] as { queued?: unknown } | undefined)?.queued === true);
       if (queued) {
         row.label = queuedText(running);
         row.tone = 'muted';
         row.queued = true;
+        row.thinking = false;
       }
       const count = this.fileCounts.get(turn.turnId) ?? 0;
       if (count > 0) row.changes = filesChangedText(count);
@@ -928,9 +985,28 @@ export class SessionModel extends Model {
     }
   }
 
-  toggleReasoning(itemId: string): void {
+  /** Opens or closes an item's row (a command's output, the thinking text, the changed files). */
+  toggleItem(itemId: string): void {
     if (!this.expanded.delete(itemId)) this.expanded.add(itemId);
     this.changed();
+  }
+
+  toggleReasoning(itemId: string): void {
+    this.toggleItem(itemId);
+  }
+
+  /** Opens or closes a finished turn's "N previous messages". */
+  toggleFold(turnId: string): void {
+    if (!this.unfolded.delete(turnId)) this.unfolded.add(turnId);
+    this.changed();
+  }
+
+  /** The finished turns whose work is folded now, for the view to animate a change of it. */
+  get foldedTurns(): string {
+    return (this.view?.turns ?? [])
+      .filter((turn) => isFinal(turn) && !this.unfolded.has(turn.turnId))
+      .map((turn) => turn.turnId)
+      .join(' ');
   }
 
   /** Opens the detail sheet (output, changes) for an item of the turn list. */

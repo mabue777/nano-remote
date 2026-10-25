@@ -45,11 +45,11 @@ export default defineConfig({
         // Local chat: the provider store, presets, URL rules and model probing; the chat engine and history.
         'src/chat/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         // The shared components (Sheet, BackHeader, Switch, pull-to-refresh) and their motion (src/ui/motion: spring,
-        // gestures, drag, sheet motion, haptic tick), .tsx included: their tests read the element tree they return
+        // gestures, drag, sheet motion, haptic tick, stream pacer, FLIP, auto-scroll), .tsx included: their tests read the element tree they return
         // and run the hooks in test/hook-host.ts.
         'src/ui/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
-        // The interaction lab (/lab): pacer, FLIP, auto-scroll, viewport, settings, fake stream (its spring, gestures
-        // and haptic tick moved to src/ui/motion).
+        // The interaction lab (/lab): viewport, settings, look, fake stream (its spring, gestures, haptic tick, pacer,
+        // FLIP and auto-scroll follower moved to src/ui/motion when the app adopted them).
         // Its .tsx screens are covered by the Playwright lab smoke.
         'src/lab/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         'build/**': { lines: 90, branches: 90, functions: 90, statements: 90 },

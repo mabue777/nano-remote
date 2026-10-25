@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FrameLoop, FreshSegments, StreamPacer } from './pacer';
+import { FrameLoop, FreshSegments, StreamPacer, TextReveal } from './pacer';
 
 describe('StreamPacer', () => {
   it('reveals a burst over a few frames instead of all at once', () => {
@@ -126,5 +126,72 @@ describe('FrameLoop', () => {
     expect(loop.running).toBe(false);
     expect(frames.pending).toBe(0);
     loop.stop(); // twice is fine
+  });
+});
+
+describe('TextReveal', () => {
+  const run = (reveal: TextReveal, from: number): number => {
+    let now = from;
+    while (reveal.active) {
+      now += 16;
+      reveal.frame(16, now);
+    }
+    return now;
+  };
+
+  it('shows the text it starts with at once, settled', () => {
+    const reveal = new TextReveal('Hello');
+    expect(reveal.text).toBe('Hello');
+    expect(reveal.view).toEqual({ settled: 'Hello', fresh: [] });
+    expect(reveal.active).toBe(false);
+    expect(reveal.set('Hello', 0)).toBe(false);
+  });
+
+  it('paces appended text, fading the new pieces in, and ends with exactly the source text', () => {
+    const reveal = new TextReveal('', false, { catchUpMs: 180, lifeMs: 100, joinMs: 0 });
+    let source = '';
+    let now = 0;
+    const seen: string[] = [];
+    for (const delta of ['Done. ', 'Created ', 'hello.txt ', 'in the current directory.']) {
+      source += delta;
+      expect(reveal.set(source, now)).toBe(true);
+      now += 16;
+      reveal.frame(16, now);
+      seen.push(reveal.text);
+      expect(reveal.view.fresh.length).toBeGreaterThan(0);
+    }
+    now = run(reveal, now);
+    expect(reveal.text).toBe(source);
+    expect(reveal.view).toEqual({ settled: source, fresh: [] });
+    for (const text of seen) expect(source.startsWith(text)).toBe(true);
+  });
+
+  it('shows a rewritten or shorter text at once, without duplicating anything', () => {
+    const reveal = new TextReveal('', false, { catchUpMs: 180 });
+    reveal.set('First version', 0);
+    reveal.frame(16, 16);
+    expect(reveal.set('Second', 32)).toBe(false);
+    expect(reveal.text).toBe('Second');
+    expect(reveal.view).toEqual({ settled: 'Second', fresh: [] });
+    expect(reveal.set('Sec', 48)).toBe(false);
+    expect(reveal.text).toBe('Sec');
+    reveal.set('Second again', 64);
+    run(reveal, 64);
+    expect(reveal.text).toBe('Second again');
+  });
+
+  it('with instant (reduced motion) never paces or fades', () => {
+    const reveal = new TextReveal('', true);
+    expect(reveal.set('All at once', 0)).toBe(false);
+    expect(reveal.view).toEqual({ settled: 'All at once', fresh: [] });
+  });
+
+  it('showAll ends a reveal where the source is', () => {
+    const reveal = new TextReveal('');
+    reveal.set('x'.repeat(200), 0);
+    reveal.frame(16, 16);
+    reveal.showAll();
+    expect(reveal.text).toBe('x'.repeat(200));
+    expect(reveal.active).toBe(false);
   });
 });

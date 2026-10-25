@@ -46,21 +46,26 @@ test('a scripted turn streams in, waits for a decision, and completes', async ({
 
   // The command waits for an approval: the banner and the counters (the cards are a later step).
   const command = conversation.locator('[data-item="command"]');
-  await expect(command).toContainText('Running');
-  await expect(command).toContainText('echo hello > hello.txt');
+  await expect(command).toContainText('Running echo hello > hello.txt');
   const banner = page.getByRole('alert', { name: 'Needs your decision' });
   await expect(banner).toBeVisible();
   await expect(banner.getByLabel('1 approval waiting')).toBeVisible();
   await expect(page.getByLabel('Session status')).toHaveText('Needs approval');
 
-  // Another device approves: the command runs, usage arrives, the turn completes.
+  // Another device approves: the command runs, usage arrives, the turn completes. Its work folds behind
+  // "1 previous message", the answer stays, "Worked for" closes the turn.
   await request.post('/test/resolve', { data: { sessionId: 'ses_fake_3', decision: 'accept' } });
   await expect(banner).toHaveCount(0);
-  await expect(command).toContainText('Done');
-  await expect(command).toContainText('echo hello > hello.txt · exit 0 · 42 ms');
   await expect(page.getByLabel('Usage')).toHaveText('Session total 1,200 in · 340 out · context 4% full');
   await expect(conversation.locator('li[data-turn-status]')).toHaveAttribute('data-turn-status', 'completed');
   await expect(page.getByLabel('Session status')).toHaveText('Finished');
+  await expect(command).toHaveCount(0);
+  await expect(agent).toHaveText(AGENT_TEXT);
+  await expect(conversation.getByText('Worked for 10m 0s')).toBeVisible();
+  await conversation.getByRole('button', { name: '1 previous message' }).click();
+  await expect(command).toContainText('Ran echo hello > hello.txt');
+  await command.getByRole('button').click();
+  await expect(command).toContainText('exit 0 · 42 ms');
 });
 
 test('a sent message shows as sending, reconciles with the host turn, and a steer joins the running turn', async ({ page, request }) => {
@@ -106,7 +111,7 @@ test('interrupt stops a running turn', async ({ page, request }) => {
   await page.getByRole('button', { name: 'Interrupt' }).click();
   const turn = conversation.locator('li[data-turn-status]');
   await expect(turn).toHaveAttribute('data-turn-status', 'interrupted');
-  await expect(turn).toContainText('Interrupted');
+  await expect(turn).toContainText(/Stopped after \d+/);
   await expect(page.getByLabel('Session status')).toHaveText('Interrupted');
   await expect(page.getByRole('button', { name: 'Interrupt' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();

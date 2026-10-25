@@ -297,6 +297,12 @@ export class HostError extends Error {
 /** The VAPID public key the fake host advertises in initialize (an uncompressed P-256 point). */
 export const FAKE_VAPID_PUBLIC_KEY = 'BLqV9YHYYANsdXdPRsHojo-QK0K6dl2lGcRree27K9no9AcPff1jvU8tGx_aQzuS6fueSsuSEJ3HyKFOXfaGoPw';
 
+/** A scripted turn's answer instead of protocol example 28, and how many item/delta events stream it. */
+export interface TurnScript {
+  answer?: string;
+  deltas?: number;
+}
+
 export class FakeHost {
   url = '';
   readonly streams: FakeStream[] = [];
@@ -537,9 +543,9 @@ export class FakeHost {
   }
 
   /** Starts the scripted turn without any client, as the desktop would; it stops at the approval request. */
-  runScriptedTurn(sessionId: string, text: string): void {
+  runScriptedTurn(sessionId: string, text: string, script: TurnScript = {}): void {
     const turn = this.newTurn(this.session(sessionId), undefined);
-    this.playTurn(sessionId, turn.turnId, [{ type: 'text', text }], undefined);
+    this.playTurn(sessionId, turn.turnId, [{ type: 'text', text }], undefined, script);
   }
 
   /**
@@ -905,8 +911,8 @@ export class FakeHost {
     return turn;
   }
 
-  /** P6: turn/started, the user's message, streamed agent text, a command, and its approval request. */
-  private playTurn(sessionId: string, turnId: string, input: Json, clientMessageId: string | undefined): void {
+  /** P6: turn/started, the user's message, streamed agent text (`script` may give another text and its number of deltas), a command, and its approval request. */
+  private playTurn(sessionId: string, turnId: string, input: Json, clientMessageId: string | undefined, script: TurnScript = {}): void {
     const session = this.session(sessionId);
     const running = session.running!;
     const steps: (() => void)[] = [];
@@ -923,11 +929,12 @@ export class FakeHost {
       this.emit(sessionId, 'item/started', { turnId, item: user });
       this.emit(sessionId, 'status/changed', { status: 'running' });
     });
-    const agent = exampleMessage('28').params.item;
+    const example = exampleMessage('28').params.item;
+    const agent = script.answer !== undefined ? { ...example, text: script.answer } : example;
     const text: string = agent.text;
     const agentId = `itm_fake_${++this.nextId}`;
     steps.push(() => this.emit(sessionId, 'item/started', { turnId, item: { ...agent, itemId: agentId, turnId, status: 'inProgress', text: '' } }));
-    const size = Math.ceil(text.length / this.deltas);
+    const size = Math.ceil(text.length / (script.deltas ?? this.deltas));
     for (let i = 0; i < text.length; i += size) {
       const delta = text.slice(i, i + size);
       steps.push(() => this.emit(sessionId, 'item/delta', { itemId: agentId, turnId, field: 'text', delta }));

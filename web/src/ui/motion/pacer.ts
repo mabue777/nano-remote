@@ -2,7 +2,11 @@
 // shown as it arrives, the text jumps. The pacer holds what arrived and reveals it a few characters per
 // animation frame, fast enough that the backlog clears within `catchUpMs`, so the text flows at the
 // stream's own average speed and never lags far behind it. FreshSegments then splits the revealed text into
-// a settled prefix and a handful of recent pieces, each of which fades in once.
+// a settled prefix and a handful of recent pieces, each of which fades in once. TextReveal puts the two
+// together for a text that is given whole each time (the Replica's message text, which grows delta by
+// delta): it paces what was appended, and shows a text that was rewritten (a snapshot, a replay that
+// differs) at once, so nothing is lost or shown twice. Built in the lab (/lab, technique 4), used by the
+// session and local chat views.
 
 export interface PacerOptions {
   /** The backlog clears within about this long (ms). Lower follows the network more closely. */
@@ -100,6 +104,12 @@ export class FreshSegments {
     else this.fresh.push({ start: known, text: added, at: now });
   }
 
+  /** Shows `text` as settled at once, without a fade. */
+  settle(text: string): void {
+    this.settled = text;
+    this.fresh = [];
+  }
+
   /** Pieces whose fade is over join the settled text. Returns true when something settled. */
   prune(now: number): boolean {
     let changed = false;
@@ -108,6 +118,79 @@ export class FreshSegments {
       changed = true;
     }
     return changed;
+  }
+}
+
+export interface RevealView {
+  settled: string;
+  fresh: Segment[];
+}
+
+/**
+ * A text given whole on every change, revealed at the stream's pace. `set(text)` with a longer text that
+ * starts with the known one paces the rest; any other text (shorter, or rewritten) is shown at once. With
+ * `instant` (reduced motion) everything shows at once. `frame(dt, now)` advances one animation frame.
+ */
+export class TextReveal {
+  private readonly pacer: StreamPacer;
+  private readonly segments: FreshSegments;
+  private known: string;
+
+  constructor(
+    initial = '',
+    private readonly instant = false,
+    options: PacerOptions & { lifeMs?: number; joinMs?: number } = {},
+  ) {
+    this.pacer = new StreamPacer(options);
+    this.segments = new FreshSegments(options.lifeMs, options.joinMs);
+    this.known = initial;
+    this.pacer.push(initial);
+    this.pacer.flush();
+    this.segments.settle(initial);
+  }
+
+  /** The source text now. Returns whether frames are needed to reveal it. */
+  set(text: string, now: number): boolean {
+    if (text === this.known) return this.active;
+    if (text.startsWith(this.known)) {
+      this.pacer.push(text.slice(this.known.length));
+      this.known = text;
+      if (this.instant) this.showAll();
+      else this.segments.update(this.pacer.text, now);
+      return this.active;
+    }
+    this.known = text;
+    this.pacer.reset();
+    this.pacer.push(text);
+    this.showAll();
+    return false;
+  }
+
+  /** Advances by one frame that lasted `dtMs`, at time `now`. Returns whether more frames are needed. */
+  frame(dtMs: number, now: number): boolean {
+    this.pacer.tick(dtMs);
+    this.segments.update(this.pacer.text, now);
+    return this.active;
+  }
+
+  /** Shows everything known at once (reduced motion turned on, or the view leaves). */
+  showAll(): void {
+    this.pacer.flush();
+    this.segments.settle(this.pacer.text);
+  }
+
+  /** Text received but not revealed, or pieces still fading in. */
+  get active(): boolean {
+    return this.pacer.backlog > 0 || this.segments.fresh.length > 0;
+  }
+
+  /** The revealed text. */
+  get text(): string {
+    return this.pacer.text;
+  }
+
+  get view(): RevealView {
+    return { settled: this.segments.settled, fresh: [...this.segments.fresh] };
   }
 }
 

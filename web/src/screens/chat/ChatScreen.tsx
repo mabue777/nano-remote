@@ -1,6 +1,8 @@
 // The chat page, /c/:chatId: header with the model picker and the thinking switch, the message list
-// (reasoning in the session view's thinking block, replies as markdown), and the session view's composer
-// with Stop while a reply streams. State and rules live in ChatModel; this file renders and scrolls.
+// (reasoning as the session view's flat thinking row, replies as markdown), and the session view's composer
+// with Stop while a reply streams. A reply streams in paced, its newest words fading in on the last block; a
+// grey "Thinking" holds its place before the first words, and the view follows it while you are at the
+// bottom (the session view's motion-hooks.tsx). State and rules live in ChatModel; this file renders and scrolls.
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
@@ -12,12 +14,12 @@ import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
 import { useModel } from '../use-model';
 import { usePress } from './hooks';
-import type { Block, Inline } from './markdown';
+import { parseMarkdown, withoutFreshTail, type Block, type Inline } from './markdown';
 import { SettingsPath } from './ChatsPanel';
 import type { ChatServices } from './services';
-
-/** Within this many px of the bottom counts as "at the bottom" (auto-scroll stays on). */
-const BOTTOM_SLACK = 48;
+import { collapse, reducedMotion, useAutoScroll, useFlip, usePacedText, type Flip } from '../session/motion-hooks';
+import { FlatRow, FreshText, JumpPill, Thinking } from '../session/TranscriptRows';
+import type { Segment } from '../../ui/motion/pacer';
 
 export interface ChatScreenProps {
   chatId: string;
@@ -48,14 +50,16 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
   useEffect(() => () => model.dispose(), [model]);
 
   const scroller = useRef<HTMLElement>(null);
-  const atBottom = useRef(true);
+  const content = useRef<HTMLDivElement>(null);
   const lastScrollRequest = useRef(-1);
+  const scroll = useAutoScroll(scroller, content);
+  const flip = useFlip(scroller, !reducedMotion());
+  // The history is on the phone: land at its end at once; after that new content glides into view.
+  useLayoutEffect(() => scroll.snap(), []); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
-    const element = scroller.current;
-    if (element === null) return;
-    if (atBottom.current || lastScrollRequest.current !== model.scrollRequest) {
+    if (lastScrollRequest.current !== model.scrollRequest) {
+      if (lastScrollRequest.current !== -1) scroll.jump();
       lastScrollRequest.current = model.scrollRequest;
-      element.scrollTop = element.scrollHeight;
     }
   });
 
@@ -92,21 +96,22 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
         class="conversation"
         aria-label="Conversation"
         ref={scroller}
-        onScroll={(event) => {
-          const element = event.currentTarget as HTMLElement;
-          atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight <= BOTTOM_SLACK;
-        }}
+        {...scroll.handlers}
       >
-        {rows.length === 0 ? (
-          <p class="empty muted">{model.found ? 'Send a message to start.' : ''}</p>
-        ) : (
-          <ol class="turns chat-messages" aria-label="Messages">
-            {rows.map((row) => (
-              <Message key={row.index} row={row} model={model} />
-            ))}
-          </ol>
-        )}
+        <div ref={content} class="conversation-content">
+          {rows.length === 0 ? (
+            <p class="empty muted">{model.found ? 'Send a message to start.' : ''}</p>
+          ) : (
+            <ol class="turns chat-messages" aria-label="Messages">
+              {rows.map((row) => (
+                <Message key={row.index} row={row} model={model} flip={flip} scroller={scroller} />
+              ))}
+            </ol>
+          )}
+        </div>
       </section>
+
+      <JumpPill shown={scroll.pill} onJump={() => scroll.jump()} />
 
       {(model.copied !== undefined || model.copyError !== undefined) && (
         <p class={`toast small${model.copyError !== undefined ? ' error' : ''}`} role="status">
@@ -156,25 +161,42 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
   );
 }
 
-function Message({ row, model }: { row: MessageRow; model: ChatModel }) {
+function Message({ row, model, flip, scroller }: { row: MessageRow; model: ChatModel; flip: Flip; scroller: { current: HTMLElement | null } }) {
   const press = usePress({ onLongPress: () => void model.copy(row.index) });
   const { consumed: _consumed, ...handlers } = press;
+  const reasoning = row.reasoning;
+  const key = `reasoning/${row.index}`;
+  // Thinking while the reasoning is the only thing streaming; it folds once the answer starts.
+  const thinking = row.streaming && row.text === '';
+  const toggle = () => {
+    if (reasoning?.expanded !== true) flip(() => model.toggleReasoning(row.index));
+    else collapse(scroller.current, key, flip, () => model.toggleReasoning(row.index), !reducedMotion());
+  };
   return (
     <li class={`turn chat-message ${row.role}`} data-role={row.role} data-streaming={row.streaming ? 'true' : 'false'}>
-      {row.reasoning !== undefined && (
-        <div class="item reasoning" data-item="reasoning">
-          <button type="button" class="link reasoning-toggle" aria-expanded={row.reasoning.expanded} onClick={() => model.toggleReasoning(row.index)}>
-            <Icon name="chevron-right" size={16} class={row.reasoning.expanded ? 'chevron open' : 'chevron'} />
-            Thinking
-          </button>
-          {row.reasoning.expanded && <p class="muted small reasoning-text">{row.reasoning.text}</p>}
-        </div>
+      {reasoning !== undefined && (
+        <FlatRow
+          line={{ icon: 'lightbulb', verb: thinking ? 'Thinking' : 'Thought', target: '', busy: false }}
+          rowKey={key}
+          kind="reasoning"
+          expandable
+          open={reasoning.expanded}
+          onToggle={toggle}
+          shimmer={thinking}
+        >
+          <p class="reasoning-text">{reasoning.text}</p>
+        </FlatRow>
       )}
-      {(row.text !== '' || row.role === 'user' || (row.streaming && row.reasoning === undefined)) && (
-        <div class={`msg ${row.role === 'user' ? 'user' : 'agent'}`} data-item={row.role === 'user' ? 'user' : 'agent'} {...handlers}>
-          {row.role === 'user' ? <p>{row.text}</p> : <Markdown blocks={row.blocks} />}
-          {row.streaming && row.text === '' && <p class="muted small">…</p>}
+      {row.role === 'user' ? (
+        <div class="msg user" data-item="user" {...handlers}>
+          <p>{row.text}</p>
         </div>
+      ) : row.text !== '' ? (
+        <div class="msg agent" data-item="agent" {...handlers}>
+          <Reply text={row.text} blocks={row.blocks} streaming={row.streaming} />
+        </div>
+      ) : (
+        thinking && reasoning === undefined && <Thinking />
       )}
       {row.label !== '' && <p class="turn-state small muted">{row.label}</p>}
       {row.error !== undefined && (
@@ -189,6 +211,16 @@ function Message({ row, model }: { row: MessageRow; model: ChatModel }) {
       )}
     </li>
   );
+}
+
+/** A reply as markdown, paced while it streams; the newest words fade in on the last block only. */
+function Reply({ text, blocks, streaming }: { text: string; blocks: Block[]; streaming: boolean }) {
+  const view = usePacedText(text, streaming);
+  if (view.fresh.length === 0 && view.settled === text) return <Markdown blocks={blocks} />;
+  const fresh = view.fresh.map((piece) => piece.text).join('');
+  const shown = parseMarkdown(view.settled + fresh);
+  const cut = withoutFreshTail(shown, fresh);
+  return cut === null ? <Markdown blocks={shown} /> : <Markdown blocks={cut} tail={view.fresh} />;
 }
 
 function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() => void) | undefined }) {
@@ -247,15 +279,32 @@ function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() 
   );
 }
 
-function Markdown({ blocks }: { blocks: Block[] }) {
+/** `tail`: the newest pieces, appended to the last block's text so they fade in (see withoutFreshTail). */
+function Markdown({ blocks, tail }: { blocks: Block[]; tail?: Segment[] }) {
   return (
     <div class="markdown">
       {blocks.map((block, i) => {
+        const end = tail !== undefined && i === blocks.length - 1 ? <FreshText settled="" fresh={tail} /> : null;
         switch (block.kind) {
           case 'p':
-            return <p key={i}>{inlines(block.inlines)}</p>;
+            return (
+              <p key={i}>
+                {inlines(block.inlines)}
+                {end}
+              </p>
+            );
           case 'h':
-            return block.level === 1 ? <h3 key={i}>{inlines(block.inlines)}</h3> : <h4 key={i}>{inlines(block.inlines)}</h4>;
+            return block.level === 1 ? (
+              <h3 key={i}>
+                {inlines(block.inlines)}
+                {end}
+              </h3>
+            ) : (
+              <h4 key={i}>
+                {inlines(block.inlines)}
+                {end}
+              </h4>
+            );
           case 'code':
             return (
               <pre key={i} class="code-block" data-lang={block.lang || undefined}>
@@ -266,7 +315,10 @@ function Markdown({ blocks }: { blocks: Block[] }) {
             return (
               <ul key={i}>
                 {block.items.map((item, j) => (
-                  <li key={j}>{inlines(item)}</li>
+                  <li key={j}>
+                    {inlines(item)}
+                    {j === block.items.length - 1 && end}
+                  </li>
                 ))}
               </ul>
             );
@@ -274,12 +326,20 @@ function Markdown({ blocks }: { blocks: Block[] }) {
             return (
               <ol key={i} start={block.start}>
                 {block.items.map((item, j) => (
-                  <li key={j}>{inlines(item)}</li>
+                  <li key={j}>
+                    {inlines(item)}
+                    {j === block.items.length - 1 && end}
+                  </li>
                 ))}
               </ol>
             );
           case 'quote':
-            return <blockquote key={i}>{inlines(block.inlines)}</blockquote>;
+            return (
+              <blockquote key={i}>
+                {inlines(block.inlines)}
+                {end}
+              </blockquote>
+            );
         }
       })}
     </div>

@@ -92,8 +92,8 @@ test('unpaired with a provider: Chats is home, a new chat streams a reply in und
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible(); // the stream ended
   await expect(reply.getByLabel('Token usage')).toHaveText('73 in · 24 out tokens');
 
-  // The reasoning block folded once the answer started; a tap opens and closes it.
-  const toggle = reply.getByRole('button', { name: /Thinking/ });
+  // The thinking row folded once the answer started and says "Thought"; a tap opens and closes it.
+  const toggle = reply.getByRole('button', { name: 'Thought' });
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await toggle.click();
   await expect(reply.locator('.reasoning-text')).toContainText('We need to respond with three-word greeting.');
@@ -149,7 +149,7 @@ test('the model picker refreshes Ollama and its NDJSON reply streams', async ({ 
   await page.getByRole('button', { name: 'Send' }).click();
   const reply = page.locator('.chat-message.assistant');
   await expect(reply.locator('.msg.agent')).toHaveText('Hi there friend', { timeout: 5000 });
-  await expect(reply.getByRole('button', { name: /Thinking/ })).toHaveAttribute('aria-expanded', 'false');
+  await expect(reply.getByRole('button', { name: 'Thought' })).toHaveAttribute('aria-expanded', 'false');
   await expect(reply.getByLabel('Token usage')).toHaveText('73 in · 88 out tokens');
   const chats = await providerChats(request);
   expect(chats.at(-1)).toMatchObject({ model: 'llama-fake:1b', stream: true });

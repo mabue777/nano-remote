@@ -9,7 +9,7 @@ import { useState } from 'preact/hooks';
 import { SheetHeader } from '../ui/Sheet';
 import { CrossFade, Shell } from './dom';
 import { APPROVAL, QUESTION, type LabSession as Session, type ToolRow } from './fixtures';
-import type { Shown } from './flip';
+import type { Shown } from '../ui/motion/flip';
 import { Icon } from '../ui/Icon';
 import { indicatorOf, previousMessages, type Indicator } from './look';
 

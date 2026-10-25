@@ -112,34 +112,40 @@ describe('helpers', () => {
       kind: 'reasoning', itemId: 'r', summary: 'Thinking', text: '', expanded: true, streaming: false,
     });
     expect(itemRow(command(), false)).toMatchObject({ kind: 'command', state: 'Running', tone: 'busy' });
-    expect(itemRow(command({ status: 'completed', exitCode: 0, output: 'ok' }), false)).toMatchObject({ state: 'Done', tone: 'ok', output: 'ok' });
+    expect(itemRow(command({ status: 'completed', exitCode: 0, output: 'ok' }), false)).toMatchObject({ state: 'Done', tone: 'ok', output: 'ok', expanded: false });
+    expect(itemRow(command({ status: 'completed', command: '/bin/zsh -lc "npm test"', exitCode: 0, durationMs: 42 }), true)).toMatchObject({
+      command: 'npm test', meta: 'exit 0 · 42 ms', summary: 'npm test · exit 0 · 42 ms', expanded: true,
+    });
     expect(itemRow(command({ status: 'completed', exitCode: 2 }), false)).toMatchObject({ state: 'Failed', tone: 'error' });
     expect(itemRow(command({ status: 'failed' }), false)).toMatchObject({ state: 'Failed', tone: 'error' });
     expect(itemRow(command({ status: 'declined' }), false)).toMatchObject({ state: 'Declined', tone: 'muted' });
     expect(
       itemRow({ ...base, itemId: 'f', type: 'fileChange', changes: [{ path: 'a.txt', kind: 'add', diff: '+' }, { path: 'b.txt', kind: 'delete', diff: '' }] } as Item, false),
-    ).toEqual({ kind: 'fileChange', itemId: 'f', files: [{ path: 'a.txt', kind: 'add' }, { path: 'b.txt', kind: 'delete' }], state: 'Done', tone: 'ok' });
+    ).toEqual({ kind: 'fileChange', itemId: 'f', files: [{ path: 'a.txt', kind: 'add' }, { path: 'b.txt', kind: 'delete' }], state: 'Done', tone: 'ok', expanded: false });
     expect(itemRow({ ...base, itemId: 't', type: 'toolCall', tool: 'search', arguments: {} } as Item, false)).toEqual({
-      kind: 'tool', itemId: 't', summary: 'search', state: 'Done', tone: 'ok',
+      kind: 'tool', itemId: 't', summary: 'search', state: 'Done', tone: 'ok', expanded: false,
     });
     expect(itemRow({ ...base, itemId: 't', type: 'toolCall', tool: 'read', server: 'fs', arguments: {}, error: { message: 'denied' } } as Item, false)).toMatchObject({
       summary: 'fs/read', state: 'Failed', error: 'denied',
     });
     expect(itemRow({ ...base, itemId: 't', type: 'toolCall', tool: 'x', server: '', arguments: {}, error: 'nope' } as Item, false)).toMatchObject({ summary: 'x', error: 'nope' });
     expect(itemRow({ ...base, itemId: 't', type: 'toolCall', tool: 'x', arguments: {}, error: { code: 3 } } as Item, false)).toMatchObject({ error: '{"code":3}' });
-    expect(itemRow({ ...base, itemId: 'p', type: 'plan', text: '1. do' } as Item, false)).toEqual({ kind: 'plan', itemId: 'p', text: '1. do' });
+    expect(itemRow({ ...base, itemId: 'p', type: 'plan', text: '1. do' } as Item, true)).toEqual({ kind: 'plan', itemId: 'p', text: '1. do', expanded: true });
     expect(itemRow({ ...base, itemId: 'o', type: 'other', raw: {} } as Item, false)).toEqual({ kind: 'other', itemId: 'o', label: 'Other activity' });
     expect(itemRow({ ...base, itemId: 'n', type: 'imageGeneration' } as unknown as Item, false)).toEqual({ kind: 'other', itemId: 'n', label: 'imageGeneration' });
   });
 
   it('turnRow: labels by status, inline error of a failed turn, missing items skipped, refused sends', () => {
     const items = { i1: agentItem('i1', 't1', 'x') };
-    const none = new Set<string>();
+    const none = { expanded: new Set<string>() };
     const make = (over: Partial<TurnView>): TurnView => ({ ...turn('t1'), items: ['i1', 'gone'], ...over });
-    expect(turnRow(make({}), items, none)).toMatchObject({ label: 'Working…', tone: 'busy', items: [{ kind: 'agent' }] });
+    expect(turnRow(make({}), items, none)).toMatchObject({ label: '', tone: 'busy', items: [{ kind: 'agent' }], final: false, unfolded: false });
     expect(turnRow(make({}), items, none).items[0]).toMatchObject({ streaming: true });
     expect(turnRow(make({ status: 'completed' }), items, none)).toMatchObject({ label: '', tone: 'ok', items: [{ streaming: false }] });
-    expect(turnRow(make({ status: 'interrupted' }), items, none)).toMatchObject({ label: 'Interrupted' });
+    expect(turnRow(make({ status: 'interrupted' }), items, none)).toMatchObject({ label: 'Interrupted', final: true });
+    expect(turnRow(make({ status: 'interrupted', completedAt: 22 }), items, none)).toMatchObject({ label: '', workedFor: 'Stopped after 12s' });
+    expect(turnRow(make({ status: 'completed', completedAt: 202 }), items, none)).toMatchObject({ workedFor: 'Worked for 3m 12s', final: true });
+    expect(turnRow(make({ status: 'completed', completedAt: 202 }), items, { ...none, unfolded: new Set(['t1']) })).toMatchObject({ unfolded: true });
     expect(turnRow(make({ status: 'failed', error: { code: 'internal', message: 'model crashed' } }), items, none)).toMatchObject({ label: 'Failed', error: 'model crashed' });
     expect(turnRow(make({ status: 'failed', error: { code: 'internal', message: '' } }), items, none).error).toBe('internal');
     expect(turnRow(make({ status: 'failed' }), items, none).error).toBeUndefined();
@@ -147,7 +153,21 @@ describe('helpers', () => {
       label: 'Sending…', send: { clientMessageId: 'cm', busy: false },
     });
     const busy = turnRow(make({ status: 'failed_to_send', optimistic: { clientMessageId: 'cm', error: { code: 'session_busy', message: 'x' } } }), items, none);
-    expect(busy).toMatchObject({ label: 'Not sent', send: { busy: true, failure: 'The agent is busy with another turn.' } });
+    expect(busy).toMatchObject({ label: 'Not sent', final: false, thinking: false, send: { busy: true, failure: 'The agent is busy with another turn.' } });
+  });
+
+  it('turnRow: "Thinking" while the agent works and no answer text streams, not while it waits for the user', () => {
+    const none = { expanded: new Set<string>() };
+    const at = (text: string, over: Record<string, unknown> = {}) => ({ i1: agentItem('i1', 't1', text, over) });
+    const running: TurnView = { ...turn('t1'), items: ['i1'] };
+    expect(turnRow({ ...turn('t1'), items: [] }, {}, none).thinking).toBe(true);
+    expect(turnRow(running, at(''), none).thinking).toBe(true); // the message started, no words yet
+    expect(turnRow(running, at('Hel'), none).thinking).toBe(false); // the answer streams
+    expect(turnRow(running, at('Hello', { status: 'completed' }), none).thinking).toBe(true); // a message ended, work goes on
+    expect(turnRow({ ...turn('t1'), items: [] }, {}, { ...none, waiting: true }).thinking).toBe(false);
+    const thought = { r: { itemId: 'r', type: 'reasoning', turnId: 't1', status: 'inProgress', summary: '' } as Item };
+    expect(turnRow({ ...turn('t1'), items: ['r'] }, thought, none).thinking).toBe(false); // the thinking row shimmers itself
+    expect(turnRow({ ...turn('t1', { status: 'completed', completedAt: 11 }), items: [] }, {}, none).thinking).toBe(false);
   });
 });
 
@@ -237,6 +257,14 @@ describe('SessionModel: what the screen shows', () => {
     expect(model.turns[0]!.items[2]).toMatchObject({ expanded: true });
     model.toggleReasoning('r1');
     expect(model.turns[0]!.items[2]).toMatchObject({ expanded: false });
+    // The finished turn folds its work; "N previous messages" opens and closes it.
+    expect(model.turns[0]).toMatchObject({ final: true, unfolded: false, workedFor: 'Worked for 10s' });
+    expect(model.foldedTurns).toBe('t1');
+    model.toggleFold('t1');
+    expect(model.turns[0]).toMatchObject({ unfolded: true });
+    expect(model.foldedTurns).toBe('');
+    model.toggleFold('t1');
+    expect(model.foldedTurns).toBe('t1');
     // The detail sheet opens for a known item only, once; closing twice is harmless.
     model.openItem('nope');
     expect(model.detailItemId).toBeUndefined();
@@ -933,10 +961,10 @@ describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
   it('a queued message: the running turn says it waits for the background tasks instead of "Working…"', async () => {
     const turns = [{ ...turn('t1'), items: [queuedItem('u1', 't1')] }];
     const { model, live } = await setup({ turns, over: withTasks([task('a'), task('b')]) });
-    expect(model.turns[0]).toMatchObject({ label: 'Queued: waiting for 2 background tasks to finish', tone: 'muted', queued: true });
+    expect(model.turns[0]).toMatchObject({ label: 'Queued: waiting for 2 background tasks to finish', tone: 'muted', queued: true, thinking: false });
     // The engine took it: the host journals the item again without the flag.
     live(11, [['item/completed', { turnId: 't1', item: userItem('u1', 't1', 'cm-q') }]]);
-    expect(model.turns[0]).toMatchObject({ label: 'Working…', tone: 'busy' });
+    expect(model.turns[0]).toMatchObject({ label: '', tone: 'busy', thinking: true });
     expect(model.turns[0]!.queued).toBeUndefined();
   });
 
