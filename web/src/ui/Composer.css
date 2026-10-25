@@ -11,7 +11,7 @@
   z-index: 4;
   display: flex;
   flex-direction: column;
-  padding: var(--space-6) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
+  padding: var(--space-6) calc(var(--safe-right) + var(--page-x)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--page-x));
   background: linear-gradient(to bottom, transparent, var(--bg) var(--space-6)); /* one-off: text fades under the card */
 }
 
@@ -87,9 +87,14 @@
   border-radius: var(--radius-round);
 }
 
+/* "+": a bare grey glyph at rest; the grey disc shows only while it is pressed (same 40 px target). */
 .composer-add {
-  background: var(--fill);
+  background: transparent;
   color: var(--muted);
+}
+
+.composer-add:active:not(:disabled) {
+  background: var(--fill);
 }
 
 .composer-send,

@@ -44,8 +44,9 @@
   padding: 0 var(--space-2);
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--text); /* ink, as in the app since the look polish: blue is the running state only */
   font: var(--type-callout);
+  font-weight: 500;
 }
 
 /* Primary actions are ink (item 1), pills (item 14). The app's floating composer keeps its own round
@@ -70,7 +71,7 @@
 }
 
 .lab[data-look='new'] .sheet-head button.ghost {
-  color: var(--accent);
+  color: var(--text);
   font-weight: 600;
   padding: 0 var(--space-2);
 }
@@ -153,8 +154,8 @@
   display: flex;
   gap: var(--space-4);
   overflow-x: auto;
-  margin: var(--space-6) calc(-1 * var(--space-8)) 0;
-  padding: 0 var(--space-8);
+  margin: var(--space-6) calc(-1 * var(--page-x)) 0;
+  padding: 0 var(--page-x);
   scrollbar-width: none;
 }
 

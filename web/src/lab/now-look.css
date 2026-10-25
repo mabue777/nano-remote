@@ -27,6 +27,7 @@ body:has(.lab[data-look='now']) {
   --diff-add-bg: rgb(31 157 85 / 0.14);
   --diff-del-bg: rgb(196 53 43 / 0.14);
   --radius-sheet: 14px;
+  --page-x: 16px; /* the page margin before the look polish */
 }
 
 @media (prefers-color-scheme: dark) {

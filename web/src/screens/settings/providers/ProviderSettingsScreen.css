@@ -1,7 +1,7 @@
 /* Settings > Providers (ProviderSettingsScreen.tsx). */
 
 .settings-screen h1 {
-  margin-top: 0;
+  margin: var(--space-12) 0 var(--space-8); /* the large title sits lower (look polish) */
 }
 
 .settings-screen > section {
@@ -53,7 +53,7 @@
 }
 
 .provider-url {
-  font-family: var(--font-code);
+  color: var(--text-tertiary);
   overflow-wrap: anywhere;
 }
 

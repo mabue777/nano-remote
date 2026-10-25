@@ -41,7 +41,14 @@ export function PinnedQuestions({ model }: { model: ApprovalsModel }) {
 function ApprovalCard({ card, model }: { card: ApprovalCardState; model: ApprovalsModel }) {
   const body = card.body;
   return (
-    <section class={`request-card approval ${card.kind}`} role="group" aria-label={`Approval: ${card.title}`} data-request-id={card.requestId} data-kind={card.kind}>
+    <section
+      class={`request-card approval ${card.kind}`}
+      role="group"
+      aria-label={`Approval: ${card.title}`}
+      aria-busy={card.sending !== undefined}
+      data-request-id={card.requestId}
+      data-kind={card.kind}
+    >
       <h2 class="request-title">{card.title}</h2>
       {body.kind === 'command' && (
         <>
@@ -94,7 +101,7 @@ function ApprovalCard({ card, model }: { card: ApprovalCardState; model: Approva
           <button
             key={button.decision}
             type="button"
-            class={button.tone === 'primary' ? 'primary' : button.tone === 'danger' ? 'danger' : ''}
+            class={button.tone === 'primary' ? 'primary' : ''}
             title={button.hint}
             disabled={card.sending !== undefined}
             data-decision={button.decision}
@@ -116,6 +123,7 @@ function QuestionCard({ card, model }: { card: QuestionCardState; model: Approva
     <form
       class={`request-card question${card.blocking ? ' blocking' : ''}`}
       aria-label={card.blocking ? 'Question (the agent is waiting)' : 'Question'}
+      aria-busy={card.sending}
       data-request-id={card.requestId}
       data-blocking={card.blocking ? 'true' : 'false'}
       onSubmit={(event) => {

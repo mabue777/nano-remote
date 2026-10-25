@@ -33,11 +33,12 @@ body {
   max-width: 560px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--space-8)) calc(var(--safe-bottom) + var(--space-12)) calc(var(--safe-left) + var(--space-8));
+  padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--page-x)) calc(var(--safe-bottom) + var(--space-12)) calc(var(--safe-left) + var(--page-x));
 }
 
 /* Type roles (tokens.css, docs/research/new-look-prototype.md item 9): the page title is the large title,
-   section headings the headline. */
+   section headings the headline. A page whose large title stands under a back header (Pair, Settings) gives
+   it a 24 px top margin, so the top of the page sits calmer (look polish). */
 h1 {
   font: var(--type-large-title);
   letter-spacing: var(--tracking-title);
@@ -110,12 +111,21 @@ button.ghost {
   background: transparent;
 }
 
+/* Text buttons and links are ink at 500 weight, not blue: the accent is only the running state and focus
+   rings (look polish, "one accent"). */
 button.link {
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--text);
+  font-weight: 500;
   min-height: 0;
   padding: 0 0 0 var(--space-3);
+}
+
+/* Keyboard focus: the one other place the accent shows. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Press feedback (interaction lab technique 1): a button, link or row dims and shrinks to 97% the moment a
@@ -210,9 +220,11 @@ textarea::placeholder {
 .empty {
   padding: var(--space-12) 0;
   text-align: center;
+  font: var(--type-callout);
+  color: var(--muted);
 }
 
-/* Destructive actions (delete, decline): filled red. */
+/* Destructive actions (delete): filled red, in sheets and on rows; the approval card's Cancel and Decline are grey. */
 button.danger {
   background: var(--error);
   border-color: var(--error);

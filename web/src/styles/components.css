@@ -1,5 +1,5 @@
 /* Shared components (src/ui): sheet, back header and top bar, switch, pull-to-refresh, plus the small
-   pieces several screens use (status dot, badge, pill, choice buttons). */
+   pieces several screens use (status dot and word, tag, choice buttons). */
 
 .topbar {
   display: flex;
@@ -16,6 +16,44 @@
   border-radius: var(--radius-round);
   flex: none;
   background: var(--off);
+}
+
+/* A status is a small dot and one word, never a pill (look polish): the word is secondary grey, the dot
+   carries the colour: blue while running, orange when it needs you, green when finished, red on an error,
+   tertiary grey otherwise. */
+.status-word {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font: var(--type-callout);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status-word.small {
+  font: var(--type-footnote);
+}
+
+.status-word .dot {
+  width: 7px;
+  height: 7px;
+  background: var(--text-tertiary);
+}
+
+.status-word.busy .dot {
+  background: var(--accent);
+}
+
+.status-word.attention .dot {
+  background: var(--warn);
+}
+
+.status-word.ok .dot {
+  background: var(--ok);
+}
+
+.status-word.error .dot {
+  background: var(--error);
 }
 
 .pull {
@@ -72,6 +110,7 @@
   opacity: 0.6;
 }
 
+/* The red count badge: the lab's Now look only (the app shows a dot and a word, .status-word). */
 .badge {
   flex: none;
   min-width: 22px;
@@ -123,7 +162,7 @@
   will-change: transform;
   background: var(--surface-raised);
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-  padding: var(--space-8) calc(var(--safe-right) + var(--space-8)) calc(var(--safe-bottom) + var(--space-10)) calc(var(--safe-left) + var(--space-8));
+  padding: var(--space-8) calc(var(--safe-right) + var(--page-x)) calc(var(--safe-bottom) + var(--space-10)) calc(var(--safe-left) + var(--page-x));
 }
 
 /* The handle at the top of the panel: it can be pulled down. */
@@ -155,9 +194,9 @@
   letter-spacing: var(--tracking-title);
 }
 
-/* The sheet's action (Done, Cancel): a blue text button, as on iOS. */
+/* The sheet's action (Done, Cancel): an ink text button (one accent: blue is not for controls). */
 .sheet-head button.ghost {
-  color: var(--accent);
+  color: var(--text);
   font-weight: 600;
   padding: 0 var(--space-2);
 }
@@ -191,7 +230,8 @@
 }
 
 .back {
-  color: var(--accent);
+  color: var(--text);
+  font-weight: 500;
   text-decoration: none;
   min-height: var(--touch);
   display: inline-flex;
@@ -206,30 +246,12 @@
   display: block;
 }
 
+/* A tag (a provider's kind, "Default"): grey text on a grey fill, no outline. Statuses are .status-word. */
 .pill {
   font: var(--type-caption);
-  font-weight: 600;
-  padding: var(--space-2) var(--space-5);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-pill);
-  border: 1px solid currentColor;
-}
-
-.pill.ok {
-  color: var(--ok);
-}
-
-.pill.busy {
-  color: var(--busy);
-}
-
-.pill.attention {
-  color: var(--warn);
-}
-
-.pill.error {
-  color: var(--error);
-}
-
-.pill.muted {
+  background: var(--fill);
   color: var(--muted);
 }

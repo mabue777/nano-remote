@@ -326,26 +326,26 @@ function SessionItem({ row, model, actions, archived, onOpen }: SessionItemProps
       >
         <div class="session-top">
           <span class="session-title">{row.title}</span>
-          {row.pending > 0 && (
-            <span class="badge" aria-label={`${row.pending} waiting for you`}>
-              {row.pending}
-            </span>
-          )}
         </div>
         <div class="session-meta small">
-          <span class={`status ${row.tone}`}>{row.statusLabel}</span>
+          {/* A status is a dot and a word; requests waiting for you turn the dot orange. */}
+          <span class={`status-word small status ${row.pending > 0 ? 'attention' : row.tone}`}>
+            {row.pending > 0 ? <span class="dot" role="img" aria-label={`${row.pending} waiting for you`} /> : <span class="dot" aria-hidden="true" />}
+            {row.statusLabel}
+          </span>
           {row.finishedWhileAway && <span class="away-mark">Finished while away</span>}
           {row.backgroundTasks > 0 && (
-            <span class="tasks-mark" data-count={row.backgroundTasks}>
+            <span class="status-word small busy tasks-mark" data-count={row.backgroundTasks}>
+              <span class="dot" aria-hidden="true" />
               {backgroundTasksText(row.backgroundTasks)}
             </span>
           )}
-          <span class="muted">
+          <span class="meta">
             {row.agentName} · {row.folder} · {row.updated}
           </span>
         </div>
         {row.model !== undefined && (
-          <p class="muted small session-model" aria-label="Model">
+          <p class="small session-model" aria-label="Model">
             {row.model}
           </p>
         )}

@@ -87,7 +87,7 @@ function ChatItem({ row, model, onOpen }: { row: ChatRow; model: ChatsListModel;
           <span class="session-title">{row.title}</span>
         </div>
         <div class="session-meta small">
-          <span class="muted">
+          <span class="meta">
             {row.model} · {row.provider} · {row.updated}
           </span>
         </div>

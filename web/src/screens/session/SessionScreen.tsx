@@ -160,7 +160,8 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
     <main class="screen session-screen">
       <BackHeader href="/" label="Sessions" onBack={onBack}>
         <div class="topbar-end">
-          <span class={`pill ${status.tone}`} aria-label="Session status" data-status={status.status}>
+          <span class={`status-word ${status.tone}`} aria-label="Session status" data-status={status.status}>
+            <span class="dot" aria-hidden="true" />
             {status.label}
           </span>
           <button type="button" class="ghost icon-button" aria-label="Session actions" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
@@ -182,60 +183,61 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             </span>
           )}
         </h1>
-        <p class={`task-state small ${task.tone}`} aria-label="Task state" data-tone={task.tone}>
+        <p class={`task-state status-word small ${task.tone}`} aria-label="Task state" data-tone={task.tone}>
           <span class="dot" aria-hidden="true" />
           {task.label}
         </p>
-        <p class="muted small">
+        {/* One footnote line: agent · folder · model · effort, then Change (a control) where the agent allows it. */}
+        <p class="session-meta-line small">
           {model.agentId ?? ''}
           {model.folder !== undefined && (
             <>
               {' · '}
-              <code title={model.folder.path}>{model.folder.name}</code>
+              <span class="session-folder" title={model.folder.path}>
+                {model.folder.name}
+              </span>
             </>
           )}
+          {model.canChangeSettings ? (
+            <>
+              {' · '}
+              <button type="button" class="session-model session-model-button" aria-haspopup="dialog" title="Change model and effort" onClick={() => model.openSettings()}>
+                <span aria-label="Model">{model.model ?? 'Default model'}</span>
+                {model.effort !== undefined && ' · '}
+                {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
+                <span aria-hidden="true">
+                  {' · '}
+                  <span class="session-model-change">Change</span>
+                </span>
+              </button>
+            </>
+          ) : (
+            (model.model !== undefined || model.effort !== undefined) && (
+              <span class="session-model">
+                {' · '}
+                {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
+                {model.model !== undefined && model.effort !== undefined && ' · '}
+                {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
+              </span>
+            )
+          )}
         </p>
-        {model.canChangeSettings ? (
-          <button
-            type="button"
-            class="muted small session-model session-model-button"
-            aria-haspopup="dialog"
-            title="Change model and effort"
-            onClick={() => model.openSettings()}
-          >
-            <span aria-label="Model">{model.model ?? 'Default model'}</span>
-            {model.effort !== undefined && ' · '}
-            {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
-            <span class="session-model-change" aria-hidden="true">
-              Change
-            </span>
-          </button>
-        ) : (
-          (model.model !== undefined || model.effort !== undefined) && (
-            <p class="muted small session-model">
-              {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
-              {model.model !== undefined && model.effort !== undefined && ' · '}
-              {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
-            </p>
-          )
-        )}
       </div>
       {model.needsDecision && (
-        <div class="decision-banner" role="alert" aria-label="Needs your decision">
-          <strong>Needs your decision</strong>
-          <span class="counters">
-            {pending.approvals > 0 && (
-              <span class="badge" aria-label={`${pending.approvals} approval${pending.approvals === 1 ? '' : 's'} waiting`}>
-                {pending.approvals} approval{pending.approvals === 1 ? '' : 's'}
-              </span>
-            )}
-            {pending.inputs > 0 && (
-              <span class="badge" aria-label={`${pending.inputs} question${pending.inputs === 1 ? '' : 's'} waiting`}>
-                {pending.inputs} question{pending.inputs === 1 ? '' : 's'}
-              </span>
-            )}
-          </span>
-        </div>
+        <p class="decision-notice small" role="alert" aria-label="Needs your decision">
+          <span class="dot" aria-hidden="true" />
+          {pending.approvals > 0 && (
+            <span aria-label={`${pending.approvals} approval${pending.approvals === 1 ? '' : 's'} waiting`}>
+              {pending.approvals} approval{pending.approvals === 1 ? '' : 's'} waiting
+            </span>
+          )}
+          {pending.approvals > 0 && pending.inputs > 0 && ' · '}
+          {pending.inputs > 0 && (
+            <span aria-label={`${pending.inputs} question${pending.inputs === 1 ? '' : 's'} waiting`}>
+              {pending.inputs} question{pending.inputs === 1 ? '' : 's'} waiting
+            </span>
+          )}
+        </p>
       )}
       <BackgroundTasks rows={model.backgroundTasks} model={model} flip={flip} scroller={scroller} />
       {model.openError !== undefined && (

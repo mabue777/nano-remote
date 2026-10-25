@@ -57,13 +57,6 @@ button.previous-toggle:active {
   color: var(--error);
 }
 
-.row-tag.ok {
-  color: var(--ok);
-}
-
-.row-tag.busy {
-  color: var(--busy);
-}
 
 .row-line .chevron,
 .previous-toggle .chevron {

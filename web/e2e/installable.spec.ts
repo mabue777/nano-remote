@@ -71,13 +71,13 @@ test('the shell at 390 x 844 pads by the safe-area insets and never scrolls side
       const style = getComputedStyle(el);
       return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft];
     });
-  expect(await padding()).toEqual(['12px', '16px', '24px', '16px']);
+  expect(await padding()).toEqual(['12px', '20px', '24px', '20px']); // the 20 px page margin (--page-x)
 
   // Emulate a notched phone through the DevTools protocol: env(safe-area-inset-*) now reports an
   // iPhone 15's portrait insets (59 px top, 34 px bottom), plus side insets to cover landscape.
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setSafeAreaInsetsOverride' as never, { insets: { top: 59, right: 12, bottom: 34, left: 12 } } as never);
-  await expect.poll(padding).toEqual(['71px', '28px', '58px', '28px']);
+  await expect.poll(padding).toEqual(['71px', '32px', '58px', '32px']);
   await expect(page.getByRole('heading', { name: 'Pair this phone' })).toBeInViewport();
   const headingTop = await page.getByRole('heading', { name: 'Pair this phone' }).evaluate((el) => el.getBoundingClientRect().top);
   expect(headingTop).toBeGreaterThanOrEqual(59); // below the notch, not under it

@@ -5,10 +5,13 @@
   margin: 0 0 var(--space-7);
 }
 
+/* Links inside a sentence: ink at 500 weight, underlined so they read as links without the accent. */
 .pair-hint a,
 .settings-link {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .swipe-row {
@@ -25,7 +28,7 @@
 }
 
 .swipe-row.revealed .session {
-  border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error); /* the row the actions below act on (rows have no border) */
 }
 
 .row-actions {

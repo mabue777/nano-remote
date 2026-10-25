@@ -80,7 +80,7 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
       <div class="session-head chat-head">
         <h1 class="session-heading">{model.title}</h1>
         <div class="chat-sub">
-          <p class="muted small" aria-label="Provider">
+          <p class="session-meta-line small" aria-label="Provider">
             {model.providerName}
             {model.routeLabel !== undefined && ` · ${model.routeLabel}`}
           </p>

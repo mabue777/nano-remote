@@ -79,15 +79,15 @@ test('the real screens wear the New look tokens (look adoption step 1); the lab 
   await configure(page, 'New', 'Now');
   const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const primary = (selector: string) => page.evaluate((s) => getComputedStyle(document.querySelector(s)!).getPropertyValue('--primary').trim(), selector);
-  expect(await bg()).toBe('rgb(255, 255, 255)'); // --bg of the New look
-  expect(await primary('.lab')).toBe('#0d0d0d');
+  expect(await bg()).toBe('rgb(250, 250, 248)'); // --bg of the New look: the warm page (look polish)
+  expect(await primary('.lab')).toBe('#1a1917');
   await configure(page, 'Now', 'Now');
   expect(await bg()).toBe('rgb(246, 246, 244)'); // the earlier --bg, from now-look.css
   expect(await primary('.lab')).toBe('#2f5bd3'); // the earlier blue main button
   // The real pages load none of the lab's stylesheets and use the app's tokens.
   await page.goto('/pair');
-  expect(await primary('html')).toBe('#0d0d0d');
-  expect(await bg()).toBe('rgb(255, 255, 255)');
+  expect(await primary('html')).toBe('#1a1917');
+  expect(await bg()).toBe('rgb(250, 250, 248)');
   expect(await page.evaluate(() => [...document.styleSheets].some((sheet) => [...sheet.cssRules].some((rule) => rule.cssText.includes('data-look'))))).toBe(false);
 });
 
@@ -129,7 +129,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(create).toBeVisible();
       await settled(page);
       if (motion === 'Now') await shot(page, name('2-new-session-sheet'));
-      expect(await create.getByRole('button', { name: 'Start session' }).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(scheme === 'light' ? 'rgb(13, 13, 13)' : 'rgb(255, 255, 255)');
+      expect(await create.getByRole('button', { name: 'Start session' }).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(scheme === 'light' ? 'rgb(26, 25, 23)' : 'rgb(255, 255, 255)');
       await create.getByRole('button', { name: 'Cancel' }).click();
       await expect(create).toBeHidden();
 

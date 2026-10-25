@@ -42,6 +42,13 @@
   }
 }
 
+/* Home's cards (host, notifications, session rows) have no border or ring: white on the warm page in light,
+   #212121 on #0d0d0d in dark, set apart by their fill and the air between them (look polish). */
+.host,
+.notifications {
+  border: 0;
+}
+
 .host {
   margin-bottom: var(--space-10);
 }
@@ -107,7 +114,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-8);
 }
 
 .session {
@@ -115,7 +122,6 @@
   text-decoration: none;
   color: inherit;
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-6) var(--space-7);
 }
@@ -146,28 +152,10 @@ a.session:active {
   margin-top: var(--space-2);
 }
 
-.status {
-  font-weight: 600;
-}
-
-.status.ok {
-  color: var(--ok);
-}
-
-.status.busy {
-  color: var(--busy);
-}
-
-.status.attention {
-  color: var(--warn);
-}
-
-.status.error {
-  color: var(--error);
-}
-
-.status.muted {
-  color: var(--muted);
+/* "agent · folder · 5 min ago" and the model line: proportional footnote in tertiary grey. */
+.session-meta .meta,
+.session .session-model {
+  color: var(--text-tertiary);
 }
 
 .preview {
@@ -184,27 +172,15 @@ a.session:active {
   padding: var(--space-6) 0;
 }
 
-/* A home row whose turn ended while the app was hidden or offline, until it is opened. */
+/* A home row whose turn ended while the app was hidden or offline, until it is opened: one ink word, like
+   an unread mark (no pill, no coloured bar). */
 .away-mark {
   font-weight: 600;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--text);
 }
 
-/* "2 background tasks": the session's agent still runs helpers (spec 5.1 backgroundTasks). */
-.tasks-mark {
-  font-weight: 600;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-}
-
-.session.away {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
+/* "2 background tasks": the session's agent still runs helpers (spec 5.1 backgroundTasks); a .status-word
+   with the running dot. */
 
 /* The "Sessions | Chats" switch on Home: a grey track, the selected half a raised white pill. */
 .segmented {
@@ -322,14 +298,14 @@ a.session:active {
 
 .undo-toast {
   position: fixed;
-  left: calc(var(--safe-left) + var(--space-8));
-  right: calc(var(--safe-right) + var(--space-8));
+  left: calc(var(--safe-left) + var(--page-x));
+  right: calc(var(--safe-right) + var(--page-x));
   bottom: calc(var(--safe-bottom) + var(--space-8));
   z-index: 9; /* above the page, below sheets (10) */
   display: flex;
   align-items: center;
   gap: var(--space-6);
-  max-width: 528px; /* the sheet width less the gutters */
+  max-width: 520px; /* the sheet width less the gutters */
   margin: 0 auto;
   padding: var(--space-5) var(--space-8);
   border-radius: var(--radius);

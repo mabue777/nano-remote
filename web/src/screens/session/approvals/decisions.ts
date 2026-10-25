@@ -28,8 +28,8 @@ export interface DecisionButton {
   decision: Decision;
   label: string;
   hint: string;
-  /** primary for accept, danger for cancel, plain for the rest. */
-  tone: 'primary' | 'plain' | 'danger';
+  /** primary (ink) for accept, plain (a grey pill) for the rest: Cancel is grey like Decline, not red. */
+  tone: 'primary' | 'plain';
 }
 
 function isDecision(value: unknown): value is Decision {
@@ -43,7 +43,7 @@ export function decisionButtons(available: readonly unknown[] | undefined): Deci
     decision,
     label: DECISION_LABELS[decision],
     hint: DECISION_HINTS[decision],
-    tone: decision === 'accept' ? 'primary' : decision === 'cancel' ? 'danger' : 'plain',
+    tone: decision === 'accept' ? 'primary' : 'plain',
   }));
 }
 

@@ -10,7 +10,7 @@ describe('decision mapping', () => {
     const buttons = decisionButtons(['cancel', 'decline', 'acceptForSession', 'accept']);
     expect(buttons.map((b) => b.decision)).toEqual(['accept', 'acceptForSession', 'decline', 'cancel']);
     expect(buttons.map((b) => b.label)).toEqual(['Accept', 'Accept for session', 'Decline', 'Cancel']);
-    expect(buttons.map((b) => b.tone)).toEqual(['primary', 'plain', 'plain', 'danger']);
+    expect(buttons.map((b) => b.tone)).toEqual(['primary', 'plain', 'plain', 'plain']);
     for (const b of buttons) expect(b.hint).not.toBe('');
   });
 

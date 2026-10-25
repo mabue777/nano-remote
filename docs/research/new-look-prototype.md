@@ -81,6 +81,12 @@ with them so each file is rewritten once:
    icons in `web/src/ui/Icon.tsx`; the lab's Now look keeps the earlier design through `web/src/lab/now-look.css`.
    One value differs from the lab: `--text-tertiary` on light is #737373 (4.74:1 on white) instead of #8f8f8f
    (3.23:1, below WCAG AA for small text).
+   **Look polish, 2026-10-25** (after the visual comparison with the peer apps): warm light neutrals (`--bg`
+   #fafaf8, `--fill` #f2f1ee, `--fill-strong` #e7e5e1, `--text` #1a1917, `--muted` #5e5c57, `--text-tertiary`
+   #6e6b65), a fainter `--shadow-ring`, a 20 px page margin (`--page-x`), statuses as a dot and a grey word
+   (`.status-word`; no pills or count badges), links and back controls in ink, the accent only for the running
+   state and focus rings, a 32/38 large title. Dark is unchanged. `web/src/styles/contrast.test.ts` checks every
+   text token on the surfaces it is used on, in light and dark.
 2. **Transcript rows with motion part 2 (item 4, techniques 4, 5 and 9).** M + M. The same render code in
    `SessionScreen.tsx`: flat rows, "previous messages", "Worked for", and Thinking land together with the paced
    streaming, auto-scroll and expand/collapse. **Done 2026-10-25:** the rows are `screens/session/TranscriptRows.tsx`

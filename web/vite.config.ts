@@ -31,7 +31,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'test/**/*.test.ts', 'build/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/stream/**/*.ts', 'src/replica/**/*.ts', 'src/routes/**/*.ts', 'src/screens/**/*.ts', 'src/pwa/**/*.ts', 'src/chat/**/*.ts', 'src/ui/**/*.{ts,tsx}', 'src/lab/**/*.ts', 'build/**/*.ts'],
+      include: ['src/stream/**/*.ts', 'src/replica/**/*.ts', 'src/routes/**/*.ts', 'src/screens/**/*.ts', 'src/pwa/**/*.ts', 'src/chat/**/*.ts', 'src/ui/**/*.{ts,tsx}', 'src/lab/**/*.ts', 'src/styles/**/*.ts', 'build/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'build/**/*.test.ts'],
       reporter: [['text', { skipFull: false }]],
       thresholds: {
@@ -52,6 +52,8 @@ export default defineConfig({
         // FLIP and auto-scroll follower moved to src/ui/motion when the app adopted them).
         // Its .tsx screens are covered by the Playwright lab smoke.
         'src/lab/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
+        // The token contrast helper (styles/contrast.ts).
+        'src/styles/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
         'build/**': { lines: 90, branches: 90, functions: 90, statements: 90 },
       },
     },

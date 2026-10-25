@@ -93,7 +93,9 @@
 }
 
 .markdown a {
-  color: var(--accent);
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .toast {
