@@ -28,8 +28,9 @@
 // paired cookie only. `POST /test/uploads` answers {uploads: [{blobId, sessionId, name, mediaType, size,
 // width?, height?}]} (the pixel size of PNG and JPEG uploads); `POST /test/upload-fail {status}` makes the
 // next upload answer that status ({} clears it).
-// `POST /test/new-build {version}` serves /sw.js under that build version, as after a redeploy (a reset
-// goes back to the built one).
+// `POST /test/new-build {version, stuck?}` serves /sw.js under that build version, as after a redeploy (a reset
+// goes back to the built one); `stuck: true` makes that worker ignore SKIP_WAITING, so it never takes over
+// (the iPhone report of 2026-10-25: Reload greyed out and nothing happened).
 // `POST /test/push` answers {subscriptions (by clientId), tests (push/test callers)}; `POST
 // /test/push-test-error {code, message, data}` makes push/test refuse with that error ({} clears it).
 // Local chat: a fake model provider (fake-provider.ts) listens with https on the next port; `POST
@@ -121,6 +122,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
   const provider = await startFakeProvider(port + 1);
   const codes = new Map<string, Code>();
   let swVersion: string | null = null; // POST /test/new-build
+  let swStuck = false;
   const tokens = new Map<string, string>(); // token -> clientId
   let devices = 0;
   const issue = (lifetimeMs: number) => {
@@ -169,6 +171,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               blobs.clear();
               uploadFailure = undefined;
               swVersion = null;
+              swStuck = false;
               provider.chats.length = 0;
               return json(200, { ok: true });
             case '/test/provider-chats':
@@ -208,6 +211,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/new-build':
               swVersion = String(body.version);
+              swStuck = body.stuck === true;
               return json(200, { ok: true });
             case '/test/push':
               return json(200, { subscriptions: Object.fromEntries(host.pushSubscriptions), tests: host.pushTests });
@@ -322,7 +326,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
     response.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
     if (url.pathname === '/sw.js' && swVersion !== null) {
       const version = JSON.stringify(swVersion);
-      return void response.end(readFileSync(file, 'utf8').replace(/^const VERSION = .*;$/m, () => `const VERSION = ${version};`));
+      let script = readFileSync(file, 'utf8').replace(/^const VERSION = .*;$/m, () => `const VERSION = ${version};`);
+      if (swStuck) script = script.replace('self.skipWaiting();', 'void 0; /* stuck: ignores SKIP_WAITING */');
+      return void response.end(script);
     }
     createReadStream(file).pipe(response);
   });
