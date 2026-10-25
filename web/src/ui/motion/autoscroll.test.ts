@@ -29,6 +29,14 @@ describe('Follower', () => {
     expect(f.step(m)).toBeUndefined(); // at the bottom: nothing to do
   });
 
+  it('a longer frame covers what the 60 fps frames in it would have, so a slow device does not trail', () => {
+    // Two 60 fps frames at half each leave a quarter of 400 px; one frame twice as long lands at the same place.
+    expect(new Follower(0.5).step(at(1000), 2000 / 60)).toBeCloseTo(1300);
+    // At 10 fps (headless Chromium measured 2026-10-25) one frame covers about 92% of the way, not 35%.
+    expect(new Follower(0.35).step(at(1000), 100)).toBeCloseTo(1000 + 400 * (1 - 0.65 ** 6));
+    expect(new Follower(0.5).step(at(1000), 0)).toBe(1001); // no time passed: still the one-pixel minimum
+  });
+
   it('moves at least a pixel per frame and never past the bottom', () => {
     const f = new Follower(0.01);
     expect(f.step(at(1398))).toBe(1399);

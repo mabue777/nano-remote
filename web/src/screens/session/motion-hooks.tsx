@@ -169,10 +169,10 @@ export function useAutoScroll(scroller: RefObject<HTMLElement>, content: RefObje
   const loop = useMemo(
     () =>
       new FrameLoop(
-        () => {
+        (dtMs) => {
           const el = scroller.current;
           if (el === null) return;
-          const next = follower.step(el);
+          const next = follower.step(el, dtMs);
           if (next !== undefined) el.scrollTop = next;
         },
         () => scroller.current !== null && follower.following && distanceFromBottom(scroller.current) > 0.5,

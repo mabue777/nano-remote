@@ -13,8 +13,6 @@
   flex-direction: column;
   padding: var(--space-6) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
   background: linear-gradient(to bottom, transparent, var(--bg) var(--space-6)); /* one-off: text fades under the card */
-  /* Its own layer: the transcript scrolling under it each frame does not repaint the card. */
-  will-change: transform;
 }
 
 /* What rides on the bar (a pinned question, notes) wraps inside its width, never past the screen's edge. */

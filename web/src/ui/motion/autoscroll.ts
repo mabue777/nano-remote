@@ -11,6 +11,9 @@ export interface ScrollMetrics {
 /** Within this many px of the bottom counts as at the bottom (the real session view uses the same). */
 export const BOTTOM_SLACK = 48;
 
+/** One frame at 60 fps, the rate the easing is tuned for. */
+const FRAME_MS = 1000 / 60;
+
 export function distanceFromBottom(m: ScrollMetrics): number {
   return Math.max(0, m.scrollHeight - m.clientHeight - m.scrollTop);
 }
@@ -22,7 +25,8 @@ export class Follower {
   /** The list's height when last seen, to tell a shrinking list from a scroll up. */
   private lastHeight: number | undefined;
 
-  /** Fraction of the remaining distance covered per frame (0.35: about 90% within 100 ms at 60 fps). */
+  /** Fraction of the remaining distance covered per 60 fps frame (0.35: about 90% within 100 ms). A longer
+   *  frame covers what the 60 fps frames in it would have, so a slow device does not trail further behind. */
   constructor(private readonly ease = 0.35) {}
 
   /** A finger or the wheel is on the list: the reader is in charge. */
@@ -60,14 +64,15 @@ export class Follower {
     this.lastSet = top;
   }
 
-  /** The scrollTop to set this frame, or undefined to leave it. */
-  step(m: ScrollMetrics): number | undefined {
+  /** The scrollTop to set this frame (`dtMs` since the last one), or undefined to leave it. */
+  step(m: ScrollMetrics, dtMs = FRAME_MS): number | undefined {
     this.lastHeight = m.scrollHeight;
     if (!this.following || this.touching) return undefined;
     const target = m.scrollHeight - m.clientHeight;
     const remaining = target - m.scrollTop;
     if (remaining <= 0.5) return undefined;
-    const next = Math.min(target, m.scrollTop + Math.max(1, remaining * this.ease));
+    const share = 1 - (1 - this.ease) ** (Math.max(0, dtMs) / FRAME_MS);
+    const next = Math.min(target, m.scrollTop + Math.max(1, remaining * share));
     this.lastSet = next;
     return next;
   }
