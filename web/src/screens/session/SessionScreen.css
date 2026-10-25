@@ -20,8 +20,10 @@
   font: var(--type-headline);
 }
 
-/* The session view: a fixed-height column; only the conversation scrolls, the composer stays put. */
+/* The session view: a fixed-height column; only the conversation scrolls, the composer stays put. The
+   floating composer (ui/Composer.css) lies over the page's bottom edge, so the page is its containing block. */
 .session-screen {
+  position: relative;
   height: 100dvh;
   min-height: 0;
   display: flex;
@@ -102,6 +104,15 @@
   padding: 0 var(--space-8) var(--space-6);
 }
 
+/* The transcript scrolls behind the floating composer; this space keeps its end above the card. It is part
+   of the content, so when the card grows (a second line, the usage line) the auto-scroll sees the content
+   grow and follows. */
+.conversation-content::after {
+  content: '';
+  display: block;
+  height: var(--composer-height, 0px);
+}
+
 .older {
   display: flex;
   justify-content: center;
@@ -147,8 +158,8 @@
   border-radius: var(--radius-bubble);
 }
 
-.turn.sending .msg.user,
-.steer.sending,
+/* A message being sent is not dimmed (Sending, technique 6): it rises out of the composer at full strength.
+   A queued one waits for the turn to end, and a failed one shows its error and Retry. */
 .steer.queued {
   opacity: 0.7;
 }
@@ -280,71 +291,13 @@ button.jump-pill:active {
 .jump-pill {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 132px); /* one-off: just above the composer */
+  bottom: calc(var(--composer-height, calc(var(--safe-bottom) + 120px)) + var(--space-4)); /* above the composer */
   transform: translateX(-50%);
   border-radius: var(--radius-pill);
   min-height: 36px;
   background: var(--surface-raised);
   box-shadow: var(--shadow-lg), var(--shadow-ring);
   z-index: 5;
-}
-
-.composer {
-  flex: none;
-  border-top: 1px solid var(--line);
-  margin: 0 calc(-1 * var(--space-8));
-  padding: var(--space-4) var(--space-8) calc(var(--safe-bottom) + var(--space-6));
-  background: var(--bg);
-}
-
-.composer .usage {
-  margin: 0 0 var(--space-3);
-}
-
-.composer-form {
-  display: flex;
-  gap: var(--space-4);
-  align-items: flex-end;
-}
-
-.composer-form textarea {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  max-height: 40dvh;
-}
-
-/* The box is one row while empty; a placeholder that wrapped would be cut off (field check 2026-10-21). */
-.composer-form textarea::placeholder {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.composer-actions {
-  display: flex;
-  gap: var(--space-3);
-}
-
-button.stop {
-  color: var(--error);
-  border-color: var(--error);
-}
-
-.attach-button {
-  flex: none;
-  width: var(--touch);
-  height: var(--touch);
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-round);
-  color: var(--muted);
-}
-
-.attach-input {
-  display: none;
 }
 
 .attach-tray .error {
@@ -443,10 +396,6 @@ button.stop {
 
 .tray-error .small {
   font-size: var(--font-2xs);
-}
-
-.attach-note {
-  margin: 0 0 var(--space-3);
 }
 
 .sent-attachments {

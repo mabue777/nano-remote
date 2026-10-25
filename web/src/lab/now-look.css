@@ -239,3 +239,37 @@ body:has(.lab[data-look='now']) {
   color: var(--muted);
   opacity: 1;
 }
+
+/* The composer before look step 3: a bordered bar under the conversation, a plain field and a Send button
+   (the app's floating composer is ui/Composer.css; the lab's Now look keeps this one). */
+:where(.lab[data-look='now']) .composer {
+  flex: none;
+  border-top: 1px solid var(--line);
+  margin: 0 calc(-1 * var(--space-8));
+  padding: var(--space-4) var(--space-8) calc(var(--safe-bottom) + var(--space-6));
+  background: var(--bg);
+}
+
+:where(.lab[data-look='now']) .composer-form {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+
+:where(.lab[data-look='now']) .composer-form textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  max-height: 40dvh;
+}
+
+:where(.lab[data-look='now']) .composer-form textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:where(.lab[data-look='now']) .composer-actions {
+  display: flex;
+  gap: var(--space-3);
+}

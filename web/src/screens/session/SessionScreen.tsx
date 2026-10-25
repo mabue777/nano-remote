@@ -1,15 +1,17 @@
 // The session page, /s/:sessionId: the turn list, the pending-request banner, the approval and question
-// cards (approvals/), the composer, and the item detail sheet (views/: command output, the turn's diff). All
-// state and rules live in SessionModel and ApprovalsModel; this file renders them and owns only the DOM work
-// (auto-scroll, the pull-down gesture, keeping the reading position when older turns are put in front, and
-// the expand and collapse motion). The transcript is the new look's (Transcript.tsx): flat one-line rows that
+// cards (approvals/), the shared floating composer (ui/Composer.tsx), and the item detail sheet (views/:
+// command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this file
+// renders them and owns only the DOM work (auto-scroll, the pull-down gesture, keeping the reading position
+// when older turns are put in front, the expand and collapse motion, and a sent message rising out of the
+// composer). The transcript is the new look's (Transcript.tsx): flat one-line rows that
 // open under themselves, "Thinking", the paced answer, "Worked for" and the "N previous messages" fold.
+import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
 import { BackHeader } from '../../ui/BackHeader';
+import { Composer } from '../../ui/Composer';
 import { Icon } from '../../ui/Icon';
-import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
@@ -27,6 +29,9 @@ import { layoutTurn, rowLine } from './transcript';
 import { cleanOutput } from './views/ansi';
 import { ChangesSheet } from './views/ChangesSheet';
 import { ItemDetailSheet } from './views/ItemDetailSheet';
+
+/** The rows a send adds: the user message of a new turn, or a steer. */
+const SENT_ROWS = '.item-row.user, .steer';
 
 /** A command's open row shows at most this many of its last output lines; Full output has the rest. */
 const OUTPUT_LINES = 60;
@@ -147,6 +152,9 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   const turns = model.turns;
   const steers = model.steerRows;
   const running = model.runningTurnId !== undefined;
+  // Sending (technique 6): the message rises out of the composer, the field clears in the same frame, and the
+  // older rows glide up as the view pins to the new bottom.
+  const send = () => flip(() => model.send(), { enter: false, rise: SENT_ROWS, beforePlay: () => scroll.pin() });
 
   return (
     <main class="screen session-screen">
@@ -290,8 +298,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
 
       <JumpPill shown={scroll.pill} onJump={() => model.jumpToLatest()} />
 
-      <PinnedQuestions model={requests} />
-      <Composer model={model} running={running} />
+      <SessionComposer model={model} running={running} onSend={send} above={<PinnedQuestions model={requests} />} />
       {model.detailItemId !== undefined && (
         <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} diffs={model.diffs} onClose={() => model.closeItem()} />
       )}
@@ -520,7 +527,7 @@ function ItemView({ item, model, flip, scroller }: { item: ItemRow; model: Sessi
 
 function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
   return (
-    <li class={`msg user steer ${steer.state}`} data-steer-state={steer.state}>
+    <li class={`msg user steer ${steer.state}`} data-steer-state={steer.state} data-flip-key={`steer/${steer.clientMessageId}`}>
       <SentAttachments images={steer.images} files={steer.files} />
       {steer.text !== '' && <p>{steer.text}</p>}
       <p class="muted small">{steer.label}</p>
@@ -630,89 +637,60 @@ function TrayEntry({ entry, model }: { entry: AttachmentEntry; model: SessionMod
   );
 }
 
-function Composer({ model, running }: { model: SessionModel; running: boolean }) {
+/**
+ * The shared floating composer (ui/Composer.tsx) with the session's rules: Send, Steer or Queue, Stop (asking
+ * first while background tasks run), the attachments, and the notes above the card. A send rises out of it
+ * (Sending): the field clears in the same frame and the older rows glide up.
+ */
+function SessionComposer({ model, running, onSend, above }: { model: SessionModel; running: boolean; onSend: () => void; above: ComponentChildren }) {
   const steering = model.mode === 'steer';
   const queueing = model.mode === 'queue';
-  const picker = useRef<HTMLInputElement>(null);
   const rules = model.attachRules;
+  const hint = model.runHint;
+  const typing = model.draft.trim() !== '' || (model.attachments?.entries.length ?? 0) > 0;
   return (
-    <footer class="composer">
-      {model.usage !== undefined && (
-        <p class="usage muted small" aria-label="Usage">
-          {model.usage}
-        </p>
-      )}
-      {model.interruptError !== undefined && (
-        <p class="error small" role="alert">
-          {model.interruptError}
-        </p>
-      )}
-      {model.closed && <p class="muted small">This session is closed.</p>}
-      {model.composerNote !== undefined && (
-        <p class="muted small composer-note" role="note">
-          {model.composerNote}
-        </p>
-      )}
-      <AttachTray model={model} />
-      {model.attachmentsNote !== undefined && (
-        <p class="muted small attach-note" role="status">
-          {model.attachmentsNote}
-        </p>
-      )}
-      <form
-        class="composer-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (model.canSend) hapticTick(); // Send, Steer or Queue; inside the tap, where iOS allows it
-          model.send();
-        }}
-      >
-        {rules !== undefined && (
-          <>
-            <button type="button" class="attach-button" aria-label="Attach photos or files" title="Attach photos or files" onClick={() => picker.current?.click()}>
-              <Icon name="plus" size={22} />
-            </button>
-            <input
-              ref={picker}
-              class="attach-input"
-              type="file"
-              multiple
-              accept={model.attachAccept === '' ? undefined : model.attachAccept}
-              aria-hidden="true"
-              tabIndex={-1}
-              onChange={(event) => {
-                const input = event.currentTarget as HTMLInputElement;
-                model.attach([...(input.files ?? [])]);
-                input.value = ''; // the same file can be picked again
-              }}
-            />
-          </>
-        )}
-        <textarea
-          aria-label="Message"
-          rows={Math.min(6, Math.max(1, model.draft.split('\n').length))}
-          placeholder={steering ? 'Steer the turn…' : queueing ? 'Message for after this turn…' : 'Message the agent…'}
-          value={model.draft}
-          disabled={model.closed}
-          onInput={(event) => model.setDraft((event.currentTarget as HTMLTextAreaElement).value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              model.send();
-            }
-          }}
-        />
-        <div class="composer-actions">
-          {running && (
-            <button type="button" class="stop" onClick={() => model.requestStop()} disabled={!model.canInterrupt} aria-label="Interrupt">
-              {model.interrupting ? 'Stopping…' : 'Stop'}
-            </button>
+    <Composer
+      draft={model.draft}
+      placeholder={steering ? 'Steer the turn…' : queueing ? 'Message for after this turn…' : 'Message the agent…'}
+      onDraft={(text) => model.setDraft(text)}
+      canSend={model.canSend}
+      onSend={onSend}
+      sendLabel={steering ? 'Steer' : queueing ? 'Queue' : 'Send'}
+      running={running}
+      sendsWhileRunning
+      {...(hint !== undefined ? { runHint: hint } : {})}
+      attachments={model.attachments?.entries.length ?? 0}
+      stop={{ onStop: () => model.requestStop(), disabled: !model.canInterrupt, busy: model.interrupting }}
+      {...(rules !== undefined ? { attach: { accept: model.attachAccept, onPick: (files: File[]) => model.attach(files) } } : {})}
+      disabled={model.closed}
+      tray={<AttachTray model={model} />}
+      above={
+        <>
+          {above}
+          {model.usage !== undefined && (
+            <p class="usage muted small" aria-label="Usage">
+              {model.usage}
+            </p>
           )}
-          <button type="submit" class="primary" disabled={!model.canSend}>
-            {steering ? 'Steer' : queueing ? 'Queue' : 'Send'}
-          </button>
-        </div>
-      </form>
-    </footer>
+          {model.interruptError !== undefined && (
+            <p class="error small" role="alert">
+              {model.interruptError}
+            </p>
+          )}
+          {model.closed && <p class="muted small">This session is closed.</p>}
+          {/* While you type into the run, the hint above the field says the same thing. */}
+          {model.composerNote !== undefined && !typing && (
+            <p class="muted small composer-note" role="note">
+              {model.composerNote}
+            </p>
+          )}
+          {model.attachmentsNote !== undefined && (
+            <p class="muted small attach-note" role="status">
+              {model.attachmentsNote}
+            </p>
+          )}
+        </>
+      }
+    />
   );
 }

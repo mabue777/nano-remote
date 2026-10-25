@@ -96,14 +96,10 @@
   color: var(--accent);
 }
 
-.chat-notice {
-  margin: 0 0 var(--space-3);
-}
-
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 96px); /* one-off: just above the composer */
+  bottom: calc(var(--composer-height, calc(var(--safe-bottom) + 96px)) + var(--space-4)); /* above the composer */
   transform: translateX(-50%);
   margin: 0;
   padding: var(--space-4) var(--space-7);

@@ -1,6 +1,7 @@
 // The New look's pieces (docs/research/visual-gap-openai-2026-10.md, ranked items 1-9, 13, 14): the flat
 // session list with host chips, the centred session header, flat tool rows, the "N previous messages" and
-// "Worked for" lines, the quiet approval and question cards, the floating composer and the sheets' bodies.
+// "Worked for" lines, the quiet approval and question cards and the sheets' bodies. The floating composer
+// is the app's (ui/Composer.tsx).
 // Styles: new-look.css, all under .lab[data-look='new']. The motion hooks (data-flip-key, data-shell-key,
 // data-body, Shell, lab-reveal) are the same the Now look uses, so every technique switch works in both looks.
 import type { RefObject } from 'preact';
@@ -307,54 +308,6 @@ export function NewQuestionCard({ flipKey, answer, shelled, animate, onAnswer }:
         </button>
       </div>
     </section>
-  );
-}
-
-export interface NewComposerProps {
-  draft: string;
-  running: boolean;
-  onDraft: (text: string) => void;
-  onSend: () => void;
-  onStop: () => void;
-  onAdd: () => void;
-  onFocus: () => void;
-}
-
-/** Item 3: a floating card with a round + and one round trailing button: Send (arrow) or, while running, Stop. */
-export function NewComposer({ draft, running, onDraft, onSend, onStop, onAdd, onFocus }: NewComposerProps) {
-  const empty = draft.trim() === '';
-  return (
-    <footer class="composer lab-nl-composer-bar">
-      {running && !empty && <p class="lab-nl-composer-hint">Steers the running turn</p>}
-      <form
-        class="lab-nl-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSend();
-        }}
-      >
-        <button type="button" class="lab-nl-round lab-nl-add" aria-label="Add files" onClick={onAdd}>
-          <Icon name="plus" />
-        </button>
-        <textarea
-          aria-label="Message"
-          rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-          placeholder="Message the agent"
-          value={draft}
-          onInput={(event) => onDraft((event.currentTarget as HTMLTextAreaElement).value)}
-          onFocus={onFocus}
-        />
-        {running && empty ? (
-          <button type="button" class="lab-nl-send stop" aria-label="Stop" onClick={onStop}>
-            <Icon name="stop" size={18} />
-          </button>
-        ) : (
-          <button type="submit" class="lab-nl-send" aria-label="Send" disabled={empty}>
-            <Icon name="send" size={18} />
-          </button>
-        )}
-      </form>
-    </footer>
   );
 }
 

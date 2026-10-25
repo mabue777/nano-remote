@@ -133,13 +133,16 @@ test('a blocking question pins to the bottom and sends answers keyed by question
   const pinned = page.getByRole('region', { name: 'Waiting for your answer' });
   const form = pinned.getByRole('form', { name: 'Question (the agent is waiting)' });
   await expect(form).toBeVisible();
-  // Pinned: outside the scrolling conversation, between it and the composer.
+  // Pinned: outside the scrolling conversation, on the floating composer above its field; the conversation
+  // scrolls behind both and keeps its end above them.
   await expect(page.getByRole('region', { name: 'Conversation' }).getByRole('form')).toHaveCount(0);
-  const conversationBox = (await page.getByRole('region', { name: 'Conversation' }).boundingBox())!;
+  await expect(page.locator('footer.composer-bar').getByRole('region', { name: 'Waiting for your answer' })).toBeVisible();
   const pinnedBox = (await pinned.boundingBox())!;
   const composerBox = (await page.getByRole('textbox', { name: 'Message' }).boundingBox())!;
-  expect(pinnedBox.y).toBeGreaterThanOrEqual(conversationBox.y + conversationBox.height - 1);
   expect(pinnedBox.y + pinnedBox.height).toBeLessThanOrEqual(composerBox.y);
+  const bar = (await page.locator('footer.composer-bar').boundingBox())!;
+  const space = () => page.locator('.conversation-content').evaluate((el) => parseFloat(getComputedStyle(el, '::after').height));
+  await expect.poll(space).toBeGreaterThanOrEqual(bar.height - 1);
 
   const send = form.getByRole('button', { name: 'Send answer' });
   await expect(send).toBeDisabled();

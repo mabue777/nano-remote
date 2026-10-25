@@ -11,7 +11,8 @@ import { CrossFade, motionOf, Shell, useFlip } from './dom';
 import { chunksOf, FakeStream } from './fake-stream';
 import { ANSWER, APPROVAL, QUESTION, REPLY, TOOL_ROWS, USER_MESSAGE, type ToolRow } from './fixtures';
 import { workedFor, type Look } from './look';
-import { ChangesRow, NewApprovalCard, NewComposer, NewQuestionCard, NewSessionHeader, NewToolRow, PreviousToggle, WorkedFor, type ApprovalChoice } from './NewLook';
+import { ChangesRow, NewApprovalCard, NewQuestionCard, NewSessionHeader, NewToolRow, PreviousToggle, WorkedFor, type ApprovalChoice } from './NewLook';
+import { Composer } from '../ui/Composer';
 import { Icon } from '../ui/Icon';
 import { FrameLoop, FreshSegments, StreamPacer, type Segment } from '../ui/motion/pacer';
 import type { LabSettings } from './settings';
@@ -36,8 +37,6 @@ interface LabTurn {
   user: string;
   /** Sent from the composer and not acknowledged yet (the real app dims it). */
   sending: boolean;
-  /** Sent from the composer in this visit: gets the entrance. */
-  sent: boolean;
   tools: readonly ToolRow[];
   answer: string;
   seed: number;
@@ -57,7 +56,6 @@ const FIRST_TURN: LabTurn = {
   id: 't1',
   user: USER_MESSAGE,
   sending: false,
-  sent: false,
   tools: TOOL_ROWS,
   answer: ANSWER,
   seed: 7,
@@ -227,7 +225,6 @@ export function LabSession({ settings, look, reduced, onBack, onOpenChanges, onO
       id: `sent-${sendCount.current}`,
       user: text,
       sending: true,
-      sent: true,
       tools: [],
       answer: REPLY,
       seed: 11 + sendCount.current,
@@ -248,6 +245,7 @@ export function LabSession({ settings, look, reduced, onBack, onOpenChanges, onO
       // One frame: the bubble enters, the composer clears, older content glides up instead of jumping.
       flipSend(apply, {
         enter: false,
+        rise: '.item-row.user',
         beforePlay: () => {
           follower.jump();
           pin();
@@ -312,7 +310,7 @@ export function LabSession({ settings, look, reduced, onBack, onOpenChanges, onO
           loop.start();
         }}
       >
-        <div ref={content}>
+        <div ref={content} class="conversation-content">
           <ol class="turns" aria-label="Turns">
             {turns.map((turn) => (
               <Turn
@@ -368,7 +366,20 @@ export function LabSession({ settings, look, reduced, onBack, onOpenChanges, onO
       )}
 
       {newLook ? (
-        <NewComposer draft={draft} running={running} onDraft={setDraft} onSend={send} onStop={stop} onAdd={onOpenAdd} onFocus={pinOnFocus} />
+        <Composer
+          draft={draft}
+          placeholder="Message the agent"
+          onDraft={setDraft}
+          canSend={draft.trim() !== ''}
+          onSend={send}
+          running={running}
+          sendsWhileRunning
+          runHint="Steers the running turn"
+          stop={{ onStop: stop }}
+          attach={{ label: 'Add files', onOpen: onOpenAdd }}
+          onFocus={pinOnFocus}
+          haptic={false}
+        />
       ) : (
       <footer class="composer">
         <form
@@ -448,7 +459,7 @@ function Turn({ turn, settings, newLook, reduced, expanded, unfolded, onToggle, 
   const question = turn.question === 'none' ? null : turn.question === 'pending' ? null : turn.question.answer;
   return (
     <li class={`turn ${turn.done ? 'completed' : 'running'}${turn.sending && !sendSmooth ? ' sending' : ''}`}>
-      <div class={`item-row user${turn.sent && sendSmooth ? ' lab-enter' : ''}`} data-flip-key={`${turn.id}/user`}>
+      <div class="item-row user" data-flip-key={`${turn.id}/user`}>
         <div class="msg user">
           <p>{turn.user}</p>
         </div>

@@ -149,6 +149,17 @@ in the session view and local chat as in the lab's Smooth mode, together with th
   "previous messages" fold use it. A turn that ends folds with the same motion: the screen measures the rows
   when the model reports the change, before it renders.
 
+Part 3a (2026-10-25): sending (6) runs in the session view and local chat with the shared floating composer
+(look step 3).
+
+- **Sending.** The message shows at once, not dimmed, and rises out of the composer (12 px and a hair smaller to
+  its place, 200 ms, `ui/motion/sending.ts`); the field clears in the same frame and the older rows glide up
+  through FLIP while the view pins to the new bottom. A steer rises the same way. The lab's Smooth path uses the
+  same code; its Now path keeps the old dimming. With Reduce Motion nothing rises or glides.
+- **Auto-scroll fixes found on the way.** The send's own pin to the bottom no longer counts as the reader
+  scrolling, and a list that gets shorter (a finished turn folding) while the view glides no longer stops it
+  following.
+
 ## New look prototype
 
 The lab now has a **Look: Now / New** switch at the top of its panel. New shows the redesign from the visual-gap

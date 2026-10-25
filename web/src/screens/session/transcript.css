@@ -231,7 +231,7 @@ button.previous-toggle:active {
 .jump-latest {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 132px); /* one-off: just above the composer */
+  bottom: calc(var(--composer-height, calc(var(--safe-bottom) + 120px)) + var(--space-4)); /* above the floating composer */
   z-index: 5;
   width: 40px;
   height: 40px;

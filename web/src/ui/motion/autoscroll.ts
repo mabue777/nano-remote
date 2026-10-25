@@ -19,6 +19,8 @@ export class Follower {
   following = true;
   private touching = false;
   private lastSet: number | undefined;
+  /** The list's height when last seen, to tell a shrinking list from a scroll up. */
+  private lastHeight: number | undefined;
 
   /** Fraction of the remaining distance covered per frame (0.35: about 90% within 100 ms at 60 fps). */
   constructor(private readonly ease = 0.35) {}
@@ -37,9 +39,14 @@ export class Follower {
 
   /** A scroll event. One this class caused is ignored; the reader's own scroll decides whether to follow. */
   onScroll(m: ScrollMetrics): void {
+    const shrank = this.lastHeight !== undefined && m.scrollHeight < this.lastHeight - 0.5;
+    this.lastHeight = m.scrollHeight;
     if (this.lastSet !== undefined && Math.abs(m.scrollTop - this.lastSet) <= 1) return;
     this.lastSet = undefined;
     if (this.touching) return;
+    // The list got shorter (a finished turn folded) and the browser pulled the view up with it: that is not
+    // the reader scrolling away, so keep following.
+    if (shrank && this.following) return;
     this.following = distanceFromBottom(m) <= BOTTOM_SLACK;
   }
 
@@ -48,8 +55,14 @@ export class Follower {
     this.following = true;
   }
 
+  /** The caller scrolled to `top` itself (a send pins to the bottom): its scroll event is not the reader's. */
+  scrolledTo(top: number): void {
+    this.lastSet = top;
+  }
+
   /** The scrollTop to set this frame, or undefined to leave it. */
   step(m: ScrollMetrics): number | undefined {
+    this.lastHeight = m.scrollHeight;
     if (!this.following || this.touching) return undefined;
     const target = m.scrollHeight - m.clientHeight;
     const remaining = target - m.scrollTop;

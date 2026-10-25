@@ -14,6 +14,8 @@ import {
   formatDuration,
   itemRow,
   NO_STEER_NOTE,
+  QUEUE_HINT,
+  STEER_HINT,
   oneLine,
   sendErrorText,
   SessionModel,
@@ -240,6 +242,7 @@ describe('SessionModel: what the screen shows', () => {
     expect(model.status).toMatchObject({ label: 'Working', tone: 'busy' });
     expect(model.runningTurnId).toBe('t1');
     expect(model.mode).toBe('steer');
+    expect(model.runHint).toBe(STEER_HINT);
     expect(model.turns[0]!.items).toEqual([
       { kind: 'user', itemId: 'u1', text: 'hi', images: [], files: [] },
       { kind: 'agent', itemId: 'a1', text: 'Hel', streaming: true },
@@ -381,9 +384,11 @@ describe('SessionModel: agent capabilities (spec 4)', () => {
     const { client, model, live } = await setup({ agents: NO_STEER });
     expect(model.mode).toBe('send');
     expect(model.composerNote).toBeUndefined();
+    expect(model.runHint).toBeUndefined();
     live(1, [['turn/started', { turn: turn('t1') }]]);
     expect(model.mode).toBe('queue');
     expect(model.composerNote).toBe(NO_STEER_NOTE);
+    expect(model.runHint).toBe(QUEUE_HINT);
     model.setDraft('after this');
     model.send();
     expect(client.count('turn/steer')).toBe(0);

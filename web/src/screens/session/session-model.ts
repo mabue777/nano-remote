@@ -453,7 +453,9 @@ export interface SessionModelOptions {
 }
 
 /** The composer's note while a turn runs and the agent cannot steer. */
-export const NO_STEER_NOTE = 'This agent cannot take input while it works. Your message is sent when the turn ends.';
+export const STEER_HINT = 'Steers the running turn';
+export const QUEUE_HINT = 'Sent when the turn ends';
+export const NO_STEER_NOTE ='This agent cannot take input while it works. Your message is sent when the turn ends.';
 
 export class SessionModel extends Model {
   readonly sessionId: string;
@@ -772,6 +774,13 @@ export class SessionModel extends Model {
   /** Said up front in the composer while a turn runs and the agent cannot steer. */
   get composerNote(): string | undefined {
     return this.mode === 'queue' ? NO_STEER_NOTE : undefined;
+  }
+
+  /** Above the field while you type into a running turn: what Send will do with it. */
+  get runHint(): string | undefined {
+    const mode = this.mode;
+    if (mode === 'send') return undefined;
+    return mode === 'steer' ? STEER_HINT : QUEUE_HINT;
   }
 
   /**

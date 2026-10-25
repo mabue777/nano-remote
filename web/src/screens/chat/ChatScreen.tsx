@@ -1,14 +1,14 @@
 // The chat page, /c/:chatId: header with the model picker and the thinking switch, the message list
-// (reasoning as the session view's flat thinking row, replies as markdown), and the session view's composer
-// with Stop while a reply streams. A reply streams in paced, its newest words fading in on the last block; a
-// grey "Thinking" holds its place before the first words, and the view follows it while you are at the
-// bottom (the session view's motion-hooks.tsx). State and rules live in ChatModel; this file renders and scrolls.
+// (reasoning as the session view's flat thinking row, replies as markdown), and the shared floating composer
+// (ui/Composer.tsx) with Stop while a reply streams; a sent message rises out of it. A reply streams in
+// paced, its newest words fading in on the last block; a grey "Thinking" holds its place before the first
+// words, and the view follows it while you are at the bottom (the session view's motion-hooks.tsx). State and rules live in ChatModel; this file renders and scrolls.
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import { BackHeader } from '../../ui/BackHeader';
+import { Composer } from '../../ui/Composer';
 import { Icon } from '../../ui/Icon';
-import { hapticTick } from '../../ui/motion/haptic';
 import { Sheet, SheetHeader } from '../../ui/Sheet';
 import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
@@ -65,6 +65,9 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
 
   const rows = model.rows;
   const notice = model.notice;
+  // Sending (technique 6): the message rises out of the composer, the field clears in the same frame, and the
+  // older messages glide up as the view pins to the new bottom.
+  const send = () => flip(() => void model.send(), { enter: false, rise: '.chat-message.user', beforePlay: () => scroll.pin() });
 
   return (
     <main class="screen session-screen chat-screen">
@@ -119,43 +122,17 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
         </p>
       )}
 
-      <footer class="composer">
-        {notice !== undefined && <p class="muted small chat-notice">{notice}</p>}
-        <form
-          class="composer-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (model.canSend) hapticTick(); // inside the tap, where iOS allows it
-            void model.send();
-          }}
-        >
-          <textarea
-            aria-label="Message"
-            rows={Math.min(6, Math.max(1, model.draft.split('\n').length))}
-            placeholder={`Message ${model.modelId === '' ? 'the model' : model.modelLabel}…`}
-            value={model.draft}
-            disabled={!model.found}
-            onInput={(event) => model.setDraft((event.currentTarget as HTMLTextAreaElement).value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void model.send();
-              }
-            }}
-          />
-          <div class="composer-actions">
-            {model.streaming ? (
-              <button type="button" class="stop" onClick={() => model.stop()}>
-                Stop
-              </button>
-            ) : (
-              <button type="submit" class="primary" disabled={!model.canSend}>
-                Send
-              </button>
-            )}
-          </div>
-        </form>
-      </footer>
+      <Composer
+        draft={model.draft}
+        placeholder={`Message ${model.modelId === '' ? 'the model' : model.modelLabel}…`}
+        onDraft={(text) => model.setDraft(text)}
+        canSend={model.canSend}
+        onSend={send}
+        running={model.streaming}
+        stop={{ onStop: () => model.stop() }}
+        disabled={!model.found}
+        above={notice !== undefined && <p class="muted small chat-notice">{notice}</p>}
+      />
       {model.pickerOpen && <ModelPicker model={model} onSettings={onSettings} />}
     </main>
   );
@@ -173,7 +150,7 @@ function Message({ row, model, flip, scroller }: { row: MessageRow; model: ChatM
     else collapse(scroller.current, key, flip, () => model.toggleReasoning(row.index), !reducedMotion());
   };
   return (
-    <li class={`turn chat-message ${row.role}`} data-role={row.role} data-streaming={row.streaming ? 'true' : 'false'}>
+    <li class={`turn chat-message ${row.role}`} data-role={row.role} data-streaming={row.streaming ? 'true' : 'false'} data-flip-key={`message/${row.index}`}>
       {reasoning !== undefined && (
         <FlatRow
           line={{ icon: 'lightbulb', verb: thinking ? 'Thinking' : 'Thought', target: '', busy: false }}

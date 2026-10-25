@@ -92,6 +92,14 @@ with them so each file is rewritten once:
    output" do); Thinking also hides while the session waits for an approval or an answer.
 3. **Floating composer with sending (item 3, technique 6).** M. One shared composer for session and local chat;
    sending's entrance comes with it. Keyboard (7) only after the operator confirms it on the iPhone.
+   **Done 2026-10-25:** the composer is `ui/Composer.tsx` (rules `ui/composer-rules.ts`, styles
+   `ui/Composer.css`), used by the session view, local chat and the lab's New look. The bar lies over the page's
+   bottom edge and writes its height to `--composer-height`; the transcript keeps that much space at its end and
+   the jump pill sits above it. Sending is `ui/motion/sending.ts`, played through the FLIP hook's `rise`. Choices
+   the lab left open: with text typed into a running turn the right button is Send (Steer or Queue) and a small
+   grey Stop stays next to it; local chat cannot send into a running reply, so Stop stays its one button; the
+   queue wording above the field is "Sent when the turn ends"; a blocking question pinned above the composer now
+   rides on the bar, above the card. The keyboard (7) is unchanged.
 4. **Approval and question cards (items 5, 13).** M + S. Their answered state reuses the expand/collapse helper
    from step 2.
 5. **Centred header and the ⋯ sheet (item 8).** M. It must come before the page push, because the push moves

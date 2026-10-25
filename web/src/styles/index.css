@@ -5,6 +5,7 @@
 @import './tokens.css';
 @import './base.css';
 @import './components.css';
+@import '../ui/Composer.css';
 @import '../screens/PairScreen.css';
 @import '../screens/HomeScreen.css';
 @import '../screens/NewSessionSheet.css';

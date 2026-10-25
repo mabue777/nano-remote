@@ -1,0 +1,134 @@
+/* The floating composer (Composer.tsx; docs/research/new-look-prototype.md item 3), from the lab's New look.
+   The bar is the page's last row, laid over its bottom edge so the transcript scrolls behind it: it is
+   positioned at the bottom of its page (the page is position: relative), fades from transparent to the page
+   colour over its top padding, and holds the raised card. Its height is --composer-height on the page. */
+
+.composer-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
+  background: linear-gradient(to bottom, transparent, var(--bg) var(--space-6)); /* one-off: text fades under the card */
+  /* Its own layer: the transcript scrolling under it each frame does not repaint the card. */
+  will-change: transform;
+}
+
+/* What rides on the bar (a pinned question, notes) wraps inside its width, never past the screen's edge. */
+.composer-bar > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Lines above the card (usage, notes, errors, the run hint) sit at the card's text inset. */
+.composer-bar > p {
+  margin: 0 var(--space-6) var(--space-3);
+}
+
+.composer-hint {
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-composer);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg), var(--shadow-ring);
+}
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.composer-row textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 40dvh;
+  resize: none;
+  padding: var(--space-5) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: var(--type-body);
+  outline: none;
+}
+
+/* The field is one row while empty; a placeholder that wrapped would be cut off (field check 2026-10-21). */
+.composer-row textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-row textarea:disabled {
+  background: none;
+}
+
+.composer-round {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+}
+
+.composer-add {
+  background: var(--fill);
+  color: var(--muted);
+}
+
+.composer-send,
+.composer-stop {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.composer-send:disabled {
+  opacity: 1;
+  background: var(--fill);
+  color: var(--text-tertiary);
+}
+
+.composer-stop:disabled {
+  opacity: 0.6;
+}
+
+/* The small Stop next to Send while you type into a running turn: grey, so Send stays the main action. */
+.composer-stop.small {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: var(--space-3) 0;
+  background: var(--fill);
+  color: var(--text);
+}
+
+.composer-file {
+  display: none;
+}
+
+/* The picked attachments, inside the card above the field. */
+.composer-card > .attach-tray {
+  padding: 0 var(--space-2);
+}
+
+.composer-card .tray {
+  margin: 0;
+}

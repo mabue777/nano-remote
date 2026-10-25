@@ -69,4 +69,24 @@ describe('Follower', () => {
     expect(f.following).toBe(true);
     expect(f.step(at(100))).toBeGreaterThan(100);
   });
+
+  it('a scroll the caller made itself (a send pinning to the bottom) does not stop it, even when content grew since', () => {
+    const f = new Follower();
+    f.scrolledTo(1400);
+    f.onScroll(at(1400, 2200)); // the event arrives after the reply's first rows made the list taller
+    expect(f.following).toBe(true);
+    f.onScroll(at(1000, 2200)); // the reader's own scroll up still counts
+    expect(f.following).toBe(false);
+  });
+
+  it('a list that got shorter (a turn folded) pulling the view up is not the reader scrolling away', () => {
+    const f = new Follower();
+    expect(f.step(at(500, 1301))).toBeGreaterThan(500); // gliding, 201 px to go
+    f.onScroll(at(477, 1127)); // folded: 50 px from the new bottom, but the list shrank
+    expect(f.following).toBe(true);
+    f.onScroll(at(300, 1127)); // the same height: a real scroll up
+    expect(f.following).toBe(false);
+    f.onScroll(at(200, 1000)); // shrank, but no longer following: stays let go
+    expect(f.following).toBe(false);
+  });
 });

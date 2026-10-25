@@ -48,8 +48,9 @@
   font: var(--type-callout);
 }
 
-/* Primary actions are ink (item 1), pills (item 14). */
-.lab[data-look='new'] button {
+/* Primary actions are ink (item 1), pills (item 14). The app's floating composer keeps its own round
+   buttons and bare field (ui/Composer.css). */
+.lab[data-look='new'] button:not(.composer-round) {
   border-color: transparent;
   background: var(--fill);
   border-radius: var(--radius-pill);
@@ -75,7 +76,7 @@
 }
 
 .lab[data-look='new'] input,
-.lab[data-look='new'] textarea {
+.lab[data-look='new'] textarea:not(.composer-row > textarea) {
   border-color: transparent;
   background: var(--fill);
   border-radius: var(--radius-inner);
@@ -661,77 +662,7 @@
   font-size: 16px; /* below 16 px iOS zooms on focus */
 }
 
-/* ---------- Composer (item 3) ---------- */
-.lab[data-look='new'] .lab-nl-composer-bar {
-  border-top: 0;
-  background: linear-gradient(to bottom, transparent, var(--bg) 30%); /* one-off: text fades under the card */
-  padding: var(--space-4) var(--space-6) calc(var(--safe-bottom) + var(--space-6));
-}
-
-.lab-nl-composer-hint {
-  margin: 0 var(--space-6) var(--space-3);
-  font: var(--type-footnote);
-  color: var(--muted);
-}
-
-.lab[data-look='new'] .lab-nl-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-composer);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-lg), var(--shadow-ring);
-}
-
-.lab[data-look='new'] .lab-nl-composer textarea {
-  flex: 1;
-  min-width: 0;
-  max-height: 40dvh;
-  resize: none;
-  padding: var(--space-5) var(--space-2);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  font: var(--type-body);
-  outline: none;
-}
-
-.lab[data-look='new'] .lab-nl-composer textarea::placeholder {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lab[data-look='new'] .lab-nl-add {
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  margin: var(--space-1);
-  color: var(--muted);
-}
-
-.lab[data-look='new'] .lab-nl-send {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  margin: var(--space-1);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-round);
-  background: var(--primary);
-  color: var(--primary-text);
-}
-
-.lab[data-look='new'] .lab-nl-send:disabled {
-  opacity: 1;
-  background: var(--fill);
-  color: var(--text-tertiary);
-}
+/* The composer (item 3) is the app's: ui/Composer.css. */
 
 /* ---------- Sheets ---------- */
 .lab[data-look='new'] .sheet {

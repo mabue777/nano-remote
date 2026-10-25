@@ -307,17 +307,11 @@ html[data-lab-nav='pop']::view-transition-new(lab-page) {
   pointer-events: auto;
 }
 
-/* ---------- 6. Sending: the bubble rises out of the composer ---------- */
-.lab-enter {
-  transform-origin: 100% 100%;
-  animation: lab-enter var(--duration-moderate) var(--ease-enter) both;
-}
-
-@keyframes lab-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
+/* ---------- 6. Sending ----------
+   Smooth: the bubble rises out of the composer (ui/motion/sending.ts, through the FLIP hook's `rise`).
+   Now: today's behaviour before look step 3, the message dimmed until the host has it. */
+.lab .turn.sending .msg.user {
+  opacity: 0.7;
 }
 
 /* ---------- 7. Keyboard: the stage is the visible area above the keyboard ---------- */

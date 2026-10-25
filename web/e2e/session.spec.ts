@@ -106,14 +106,16 @@ test('interrupt stops a running turn', async ({ page, request }) => {
   await page.getByRole('button', { name: 'Send' }).click();
   const conversation = page.getByRole('region', { name: 'Conversation' });
   await expect(conversation.locator('[data-item="agent"]')).toHaveAttribute('data-streaming', 'true');
-  await expect(page.getByRole('button', { name: 'Steer' })).toBeVisible();
+  // Running with an empty field: the round button is Stop.
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Steer' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Interrupt' }).click();
+  await page.getByRole('button', { name: 'Stop' }).click();
   const turn = conversation.locator('li[data-turn-status]');
   await expect(turn).toHaveAttribute('data-turn-status', 'interrupted');
   await expect(turn).toContainText(/Stopped after \d+/);
   await expect(page.getByLabel('Session status')).toHaveText('Interrupted');
-  await expect(page.getByRole('button', { name: 'Interrupt' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
   await expect(page.getByRole('alert', { name: 'Needs your decision' })).toHaveCount(0);
   await expect(conversation.locator('[data-item="agent"]')).not.toHaveText(AGENT_TEXT); // stopped mid-stream
@@ -129,20 +131,23 @@ test('the steer composer fits a 390 px phone: placeholder on one line, Stop and 
   const conversation = page.getByRole('region', { name: 'Conversation' });
   await expect(conversation.locator('[data-item="agent"]')).toHaveAttribute('data-streaming', 'true');
 
-  // A running turn: the empty box shows the steer placeholder next to Stop and Steer.
+  // A running turn: the empty box shows the steer placeholder next to Stop.
   await expect(message).toHaveValue('');
   await expect(message).toHaveAttribute('placeholder', 'Steer the turn…');
-  await expect(page.getByRole('button', { name: 'Interrupt' })).toBeInViewport();
-  await expect(page.getByRole('button', { name: 'Steer' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeInViewport();
   const clipped = () => message.evaluate((el) => el.scrollHeight - el.clientHeight);
   expect(await clipped()).toBeLessThanOrEqual(0);
-  await page.locator('footer.composer').screenshot({ path: test.info().outputPath('steer-composer-390.png') });
+  // Typing into it: Steer, with the small Stop still next to it.
+  await message.fill('x');
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Steer' })).toBeInViewport();
+  await message.fill('');
+  await page.locator('footer.composer-bar').screenshot({ path: test.info().outputPath('steer-composer-390.png') });
 
   // The iPhone's system font is wider than headless Chromium's; widen the glyphs until even the short
   // placeholder overflows the box. It must truncate on its one line, not wrap into a clipped second line.
   await message.evaluate((el) => (el.style.letterSpacing = '8px'));
   expect(await clipped()).toBeLessThanOrEqual(0);
-  await expect(page.getByRole('button', { name: 'Interrupt' })).toBeInViewport();
-  await expect(page.getByRole('button', { name: 'Steer' })).toBeInViewport();
-  await page.locator('footer.composer').screenshot({ path: test.info().outputPath('steer-composer-390-wide-font.png') });
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeInViewport();
+  await page.locator('footer.composer-bar').screenshot({ path: test.info().outputPath('steer-composer-390-wide-font.png') });
 });

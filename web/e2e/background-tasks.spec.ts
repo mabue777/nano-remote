@@ -112,7 +112,7 @@ test('Stop asks first while tasks run: "Keep running" stops nothing, "Stop anywa
   await send(page, 'How are the reviews going?');
   await expect(page.getByText('Queued: waiting for 2 background tasks to finish')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Interrupt' }).click();
+  await page.getByRole('button', { name: 'Stop' }).click();
   const dialog = page.getByRole('dialog', { name: 'Stop the turn?' });
   await expect(dialog).toContainText('This also cancels 2 background tasks. Stop anyway?');
   await dialog.getByRole('button', { name: 'Keep running' }).click();
@@ -120,7 +120,7 @@ test('Stop asks first while tasks run: "Keep running" stops nothing, "Stop anywa
   expect(await lastInterrupt(request)).toBeNull();
   await expect(page.getByText('Queued: waiting for 2 background tasks to finish')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Interrupt' }).click();
+  await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('dialog', { name: 'Stop the turn?' }).getByRole('button', { name: 'Stop anyway' }).click();
   await expect(page.getByLabel('Task state')).toHaveText('Interrupted');
   expect(await lastInterrupt(request)).toMatchObject({ sessionId: SESSION });
@@ -176,7 +176,7 @@ test('Stop without running tasks stops at once', async ({ page, request }) => {
   await pair(page, request);
   await openSession(page);
   await send(page, 'One more thing.');
-  await page.getByRole('button', { name: 'Interrupt' }).click();
+  await page.getByRole('button', { name: 'Stop' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect.poll(() => lastInterrupt(request)).toMatchObject({ sessionId: SESSION });
 });
@@ -205,7 +205,7 @@ test('screenshots, light and dark: home badge, strip with a queued message, Stop
     await page.emulateMedia({ colorScheme: scheme });
     await shot(`session-queued-${scheme}`);
   }
-  await page.getByRole('button', { name: 'Interrupt' }).click();
+  await page.getByRole('button', { name: 'Stop' }).click();
   await expect(page.getByRole('dialog', { name: 'Stop the turn?' })).toBeVisible();
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });

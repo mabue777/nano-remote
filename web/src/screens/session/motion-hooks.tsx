@@ -10,6 +10,7 @@ import { BOTTOM_SLACK, distanceFromBottom, Follower } from '../../ui/motion/auto
 import { measure, play, type Box } from '../../ui/motion/flip';
 import { motionOf, prefersReducedMotion } from '../../ui/motion/motion';
 import { FrameLoop, TextReveal, type RevealView } from '../../ui/motion/pacer';
+import { riseEntered } from '../../ui/motion/sending';
 
 export function reducedMotion(): boolean {
   return typeof window !== 'undefined' && prefersReducedMotion(window);
@@ -25,6 +26,8 @@ export interface FlipRequest {
   enter?: boolean;
   /** Runs after the change rendered and before the rows animate (e.g. pin the transcript to the bottom). */
   beforePlay?: () => void;
+  /** New rows matching this selector rise out of the composer (Sending, ui/motion/sending.ts). */
+  rise?: string;
 }
 
 export interface Flip {
@@ -48,7 +51,8 @@ export function useFlip(container: RefObject<HTMLElement>, enabled: boolean): Fl
     pending.current = null;
     job.request.beforePlay?.();
     const m = motionOf(element);
-    play(element, job.before, { duration: m.relaxed, easing: m.standard }, job.request.enter ?? true);
+    const plan = play(element, job.before, { duration: m.relaxed, easing: m.standard }, job.request.enter ?? true);
+    if (job.request.rise !== undefined) riseEntered(element, plan.entered, job.request.rise, { duration: m.moderate, easing: m.enter });
     growShells(element, job.heights, { duration: m.relaxed, easing: m.standard });
   });
   return useMemo(() => {
@@ -137,6 +141,8 @@ export interface AutoScroll {
   jump(): void;
   /** Go to the bottom at once and follow it: the page has landed (until then new content snaps, after it glides). */
   snap(): void;
+  /** Go to the bottom at once and keep following (a send, before its rows glide): its scroll is ours, not the reader's. */
+  pin(): void;
   /** Whether it follows the bottom now. */
   following(): boolean;
   /** For the scroller element. */
@@ -221,6 +227,15 @@ export function useAutoScroll(scroller: RefObject<HTMLElement>, content: RefObje
       loop.start();
     },
     snap,
+    pin: () => {
+      const el = scroller.current;
+      if (el === null) return;
+      follower.jump();
+      el.scrollTop = el.scrollHeight - el.clientHeight;
+      follower.scrolledTo(el.scrollTop);
+      setPill(false);
+      follow.current?.(true);
+    },
     following: () => follower.following,
     handlers: {
       onScroll: () => {

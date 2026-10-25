@@ -60,7 +60,7 @@ test('pick a photo and a file, preview, remove, send; the transcript shows the t
   await openSession(page, request);
   const attach = page.getByRole('button', { name: 'Attach photos or files' });
   await expect(attach).toBeVisible();
-  const picker = page.locator('input.attach-input');
+  const picker = page.locator('input.composer-file');
   // A file input without `accept` lets iOS offer the photo library, the camera and files.
   await expect(picker).not.toHaveAttribute('accept', /./);
   await expect(picker).toHaveAttribute('multiple', '');
@@ -127,7 +127,7 @@ test('pick a photo and a file, preview, remove, send; the transcript shows the t
 test('a failed upload says why, blocks Send, and retries', async ({ page, request }) => {
   await openSession(page, request);
   await request.post('/test/upload-fail', { data: { status: 500 } });
-  await page.locator('input.attach-input').setInputFiles([{ name: 'trace.txt', mimeType: 'text/plain', buffer: Buffer.from('boom\n') }]);
+  await page.locator('input.composer-file').setInputFiles([{ name: 'trace.txt', mimeType: 'text/plain', buffer: Buffer.from('boom\n') }]);
   const entry = page.getByRole('list', { name: 'Attachments to send' }).locator('li');
   await expect(entry).toHaveAttribute('data-state', 'failed');
   await expect(entry.getByRole('alert')).toContainText('Upload failed: the host answered 500.');
@@ -145,7 +145,7 @@ test('a failed upload says why, blocks Send, and retries', async ({ page, reques
 
 test('a file over 20 MB is refused before any upload', async ({ page, request }) => {
   await openSession(page, request);
-  await page.locator('input.attach-input').setInputFiles([{ name: 'huge.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(20 * 1024 * 1024 + 1) }]);
+  await page.locator('input.composer-file').setInputFiles([{ name: 'huge.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(20 * 1024 * 1024 + 1) }]);
   await expect(page.getByRole('alert').filter({ hasText: 'huge.bin is larger than 20 MB.' })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Attachments to send' })).toHaveCount(0);
   expect(await uploads(request)).toEqual([]);
