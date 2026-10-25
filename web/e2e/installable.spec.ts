@@ -58,12 +58,12 @@ test('the shell at 390 x 844 pads by the safe-area insets and never scrolls side
   await expect(screen).toBeVisible();
   expect(page.viewportSize()).toEqual({ width: 390, height: 844 });
 
-  // Phone defaults: no tap delay, no text inflation on rotate.
+  // Phone defaults: no tap delay, no pinch or double-tap zoom, no text inflation on rotate.
   const root = await page.evaluate(() => {
     const style = getComputedStyle(document.documentElement);
     return { touchAction: style.touchAction, textSizeAdjust: style.getPropertyValue('text-size-adjust') || style.getPropertyValue('-webkit-text-size-adjust') };
   });
-  expect(root).toEqual({ touchAction: 'manipulation', textSizeAdjust: '100%' });
+  expect(root).toEqual({ touchAction: 'pan-x pan-y', textSizeAdjust: '100%' });
 
   // Desktop Chromium has no notch, so the insets are 0 and the shell keeps its base padding.
   const padding = () =>

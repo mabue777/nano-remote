@@ -14,9 +14,13 @@
   box-sizing: border-box;
 }
 
-html {
-  /* No 300 ms double-tap-zoom delay on taps; pinch zoom still works. */
-  touch-action: manipulation;
+/* No zoom anywhere (operator decision 2026-10-24). manipulation is pan-x pan-y pinch-zoom; dropping
+   pinch-zoom leaves one-finger panning in both directions, so scrolling and sideways scrollers still work.
+   Double-tap zoom needs touch-action auto, so it stays off (and taps keep no 300 ms delay). iOS Safari does
+   not honour this for pinch on its own: src/ui/no-zoom.ts cancels its gesture events. */
+html,
+body {
+  touch-action: pan-x pan-y;
 }
 
 body {

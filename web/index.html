@@ -3,8 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <!-- viewport-fit=cover: the page draws edge to edge and styles.css pads by the safe-area insets.
-         width=device-width also removes the 300 ms tap delay (with touch-action in styles.css). -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+         width=device-width also removes the 300 ms tap delay (with touch-action in styles.css).
+         maximum-scale=1 and user-scalable=no: no zoom anywhere. iOS Safari ignores user-scalable=no for pinch
+         (src/ui/no-zoom.ts handles that), but maximum-scale=1 stops its zoom on focusing a field. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <!-- Home-screen app (ADR 0004). manifest.webmanifest, sw.js and the PNG icons are written by
          web/build/pwa.ts; the theme colors match --bg in styles.css and the manifest. -->

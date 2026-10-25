@@ -5,6 +5,7 @@ import { listenForNavigate } from './pwa/navigate';
 import { browserPushEnvironment, type PushWindow } from './pwa/push';
 import { startUpdates, UpdatePrompt, type UpdateSignal } from './pwa/UpdatePrompt';
 import { Router } from './routes/router';
+import { blockPinchZoom } from './ui/no-zoom';
 import './styles/index.css';
 
 const root = document.getElementById('app');
@@ -17,6 +18,8 @@ const updates: UpdateSignal | null =
 // Press feedback: iOS Safari applies :active (styles/base.css) only while the page has a touchstart listener.
 // Passive and empty, so it never delays a scroll.
 document.addEventListener('touchstart', () => undefined, { passive: true });
+// No pinch zoom on iOS: Safari's gesture events are cancelled (src/ui/no-zoom.ts; touch-action in styles/base.css).
+blockPinchZoom(document);
 const router = new Router(window);
 // A tapped notification while the app is open: the worker posts the session's path (web/src/pwa/navigate.ts).
 if (updates !== null) listenForNavigate(navigator.serviceWorker, window.location.origin, (path) => router.navigate(path));

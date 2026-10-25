@@ -50,7 +50,9 @@ describe('manifest', () => {
     expect(INDEX_HTML).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />');
     expect(INDEX_HTML).toContain('<meta name="apple-mobile-web-app-capable" content="yes" />');
     expect(INDEX_HTML).toMatch(/<meta name="apple-mobile-web-app-status-bar-style" content="[a-z-]+" \/>/);
-    expect(INDEX_HTML).toMatch(/<meta name="viewport" content="[^"]*width=device-width[^"]*viewport-fit=cover"/);
+    expect(INDEX_HTML).toContain(
+      '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />',
+    ); // no zoom anywhere
     expect(INDEX_HTML).toContain(`<meta name="theme-color" content="${THEME_COLOR}" media="(prefers-color-scheme: light)" />`);
   });
 });
