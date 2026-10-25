@@ -1,31 +1,37 @@
-// Settings > Providers, /settings/providers. Rules and state live in ProviderSettingsModel; this file
-// renders them, focuses the key field after a preset tap, and hands the export file to the share sheet
-// (or a download where the browser has none) and the import file picker's file to the model.
+// Settings, /settings (and its old address /settings/providers). Sections in order: Notifications (Web
+// Push, with a host), This Mac (keep awake, with a host), Providers. Provider rules and state live in
+// ProviderSettingsModel; this file renders them, focuses the key field after a preset tap, and hands the
+// export file to the share sheet (or a download where the browser has none) and the import file picker's
+// file to the model. While the add/edit form is open it replaces every section.
 import { useEffect, useMemo, useRef } from 'preact/hooks';
 
-import type { HostRequester } from '../../../chat/providers/host-probe';
-import { PRESETS } from '../../../chat/providers/presets';
-import type { FetchLike } from '../../../chat/providers/probe';
-import { BackHeader } from '../../../ui/BackHeader';
-import { Sheet } from '../../../ui/Sheet';
-import { useModel } from '../../use-model';
-import { KeepAwakeSection } from '../host/KeepAwakeSection';
-import type { KeepAwakeLink } from '../host/keep-awake-model';
-import type { ChatServices } from '../../chat/services';
-import { HOST_KEY_NOTE, kindLabel, ProviderSettingsModel, routeLabel, type Form, type ProviderRow } from './settings-model';
+import type { HostRequester } from '../../chat/providers/host-probe';
+import { PRESETS } from '../../chat/providers/presets';
+import type { FetchLike } from '../../chat/providers/probe';
+import type { PushModel } from '../../pwa/push';
+import { BackHeader } from '../../ui/BackHeader';
+import { Sheet } from '../../ui/Sheet';
+import type { ChatServices } from '../chat/services';
+import { useModel } from '../use-model';
+import { KeepAwakeSection } from './host/KeepAwakeSection';
+import type { KeepAwakeLink } from './host/keep-awake-model';
+import { NotificationsSection } from './notifications/NotificationsSection';
+import { HOST_KEY_NOTE, kindLabel, ProviderSettingsModel, routeLabel, type Form, type ProviderRow } from './providers/settings-model';
 
 /** How many models the test lists inline before "and N more". */
 const SHOWN_MODELS = 8;
 
-export interface ProviderSettingsScreenProps {
+export interface SettingsScreenProps {
   services: Pick<ChatServices, 'providers' | 'host'>;
   onBack: () => void;
   backLabel: string;
   /** The paired host's stream: shows the host section (keep this Mac awake). Absent without a host. */
   hostLink?: KeepAwakeLink;
+  /** Web Push: the Notifications section. Absent without a host or a service worker (the dev server). */
+  notifications?: PushModel;
 }
 
-export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }: ProviderSettingsScreenProps) {
+export function SettingsScreen({ services, onBack, backLabel, hostLink, notifications }: SettingsScreenProps) {
   const model = useModel(
     useMemo(
       () =>
@@ -46,7 +52,7 @@ export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }
   return (
     <main class="screen settings-screen">
       <BackHeader href="/" label={backLabel} onBack={onBack} />
-      <h1>Providers</h1>
+      <h1>Settings</h1>
       {model.notice !== undefined && (
         <p class="card settings-notice" role="status">
           {model.notice}{' '}
@@ -55,8 +61,9 @@ export function ProviderSettingsScreen({ services, onBack, backLabel, hostLink }
           </button>
         </p>
       )}
-      {form !== null ? <ProviderForm model={model} form={form} /> : <Overview model={model} />}
+      {form === null && notifications !== undefined && <NotificationsSection push={notifications} />}
       {form === null && hostLink !== undefined && <KeepAwakeSection link={hostLink} />}
+      {form !== null ? <ProviderForm model={model} form={form} /> : <Overview model={model} />}
       {model.confirm !== null && <ConfirmSheet model={model} />}
     </main>
   );
@@ -70,7 +77,7 @@ function Overview({ model }: { model: ProviderSettingsModel }) {
     <>
       <section class="providers" aria-labelledby="providers-title">
         <div class="section-head">
-          <h2 id="providers-title">Your providers</h2>
+          <h2 id="providers-title">Providers</h2>
           <button type="button" class="primary small" onClick={() => model.openAdd()}>
             Add provider
           </button>

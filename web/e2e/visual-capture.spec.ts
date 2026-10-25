@@ -28,8 +28,13 @@ const CLOUD = {
   refresh: { mode: 'manual' },
 };
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ page, request }) => {
   await request.post('/test/reset');
+  // Headless Chromium reports notifications as blocked; a phone that has not decided yet shows Home's
+  // "Turn on notifications in Settings" line and the Settings switch, so the shots show that state.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'Notification', { value: { permission: 'default', requestPermission: async () => 'default' }, configurable: true, writable: true });
+  });
 });
 
 async function pair(page: Page, request: APIRequestContext): Promise<void> {
@@ -88,12 +93,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await shot(page, 'new-session-pi');
     });
 
-    test('settings-providers', async ({ page, request }) => {
+    test('settings', async ({ page, request }) => {
       await pair(page, request);
       await page.getByRole('link', { name: 'Settings', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
-      await expect(page.getByRole('switch')).toBeVisible(); // the host section (keep awake) has loaded
-      await shot(page, 'settings-providers');
+      await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+      await expect(page.getByRole('switch', { name: 'Keep this Mac awake while plugged in' })).toBeVisible(); // the host section has loaded
+      await shot(page, 'settings');
     });
 
     test('local-chat', async ({ page }) => {

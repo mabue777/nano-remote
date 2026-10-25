@@ -452,10 +452,11 @@ export interface SessionModelOptions {
   now?: () => number;
 }
 
-/** The composer's note while a turn runs and the agent cannot steer. */
+/** Above the field while you type into a running turn: steer, or queue when the agent cannot steer. */
 export const STEER_HINT = 'Steers the running turn';
 export const QUEUE_HINT = 'Sent when the turn ends';
-export const NO_STEER_NOTE ='This agent cannot take input while it works. Your message is sent when the turn ends.';
+/** The composer's one-line note while a turn runs, the agent cannot steer and the field is empty: the typing hint's words. */
+export const NO_STEER_NOTE = QUEUE_HINT;
 
 export class SessionModel extends Model {
   readonly sessionId: string;

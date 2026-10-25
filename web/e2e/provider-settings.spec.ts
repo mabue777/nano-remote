@@ -35,8 +35,8 @@ const providerRow = (page: Page, name: string) => page.getByRole('list', { name:
 test('add by pasting a key: OpenAI is detected, no URL typed, and its model list shows in under 20 s', async ({ page }) => {
   await freshPage(page);
   const started = Date.now();
-  await page.goto('/settings/providers'); // no host needed for a cloud provider
-  await expect(page.getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
+  await page.goto('/settings/providers'); // the old address; no host needed for a cloud provider
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   await expect(page.getByText('No providers yet. Add one to start chatting.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Add provider' }).click();
@@ -115,7 +115,7 @@ test('add by URL: a wrong key gives the 401 sentence, an unreachable host the co
 test('paired: the gear opens Settings, the Mac-kept provider is read-only, and the scan adds Ollama with one tap', async ({ page, request }) => {
   await pair(page, request); // a fresh browser context: nothing stored yet
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings\/providers$/);
+  await expect(page).toHaveURL(/\/settings$/);
 
   const studio = providerRow(page, 'Studio vLLM');
   await expect(studio).toHaveAttribute('data-source', 'mac');
@@ -187,7 +187,7 @@ test('export, delete all, import: providers come back without keys and ask for t
   await page.goto('/c/chat_1');
   await page.getByRole('button', { name: /^Model:/ }).click();
   await page.getByRole('link', { name: 'Add one in Settings Providers' }).click();
-  await expect(page).toHaveURL(/\/settings\/providers$/);
+  await expect(page).toHaveURL(/\/settings$/);
 
   await page.getByLabel('Import file').setInputFiles(file);
   await expect(page.getByRole('status')).toContainText('Imported 2 providers. Enter the key where asked.');

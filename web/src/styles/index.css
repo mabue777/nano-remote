@@ -16,5 +16,6 @@
 @import '../pwa/UpdatePrompt.css';
 @import '../screens/chat/ChatsPanel.css';
 @import '../screens/chat/ChatScreen.css';
+@import '../screens/settings/notifications/NotificationsSection.css';
 @import '../screens/settings/host/KeepAwakeSection.css';
-@import '../screens/settings/providers/ProviderSettingsScreen.css';
+@import '../screens/settings/SettingsScreen.css';

@@ -1,4 +1,4 @@
-/* Settings > Providers (ProviderSettingsScreen.tsx). */
+/* Settings (SettingsScreen.tsx): Notifications, This Mac, Providers. */
 
 .settings-screen h1 {
   margin: var(--space-12) 0 var(--space-8); /* the large title sits lower (look polish) */

@@ -1,10 +1,10 @@
-// Settings > Providers, /settings/providers (provider-connection.md section 3; local-chat.md rulings R1, R2).
+// Settings > Providers, /settings (old address /settings/providers) (provider-connection.md section 3; local-chat.md rulings R1, R2).
 // The list shows every provider on this phone and every provider kept on the paired Mac (`provider/list`,
 // read-only here). The add flow is one field, "Paste an API key or a server URL", with live detection and
 // the preset grid as the alternative; Test fetches the model list over the provider's route (ADR 0006) and
 // Add enables only after a successful test or "Add without testing". "Find local servers" asks the Mac
 // (`provider/discover`). Export writes JSON without keys; Import merges it back and asks for each key.
-// Rules live here; ProviderSettingsScreen renders them.
+// Rules live here; SettingsScreen renders them.
 import { createHostProbe, hostAvailable, type HostRequester } from '../../../chat/providers/host-probe';
 import { CUSTOM_PRESET, detect, kindForHost, PRESETS, type Detection, type Preset } from '../../../chat/providers/presets';
 import { probeModels, type FetchLike, type HostProbe, type ProbeErrorCode } from '../../../chat/providers/probe';

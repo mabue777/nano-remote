@@ -4,6 +4,8 @@ import {
   browserPushEnvironment,
   ENDPOINT_STORAGE_KEY,
   isIos,
+  NOTIFICATIONS_HINT,
+  notificationsHint,
   PushModel,
   testErrorText,
   urlBase64ToUint8Array,
@@ -178,6 +180,15 @@ describe('urlBase64ToUint8Array', () => {
   it('refuses standard base64 and other characters', () => {
     expect(() => urlBase64ToUint8Array('a+b/')).toThrow(/base64url/);
     expect(() => urlBase64ToUint8Array('not a key')).toThrow(/base64url/);
+  });
+});
+
+describe('notificationsHint', () => {
+  it("points Home at Settings only while notifications are possible and off", () => {
+    expect(notificationsHint({ kind: 'off' })).toBe(NOTIFICATIONS_HINT);
+    expect(notificationsHint({ kind: 'needs-install' })).toBe('Turn on notifications in Settings');
+    for (const kind of ['on', 'denied', 'unsupported', 'subscribing'] as const) expect(notificationsHint({ kind })).toBeUndefined();
+    expect(notificationsHint({ kind: 'error', message: 'x' })).toBeUndefined();
   });
 });
 

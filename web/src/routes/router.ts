@@ -1,5 +1,5 @@
 // A tiny history router for the app's pages: /pair, / (home), /chats (home on its Chats tab),
-// /settings/providers (the provider settings), /s/:sessionId, /c/:chatId (a local chat) and /lab (the
+// /settings (Settings; /settings/providers is its old address and opens it too), /s/:sessionId, /c/:chatId (a local chat) and /lab (the
 // hidden interaction lab, reached only by typing the URL). The host answers each of these paths with index.html (host/src/http/static.ts), so a reload or a push link
 // lands on the right page. The fragment is left alone: the pairing link carries its code there
 // (`/pair#code=12345678`, spec 8), and a fragment never reaches the host.
@@ -8,7 +8,7 @@ export type Route =
   | { name: 'pair' }
   | { name: 'home' }
   | { name: 'chats' }
-  | { name: 'providers' }
+  | { name: 'settings' }
   | { name: 'session'; sessionId: string }
   | { name: 'chat'; chatId: string }
   | { name: 'lab' }
@@ -23,7 +23,7 @@ export function parseRoute(pathname: string): Route {
   if (path === '/' || path === '/index.html') return { name: 'home' };
   if (path === '/pair' || path === '/pair/') return { name: 'pair' };
   if (path === '/chats' || path === '/chats/') return { name: 'chats' };
-  if (path === '/settings/providers' || path === '/settings/providers/') return { name: 'providers' };
+  if (path === '/settings' || path === '/settings/' || path === '/settings/providers' || path === '/settings/providers/') return { name: 'settings' };
   if (path === '/lab' || path === '/lab/') return { name: 'lab' };
   const sessionId = idOf(SESSION, path);
   if (sessionId !== undefined) return { name: 'session', sessionId };
@@ -53,8 +53,8 @@ export function routePath(route: Route): string {
       return '/pair';
     case 'chats':
       return '/chats';
-    case 'providers':
-      return '/settings/providers';
+    case 'settings':
+      return '/settings';
     case 'session':
       return `/s/${encodeURIComponent(route.sessionId)}`;
     case 'chat':

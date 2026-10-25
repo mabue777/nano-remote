@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 export const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 
 /** Paths the web app routes itself; each answers with index.html. */
-export const CLIENT_ROUTES: readonly string[] = ['/', '/pair', '/chats', '/settings/providers', '/lab'];
+export const CLIENT_ROUTES: readonly string[] = ['/', '/pair', '/chats', '/settings', '/settings/providers', '/lab'];
 
 /**
  * Session pages, `/s/<sessionId>`, and local chat pages, `/c/<chatId>` (web/src/routes): also index.html,

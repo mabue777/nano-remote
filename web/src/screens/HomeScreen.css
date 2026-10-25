@@ -42,14 +42,10 @@
   }
 }
 
-/* Home's cards (host, notifications, session rows) have no border or ring: white on the warm page in light,
+/* Home's cards (host, session rows) have no border or ring: white on the warm page in light,
    #212121 on #0d0d0d in dark, set apart by their fill and the air between them (look polish). */
-.host,
-.notifications {
-  border: 0;
-}
-
 .host {
+  border: 0;
   margin-bottom: var(--space-10);
 }
 
@@ -80,32 +76,15 @@
   text-align: right;
 }
 
-/* The Notifications card (Web Push) under the host card. */
-.notifications {
-  margin-bottom: var(--space-10);
+/* "Turn on notifications in Settings": one quiet footnote under the host card while push is off. */
+.notifications-hint {
+  margin: calc(-1 * var(--space-6)) 0 var(--space-10);
+  font: var(--type-footnote);
+  color: var(--muted);
 }
 
-.notifications-line {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.notifications-line h2 {
-  margin: 0;
-}
-
-.notifications p {
-  margin: var(--space-4) 0 0;
-}
-
-.notifications-test {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4) var(--space-6);
-  margin-top: var(--space-5);
+.notifications-hint a {
+  color: inherit;
 }
 
 .session-list {

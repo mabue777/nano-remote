@@ -24,8 +24,8 @@ async function pairAndOpenSettings(page: Page, request: APIRequestContext): Prom
   await page.goto(`/pair#code=${code}`);
   await page.getByRole('button', { name: 'Pair' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await page.getByRole('link', { name: 'Settings' }).click();
-  await expect(page).toHaveURL(/\/settings\/providers$/);
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
 }
 
 const section = (page: Page) => page.getByRole('region', { name: 'This Mac' });
@@ -81,8 +81,8 @@ test('the setting the host reports after a reload is the one shown', async ({ pa
 test('an older host without keepAwake shows no host section', async ({ page, request }) => {
   await request.post('/test/keep-awake', { data: { supported: false } });
   await pairAndOpenSettings(page, request);
-  await expect(page.getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Your providers' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Providers', level: 2 })).toBeVisible();
   await expect(section(page)).toHaveCount(0);
   await expect(keepAwake(page)).toHaveCount(0);
 });

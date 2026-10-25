@@ -1,0 +1,27 @@
+/* Settings > Notifications (NotificationsSection.tsx): no border or ring, set apart by its fill (look polish). */
+.notifications {
+  border: 0;
+}
+
+.notifications-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.notifications-line h2 {
+  margin: 0;
+}
+
+.notifications p {
+  margin: var(--space-4) 0 0;
+}
+
+.notifications-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin-top: var(--space-5);
+}

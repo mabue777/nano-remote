@@ -388,6 +388,7 @@ describe('SessionModel: agent capabilities (spec 4)', () => {
     live(1, [['turn/started', { turn: turn('t1') }]]);
     expect(model.mode).toBe('queue');
     expect(model.composerNote).toBe(NO_STEER_NOTE);
+    expect(NO_STEER_NOTE).toBe('Sent when the turn ends'); // one line, the same words as while typing
     expect(model.runHint).toBe(QUEUE_HINT);
     model.setDraft('after this');
     model.send();

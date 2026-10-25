@@ -1,12 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-import type { PushModel } from '../pwa/push';
+import { notificationsHint, type PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { Icon } from '../ui/Icon';
 import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
-import { Switch } from '../ui/Switch';
 import { usePress } from './chat/hooks';
 import { backgroundTasksText, HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
 import { NewSessionSheet } from './NewSessionSheet';
@@ -17,7 +16,7 @@ import { useModel } from './use-model';
 export interface HomeScreenProps {
   client: StreamClient;
   replica: Replica;
-  /** The Notifications card; absent where the app has no service worker (the dev server). */
+  /** Web Push: Home shows a line pointing at Settings while it is off; absent without a service worker (the dev server). */
   notifications?: PushModel;
   /** "Finished while away" markers; absent means none are shown. */
   away?: AwayTracker;
@@ -27,7 +26,7 @@ export interface HomeScreenProps {
   onTab?: (tab: HomeTab) => void;
   /** The Chats tab's content (chat/ChatsPanel). */
   chats?: ComponentChildren;
-  /** The gear: Settings > Providers. */
+  /** The gear (and the notifications line): Settings. */
   onSettings?: () => void;
   /** Archive and delete (one per stream client, so an archive in the session view shows its Undo here). */
   actions?: SessionActions;
@@ -66,7 +65,7 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
         <>
           <PullIndicator distance={pull.distance} pullLabel="Pull to refresh" releaseLabel="Release to refresh" />
           <HostCard host={model.host} />
-          {notifications !== undefined && <NotificationsCard push={notifications} />}
+          {notifications !== undefined && <NotificationsHint push={notifications} onSettings={onSettings} />}
           <section class="sessions" aria-labelledby="sessions-title">
             <div class="section-head">
               <h2 id="sessions-title">Sessions</h2>
@@ -206,61 +205,24 @@ function HostCard({ host }: { host: HostView | undefined }) {
   );
 }
 
-/** Web Push: a switch that subscribes this phone, and a test button once it is on (web/src/pwa/push.ts). */
-function NotificationsCard({ push }: { push: PushModel }) {
+/** One quiet line under the host card while notifications are possible but off; the switch lives in Settings. */
+function NotificationsHint({ push, onSettings }: { push: PushModel; onSettings: (() => void) | undefined }) {
   useModel(push);
-  const state = push.state;
-  const test = push.test;
-  const switchable = state.kind === 'off' || state.kind === 'on' || state.kind === 'error' || state.kind === 'subscribing';
+  const hint = notificationsHint(push.state);
+  if (hint === undefined) return null;
   return (
-    <section class="card notifications" aria-label="Notifications" data-state={state.kind}>
-      <div class="notifications-line">
-        <h2 id="notifications-title">Notifications</h2>
-        {switchable && (
-          <Switch
-            checked={state.kind === 'on' || state.kind === 'subscribing'}
-            labelledBy="notifications-title"
-            disabled={state.kind === 'subscribing'}
-            // turnOn asks for permission inside this tap: iOS allows it only from a user gesture.
-            onChange={(on) => void (on ? push.turnOn() : push.turnOff())}
-          />
-        )}
-      </div>
-      {state.kind === 'unsupported' && <p class="muted small">This browser cannot show notifications from Nano Remote.</p>}
-      {state.kind === 'needs-install' && (
-        <p class="muted small">Install to the home screen from Safari to get notifications: tap Share, then Add to Home Screen, and open Nano Remote from there.</p>
-      )}
-      {state.kind === 'denied' && (
-        <p class="muted small">
-          Notifications are blocked for Nano Remote. To turn them back on, open Settings, then Notifications, then Nano Remote, and allow them (in a
-          browser: the site settings for this page).
-        </p>
-      )}
-      {state.kind === 'off' && <p class="muted small">Get a notification when an agent needs you or finishes while the app is closed.</p>}
-      {state.kind === 'subscribing' && <p class="muted small">Turning on…</p>}
-      {state.kind === 'error' && (
-        <p class="error small" role="alert">
-          {state.message}
-        </p>
-      )}
-      {state.kind === 'on' && (
-        <div class="notifications-test">
-          <button type="button" class="ghost" disabled={test.kind === 'sending'} onClick={() => void push.sendTest()}>
-            {test.kind === 'sending' ? 'Sending…' : 'Send test notification'}
-          </button>
-          {test.kind === 'sent' && (
-            <span class="muted small" role="status">
-              Sent. It should arrive in a moment.
-            </span>
-          )}
-          {test.kind === 'failed' && (
-            <span class="error small" role="alert">
-              {test.message}
-            </span>
-          )}
-        </div>
-      )}
-    </section>
+    <p class="notifications-hint">
+      <a
+        href="/settings"
+        onClick={(event) => {
+          if (onSettings === undefined) return;
+          event.preventDefault();
+          onSettings();
+        }}
+      >
+        {hint}
+      </a>
+    </p>
   );
 }
 
@@ -415,12 +377,12 @@ function useInfiniteScroll(onMore: () => void, active: boolean) {
   return ref;
 }
 
-/** The gear in the top bar: Settings > Providers. */
+/** The gear in the top bar: Settings. */
 export function SettingsGear({ onClick }: { onClick: () => void }) {
   return (
     <a
       class="gear"
-      href="/settings/providers"
+      href="/settings"
       aria-label="Settings"
       onClick={(event) => {
         event.preventDefault();
