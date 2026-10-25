@@ -1,7 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-import { notificationsHint, type PushModel } from '../pwa/push';
 import type { Replica } from '../replica/replica';
 import type { StreamClient } from '../stream/client';
 import { Icon } from '../ui/Icon';
@@ -16,8 +15,6 @@ import { useModel } from './use-model';
 export interface HomeScreenProps {
   client: StreamClient;
   replica: Replica;
-  /** Web Push: Home shows a line pointing at Settings while it is off; absent without a service worker (the dev server). */
-  notifications?: PushModel;
   /** "Finished while away" markers; absent means none are shown. */
   away?: AwayTracker;
   onOpenSession: (sessionId: string) => void;
@@ -26,7 +23,7 @@ export interface HomeScreenProps {
   onTab?: (tab: HomeTab) => void;
   /** The Chats tab's content (chat/ChatsPanel). */
   chats?: ComponentChildren;
-  /** The gear (and the notifications line): Settings. */
+  /** The gear: Settings. */
   onSettings?: () => void;
   /** Archive and delete (one per stream client, so an archive in the session view shows its Undo here). */
   actions?: SessionActions;
@@ -34,7 +31,7 @@ export interface HomeScreenProps {
 
 export type HomeTab = 'sessions' | 'chats';
 
-export function HomeScreen({ client, replica, notifications, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings, actions: shared }: HomeScreenProps) {
+export function HomeScreen({ client, replica, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings, actions: shared }: HomeScreenProps) {
   const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
   useEffect(() => () => model.dispose(), [model]);
   const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
@@ -65,7 +62,6 @@ export function HomeScreen({ client, replica, notifications, away, onOpenSession
         <>
           <PullIndicator distance={pull.distance} pullLabel="Pull to refresh" releaseLabel="Release to refresh" />
           <HostCard host={model.host} />
-          {notifications !== undefined && <NotificationsHint push={notifications} onSettings={onSettings} />}
           <section class="sessions" aria-labelledby="sessions-title">
             <div class="section-head">
               <h2 id="sessions-title">Sessions</h2>
@@ -202,27 +198,6 @@ function HostCard({ host }: { host: HostView | undefined }) {
         ))}
       </ul>
     </section>
-  );
-}
-
-/** One quiet line under the host card while notifications are possible but off; the switch lives in Settings. */
-function NotificationsHint({ push, onSettings }: { push: PushModel; onSettings: (() => void) | undefined }) {
-  useModel(push);
-  const hint = notificationsHint(push.state);
-  if (hint === undefined) return null;
-  return (
-    <p class="notifications-hint">
-      <a
-        href="/settings"
-        onClick={(event) => {
-          if (onSettings === undefined) return;
-          event.preventDefault();
-          onSettings();
-        }}
-      >
-        {hint}
-      </a>
-    </p>
   );
 }
 

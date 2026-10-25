@@ -160,3 +160,86 @@ test('an agent without the capability: the model line is plain text and opens no
   await page.getByLabel('Model', { exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Model and effort' })).toHaveCount(0);
 });
+
+/**
+ * Where the model line's first glyph sits (iPhone bug: "fable" showed as "rable", its first letter cut on the
+ * left). The glyph starts inside the header's content box, aligned with the lines above; the button's clip
+ * edge lies left of it with room for ink that starts left of the glyph's origin; nothing scrolled the name
+ * sideways; and the strip at the left edge looks the same with the clip turned off, so no ink was cut.
+ */
+async function expectModelNameWhole(page: Page): Promise<void> {
+  const button = page.getByTitle('Change model and effort');
+  const geometry = await button.evaluate((el) => {
+    const name = el.querySelector('[aria-label="Model"]')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(name, 0);
+    range.setEnd(name, 1);
+    const head = document.querySelector('.session-head')!;
+    const pad = parseFloat(getComputedStyle(head).paddingLeft);
+    return {
+      glyph: range.getBoundingClientRect().x,
+      contentLeft: head.getBoundingClientRect().x + pad,
+      line: document.querySelector('.session-meta-line')!.getBoundingClientRect().x,
+      clipLeft: el.getBoundingClientRect().x,
+      height: el.getBoundingClientRect().height,
+      scrollLeft: el.scrollLeft,
+    };
+  });
+  expect(geometry.glyph).toBeGreaterThanOrEqual(geometry.contentLeft - 0.5);
+  expect(geometry.glyph).toBeGreaterThanOrEqual(geometry.line - 0.5);
+  expect(geometry.glyph - geometry.clipLeft).toBeGreaterThanOrEqual(1.5);
+  expect(geometry.scrollLeft).toBe(0);
+  expect(geometry.height).toBeGreaterThanOrEqual(32); // the tap target
+  const box = (await button.boundingBox())!;
+  const strip = { x: box.x - 4, y: box.y, width: 24, height: box.height };
+  const clipped = await page.screenshot({ clip: strip });
+  await button.evaluate((el) => (el.style.overflow = 'visible'));
+  const unclipped = await page.screenshot({ clip: strip });
+  await button.evaluate((el) => (el.style.overflow = ''));
+  expect(clipped.equals(unclipped)).toBe(true);
+}
+
+test('the model line shows its first letter whole after the sheet opens and closes; a long name ellipsizes', async ({ page, request }) => {
+  mkdirSync(SHOTS, { recursive: true });
+  await pair(page, request);
+  await startSession(page, 'Claude', 'fable');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveText('fable');
+  await expectModelNameWhole(page);
+
+  // Open, pick Medium, Save: the sheet closes and the header names both.
+  let sheet = await openSettings(page);
+  await sheet.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio', { name: 'Medium' }).click();
+  await saveAndExpectSent(page, request, sheet, { effort: 'medium' });
+  await expect(page.getByLabel('Effort', { exact: true })).toHaveText('Medium effort');
+  await expectModelNameWhole(page);
+
+  // Open and Cancel.
+  sheet = await openSettings(page);
+  await sheet.getByRole('button', { name: 'Cancel' }).click();
+  await expect(sheet).toHaveCount(0);
+  await sheetsSettled(page);
+  await expectModelNameWhole(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.locator('.session-head').screenshot({ path: `${SHOTS}/header-model-name-dark.png` });
+  await page.emulateMedia({ colorScheme: 'light' });
+
+  // A name longer than the line stays inside it and ends in an ellipsis; its start is still whole.
+  sheet = await openSettings(page);
+  await sheet.getByRole('combobox', { name: 'Model' }).selectOption('claude-fable-experimental-preview-with-a-very-long-model-name');
+  await sheet.getByRole('button', { name: 'Save' }).click(); // a second save: saveAndExpectSent checks only the first
+  await expect(sheet).toHaveCount(0);
+  await sheetsSettled(page);
+  const button = page.getByTitle('Change model and effort');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveText('claude-fable-experimental-preview-with-a-very-long-model-name');
+  const fit = await button.evaluate((el) => ({
+    right: el.getBoundingClientRect().right,
+    lineRight: el.parentElement!.getBoundingClientRect().right,
+    truncated: el.scrollWidth > el.clientWidth,
+    ellipsis: getComputedStyle(el).textOverflow,
+  }));
+  expect(fit.right).toBeLessThanOrEqual(fit.lineRight + 2.5); // the 2 px clip room
+  expect(fit).toMatchObject({ truncated: true, ellipsis: 'ellipsis' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await expectModelNameWhole(page);
+  { const row = (await button.boundingBox())!; await page.screenshot({ path: `${SHOTS}/header-long-model.png`, clip: { x: 0, y: row.y - 60, width: 390, height: row.height + 60 } }); }
+});

@@ -163,7 +163,6 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
         <HomeScreen
           client={services.client}
           replica={services.replica}
-          notifications={services.notifications}
           away={services.away}
           onOpenSession={open}
           actions={services.actions}

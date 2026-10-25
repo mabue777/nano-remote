@@ -128,17 +128,6 @@ export function testErrorText(error: unknown): string {
   return messageOf(error);
 }
 
-export const NOTIFICATIONS_HINT = 'Turn on notifications in Settings';
-
-/**
- * Home's one quiet line pointing at Settings: only while this phone could get notifications and has not
- * turned them on ('off', or an iPhone that still needs the home-screen install). Nothing when on, denied,
- * unsupported, or mid-switch.
- */
-export function notificationsHint(state: PushState): string | undefined {
-  return state.kind === 'off' || state.kind === 'needs-install' ? NOTIFICATIONS_HINT : undefined;
-}
-
 export interface PushModelOptions {
   client: PushClient;
   env: PushEnvironment;

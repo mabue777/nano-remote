@@ -30,8 +30,8 @@ const CLOUD = {
 
 test.beforeEach(async ({ page, request }) => {
   await request.post('/test/reset');
-  // Headless Chromium reports notifications as blocked; a phone that has not decided yet shows Home's
-  // "Turn on notifications in Settings" line and the Settings switch, so the shots show that state.
+  // Headless Chromium reports notifications as blocked; a phone that has not decided yet shows the Settings
+  // switch, so the shots show that state.
   await page.addInitScript(() => {
     Object.defineProperty(window, 'Notification', { value: { permission: 'default', requestPermission: async () => 'default' }, configurable: true, writable: true });
   });

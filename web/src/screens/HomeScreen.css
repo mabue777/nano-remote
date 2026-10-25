@@ -76,17 +76,6 @@
   text-align: right;
 }
 
-/* "Turn on notifications in Settings": one quiet footnote under the host card while push is off. */
-.notifications-hint {
-  margin: calc(-1 * var(--space-6)) 0 var(--space-10);
-  font: var(--type-footnote);
-  color: var(--muted);
-}
-
-.notifications-hint a {
-  color: inherit;
-}
-
 .session-list {
   list-style: none;
   margin: 0;

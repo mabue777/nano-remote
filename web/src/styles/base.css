@@ -198,9 +198,15 @@ textarea::placeholder {
   margin-bottom: var(--space-3);
 }
 
+/* A model line ellipsizes a long name. Its clip edge sits 2 px outside the text on each side (padding, with
+   the same negative margin so the text stays aligned with the lines above): a glyph whose ink starts left of
+   its origin, like an "f", is not cut. overflow: clip, not hidden: the box is no scroll container, so focus,
+   selection or scrollIntoView cannot shift the name sideways (iPhone: "fable" showed as "rable"). Safari has
+   no overflow-clip-margin, hence the padding. */
 .session-model {
-  margin: 0;
-  overflow: hidden;
+  margin: 0 calc(-1 * var(--space-1));
+  padding-inline: var(--space-1);
+  overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

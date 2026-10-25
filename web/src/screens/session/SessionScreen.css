@@ -46,7 +46,9 @@
 .session-model-button {
   display: inline;
   min-height: 32px; /* a tap target on the phone */
-  padding: var(--space-3) 0; /* one-off: the inline button's tap height */
+  /* At most the line (plus the clip room of .session-model): a long model name ellipsizes, not overflows. */
+  max-width: calc(100% + 2 * var(--space-1));
+  padding-block: var(--space-3); /* one-off: the inline button's tap height; the sides come from .session-model */
   border: 0;
   border-radius: 0;
   background: none;

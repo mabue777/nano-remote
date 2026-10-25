@@ -632,7 +632,13 @@ export class FakeHost {
                 { id: 'gpt-5.5-codex', displayName: 'GPT-5.5 Codex', default: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
                 { id: 'gpt-5.5-mini', displayName: 'GPT-5.5 mini', default: false },
               ]
-            : [{ id: 'claude-opus', displayName: 'Claude Opus', default: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }];
+            : [
+                { id: 'claude-opus', displayName: 'Claude Opus', default: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+                // The header's model line: a lowercase first letter whose ink may start left of its origin (the
+                // iPhone showed "fable" as "rable"), and a name too long for the line, which must ellipsize.
+                { id: 'fable', displayName: 'Fable', default: false, efforts: ['low', 'medium', 'high'] },
+                { id: 'claude-fable-experimental-preview-with-a-very-long-model-name', displayName: 'Fable preview', default: false },
+              ];
         return { result: { models } };
       }
       case 'project/list':

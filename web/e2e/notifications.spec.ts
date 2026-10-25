@@ -4,7 +4,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 // screen. An init script stands in for Notification and PushManager (headless Chromium has no push
 // service), so the switch goes off -> on and the fake host receives push/subscribe with the stubbed
 // subscription; the test button reaches push/test; an iPhone outside the home-screen app is told to
-// install. Home shows only a one-line pointer to Settings while notifications are off.
+// install. Home says nothing about notifications in any state (operator, 2026-10-25).
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const STUB_SUBSCRIPTION = { endpoint: 'https://push.example/e2e-stub', expirationTime: null, keys: { p256dh: 'BStubP256dhKey', auth: 'stubAuthSecret' } };
@@ -22,6 +22,7 @@ async function pairAndLand(page: Page, request: APIRequestContext): Promise<stri
   return page.evaluate(() => JSON.parse(localStorage.getItem('nano-remote.device.v1') ?? '{}').clientId ?? '');
 }
 
+/** The line Home once showed while notifications were off; it must not come back. */
 const HINT = 'Turn on notifications in Settings';
 
 /** Pairs, lands on Home, then taps the gear: Settings. */
@@ -118,40 +119,43 @@ test('Send test notification calls push/test, and shows the host refusal in word
 test.describe('on an iPhone in a Safari tab', () => {
   test.use({ userAgent: IPHONE });
 
-  test('Home points at Settings; there the section asks for a home-screen install and offers no switch', async ({ page, request }) => {
-    await pairAndLand(page, request);
-    await expect(page.getByRole('link', { name: HINT })).toBeVisible();
-    await page.getByRole('link', { name: HINT }).click();
-    await expect(page).toHaveURL(/\/settings$/);
+  test('Settings asks for a home-screen install and offers no switch; Home has no notifications line', async ({ page, request }) => {
+    await pairAndOpenSettings(page, request);
     const card = page.getByRole('region', { name: 'Notifications' });
     await expect(card).toHaveAttribute('data-state', 'needs-install');
     await expect(card).toContainText('Install to the home screen from Safari to get notifications');
     await expect(card.getByRole('switch')).toHaveCount(0);
     expect(await page.evaluate(() => window.matchMedia('(display-mode: standalone)').matches)).toBe(false);
+    await backToSessions(page);
+    await expect(page.getByText(HINT)).toHaveCount(0);
   });
 });
 
-test('Home has no Notifications card: one line points at Settings while off, and it is gone once on', async ({ page, request }) => {
-  await stubPush(page);
-  await pairAndLand(page, request);
-  await expect(page.getByRole('region', { name: 'Host' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Notifications' })).toHaveCount(0);
-  const hint = page.getByRole('link', { name: HINT });
-  await expect(hint).toHaveAttribute('href', '/settings');
-  // It sits right under the host card.
-  expect(await page.locator('section.host + p.notifications-hint').count()).toBe(1);
-
-  await hint.click();
-  await expect(page).toHaveURL(/\/settings$/);
-  const toggle = page.getByRole('region', { name: 'Notifications' }).getByRole('switch', { name: 'Notifications' });
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
-
+/** Back from Settings to the Sessions tab of Home. */
+async function backToSessions(page: Page): Promise<void> {
   await page.locator('a.back').click(); // Back (to Chats)
   await page.getByRole('tab', { name: 'Sessions' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('region', { name: 'Host' })).toBeVisible();
-  await expect(page.getByRole('link', { name: HINT })).toHaveCount(0);
+}
+
+test('Home has no Notifications card and no notifications line, whether notifications are off or on', async ({ page, request }) => {
+  await stubPush(page);
+  await pairAndOpenSettings(page, request);
+  const card = page.getByRole('region', { name: 'Notifications' });
+  // Settings has read the state, so Home's absence below is not a check that ran too early.
+  await expect(card).toHaveAttribute('data-state', 'off');
+  await backToSessions(page);
+  await expect(page.getByRole('region', { name: 'Notifications' })).toHaveCount(0);
+  await expect(page.getByText(HINT)).toHaveCount(0);
+  expect(await page.locator('.notifications-hint').count()).toBe(0);
+
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  const toggle = card.getByRole('switch', { name: 'Notifications' });
+  await toggle.click();
+  await expect(card).toHaveAttribute('data-state', 'on');
+  await backToSessions(page);
+  await expect(page.getByText(HINT)).toHaveCount(0);
 });
 
 test('the gear opens Settings with Notifications first, then This Mac, then Providers', async ({ page, request }) => {
