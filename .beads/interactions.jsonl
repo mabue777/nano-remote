@@ -89,3 +89,4 @@
 {"id":"int-21ab686d389af8a47df29cad1d782633","kind":"field_change","created_at":"2026-10-24T17:49:33.236226Z","actor":"mabue77","issue_id":"brocode-ln9.11","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-4712f1c4a4af35a94fd506fe4bb5ba61","kind":"field_change","created_at":"2026-10-25T05:15:37.609411Z","actor":"mabue77","issue_id":"brocode-ln9.12","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-964d3f7c512cc6cf3111b541a3b313a5","kind":"field_change","created_at":"2026-10-25T06:45:15.194724Z","actor":"mabue77","issue_id":"brocode-ln9.13","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-ca4aad024f2693f124059c03d49c6493","kind":"field_change","created_at":"2026-10-25T08:35:38.445534Z","actor":"mabue77","issue_id":"brocode-ln9.9","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
