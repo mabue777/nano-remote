@@ -156,3 +156,7 @@ All in `web/src/lab/`, in the lab's own chunk (now about 16 KB gzipped, from 14 
 - **Dark palette.** The page is #0d0d0d and raised surfaces #212121 (the study's values). On the iPhone's OLED
   this is close to black; if it reads too harsh, the iOS ChatGPT page colour #212121 with #303030 cards is the
   alternative.
+- **Send-button hairlines on iOS (2026-10-27).** With the keyboard open, the round Send button showed two thin
+  lines at the top and bottom of its icon's box. Removing the bar's forced layer did not cure it; the round
+  composer buttons and their icons now get their own layer (`translateZ(0)`, Composer.css). Playwright WebKit
+  has no iOS keyboard, so only the phone can confirm it.

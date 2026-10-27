@@ -85,6 +85,23 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-round);
+  /* iOS, keyboard open: when Send repaints (disabled -> enabled as you type) the 18 px icon's box was
+     re-rasterised on its own at a fractional device-pixel offset and showed as two hairlines across the circle
+     (field check 2026-10-27; dropping will-change on the bar did not cure it). Each round button gets its own
+     layer so the circle and its icon rasterise as one unit. */
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Press feedback (base.css) would replace the layer's transform; keep it and add the 97% shrink. */
+.composer-round:active:not(:disabled) {
+  transform: translateZ(0) scale(0.97);
+}
+
+/* The icon too (belt and braces). The Stop spinner's rotate animation still wins over this. */
+.composer-round > .icon {
+  transform: translateZ(0);
 }
 
 /* "+": a bare grey glyph at rest; the grey disc shows only while it is pressed (same 40 px target). */
