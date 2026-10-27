@@ -61,7 +61,9 @@ test('pick Pi and a model, start, accept the approval; header and row show the m
 
   const card = page.getByRole('group', { name: 'Approval: Run this command?' });
   await expect(card).toBeVisible();
-  await expect(card.getByRole('button')).toHaveText(['Accept', 'Decline', 'Cancel']);
+  await expect(card.getByRole('button')).toHaveText(['Accept', 'Decline', 'More']); // no "for this session"
+  await card.getByRole('button', { name: 'More' }).click();
+  await expect(card.getByRole('group', { name: 'More choices' }).getByRole('button')).toHaveText(['Cancel the turn']);
   await card.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(card).toHaveCount(0);
   expect(await lastParams(request, 'approval/resolve')).toMatchObject({ decision: 'accept' });

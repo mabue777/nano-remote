@@ -44,18 +44,19 @@ test('a scripted turn streams in, waits for a decision, and completes', async ({
   for (const text of seen) expect(AGENT_TEXT.startsWith(text)).toBe(true);
   await expect(agent).toHaveAttribute('data-streaming', 'false');
 
-  // The command waits for an approval: the banner and the counters (the cards are a later step).
+  // The command waits for an approval: the card is the call to action, the header's dot and word the one
+  // status (no "1 approval waiting" line, no task-state line).
   const command = conversation.locator('[data-item="command"]');
   await expect(command).toContainText('Running echo hello > hello.txt');
-  const banner = page.getByRole('alert', { name: 'Needs your decision' });
-  await expect(banner).toBeVisible();
-  await expect(banner.getByLabel('1 approval waiting')).toBeVisible();
+  await expect(conversation.getByRole('group', { name: 'Approval: Run this command?' })).toBeVisible();
+  await expect(page.getByRole('alert', { name: 'Needs your decision' })).toHaveCount(0);
+  await expect(page.getByLabel('Task state')).toHaveCount(0);
   await expect(page.getByLabel('Session status')).toHaveText('Needs approval');
 
   // Another device approves: the command runs, usage arrives, the turn completes. Its work folds behind
   // "1 previous message", the answer stays, "Worked for" closes the turn.
   await request.post('/test/resolve', { data: { sessionId: 'ses_fake_3', decision: 'accept' } });
-  await expect(banner).toHaveCount(0);
+  await expect(conversation.getByLabel('Approval answered')).toContainText('Approved on Mabue MacBook');
   await expect(page.getByLabel('Usage')).toHaveText('Session total 1,200 in · 340 out · context 4% full');
   await expect(conversation.locator('li[data-turn-status]')).toHaveAttribute('data-turn-status', 'completed');
   await expect(page.getByLabel('Session status')).toHaveText('Finished');

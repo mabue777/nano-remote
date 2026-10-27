@@ -403,33 +403,6 @@ export function usageLine(usage: Usage): string {
   return parts.join(' · ');
 }
 
-export type TaskState = 'Running' | 'Waiting for your approval' | 'Waiting for your answer' | 'Finished' | 'Failed' | 'Interrupted' | 'Idle';
-
-/**
- * The header's task state line, from the session status and how its newest turn ended. The tone is the
- * session list's (statusOf), so the line and the home row agree in color.
- */
-export function taskStateOf(summary: Pick<SessionSummary, 'status' | 'lastTurnStatus'>): { label: TaskState; tone: Tone } {
-  const { tone } = statusOf(summary);
-  switch (summary.status) {
-    case 'running':
-      return { label: 'Running', tone };
-    case 'waiting_approval':
-      return { label: 'Waiting for your approval', tone };
-    case 'waiting_input':
-      return { label: 'Waiting for your answer', tone };
-    case 'error':
-      return { label: 'Failed', tone };
-  }
-  const label: Record<NonNullable<SessionSummary['lastTurnStatus']>, TaskState> = {
-    inProgress: 'Running',
-    completed: 'Finished',
-    failed: 'Failed',
-    interrupted: 'Interrupted',
-  };
-  return { label: summary.lastTurnStatus !== undefined ? (label[summary.lastTurnStatus] ?? 'Idle') : 'Idle', tone };
-}
-
 const OLDER_PAGE = 5;
 
 /** What the composer needs to attach photos and files (spec 8.1). */
@@ -627,27 +600,18 @@ export class SessionModel extends Model {
     return lastTurnStatus === undefined ? { status } : { status, lastTurnStatus };
   }
 
-  /** The compact task state line under the title. */
-  get taskState(): { label: TaskState; tone: Tone } {
-    return taskStateOf(this.statusInputs);
-  }
-
   get usage(): string | undefined {
     const usage = this.view?.usage;
     return usage === null || usage === undefined ? undefined : usageLine(usage);
   }
 
-  /** Pending request counters for the banner (spec 5.3); the cards are approvals/ApprovalsModel. */
+  /** Pending request counters (spec 5.3); the cards are approvals/ApprovalsModel. */
   get pending(): { approvals: number; inputs: number; total: number } {
     const view = this.view;
     const counts = view?.loaded
       ? { approvals: Object.keys(view.approvals).length, inputs: Object.keys(view.inputs).length }
       : (this.summary?.pending ?? { approvals: 0, inputs: 0 });
     return { ...counts, total: counts.approvals + counts.inputs };
-  }
-
-  get needsDecision(): boolean {
-    return this.pending.total > 0;
   }
 
   /**

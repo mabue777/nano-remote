@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { approval } from '../../../../test/replica-fixtures';
-import { approvalCard, DECISION_LABELS, decisionButtons, diffPreview, resolvedNotice } from './decisions';
+import { approvalCard, DECISION_LABELS, decisionButtons, diffPreview, groupButtons } from './decisions';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -9,7 +9,7 @@ describe('decision mapping', () => {
   it('offers one button per listed decision, labeled, in the order accept, accept for session, decline, cancel', () => {
     const buttons = decisionButtons(['cancel', 'decline', 'acceptForSession', 'accept']);
     expect(buttons.map((b) => b.decision)).toEqual(['accept', 'acceptForSession', 'decline', 'cancel']);
-    expect(buttons.map((b) => b.label)).toEqual(['Accept', 'Accept for session', 'Decline', 'Cancel']);
+    expect(buttons.map((b) => b.label)).toEqual(['Accept', 'Accept for this session', 'Decline', 'Cancel the turn']);
     expect(buttons.map((b) => b.tone)).toEqual(['primary', 'plain', 'plain', 'plain']);
     for (const b of buttons) expect(b.hint).not.toBe('');
   });
@@ -102,13 +102,28 @@ describe('approval cards', () => {
   });
 });
 
-describe('resolved notices', () => {
-  it('names the device that answered, the agent, or nobody when this device answered', () => {
-    expect(resolvedNotice('dev_mac', 'dev_phone', 'Mabue MacBook')).toBe('Answered on Mabue MacBook');
-    expect(resolvedNotice('dev_mac', 'dev_phone', undefined)).toBe('Answered on another device');
-    expect(resolvedNotice('dev_mac', 'dev_phone', '  ')).toBe('Answered on another device');
-    expect(resolvedNotice('agent', 'dev_phone', undefined)).toBe('Withdrawn by the agent');
-    expect(resolvedNotice('dev_phone', 'dev_phone', 'iPhone')).toBeUndefined();
-    expect(resolvedNotice(undefined, 'dev_phone', undefined)).toBe('Answered on another device');
+describe('More grouping', () => {
+  const ids = (buttons: { decision: string }[]) => buttons.map((b) => b.decision);
+
+  it('Accept and Decline in the row; Accept for this session and Cancel the turn behind More', () => {
+    const groups = groupButtons(decisionButtons(['accept', 'acceptForSession', 'decline', 'cancel']));
+    expect(ids(groups.main)).toEqual(['accept', 'decline']);
+    expect(ids(groups.more)).toEqual(['acceptForSession', 'cancel']);
+    expect(groups.more.map((b) => b.label)).toEqual(['Accept for this session', 'Cancel the turn']);
+  });
+
+  it('only what the adapter offered: pi (accept, decline, cancel), the captured Codex approval (accept, cancel)', () => {
+    let groups = groupButtons(decisionButtons(['accept', 'decline', 'cancel']));
+    expect([ids(groups.main), ids(groups.more)]).toEqual([['accept', 'decline'], ['cancel']]);
+    groups = groupButtons(decisionButtons(['accept', 'cancel']));
+    expect([ids(groups.main), ids(groups.more)]).toEqual([['accept'], ['cancel']]);
+    groups = groupButtons(decisionButtons(['accept', 'decline']));
+    expect([ids(groups.main), ids(groups.more)]).toEqual([['accept', 'decline'], []]);
+  });
+
+  it('never hides every choice: without Accept and Decline the rest stays in the row', () => {
+    const groups = groupButtons(decisionButtons(['acceptForSession', 'cancel']));
+    expect([ids(groups.main), ids(groups.more)]).toEqual([['acceptForSession', 'cancel'], []]);
+    expect(groupButtons([])).toEqual({ main: [], more: [] });
   });
 });

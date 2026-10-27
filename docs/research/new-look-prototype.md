@@ -108,6 +108,18 @@ with them so each file is rewritten once:
    rides on the bar, above the card. The keyboard (7) is unchanged.
 4. **Approval and question cards (items 5, 13).** M + S. Their answered state reuses the expand/collapse helper
    from step 2.
+   **Done 2026-10-27:** the cards are `screens/session/approvals/RequestCards.tsx` (styles `RequestCards.css`),
+   and the lab's New look renders the same components with its fixtures. The wording of the answered line is
+   `approvals/answered.ts`, the More grouping `groupButtons` in `decisions.ts`, the "Other…" row `pickOther` and
+   `questionView` in `questions.ts`. Choices the lab left open: More opens its choices in place (as in the lab),
+   not in a sheet; "Cancel the turn" is ink, not red; a question with several groups is one card titled
+   "N questions"; the answered line sits in its turn right after the item the request was about (or at the
+   turn's end when that item is folded away), and says who answered elsewhere ("Approved on Mabue MacBook",
+   "Withdrawn by the agent", "Answered by the agent"). The lines last while the session screen is open; the
+   Replica keeps resolutions in memory only and session/open lists no resolved requests, so after a reload
+   they are gone (keeping them would need a protocol change). The session header now shows one status, the dot
+   and word: the "N approvals waiting" line and the task-state line are gone, and "Bypass" is the grey tag
+   "Full access".
 5. **Centred header and the ⋯ sheet (item 8).** M. It must come before the page push, because the push moves
    whole pages including the header.
 6. **Session list with motion part 3 (item 6, techniques 8 and 2).** M + M + L. The flat list and the list

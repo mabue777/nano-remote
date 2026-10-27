@@ -1,8 +1,10 @@
-// Approval cards (spec 5.3): what a card shows for each request kind, which buttons it offers, and the
-// notice left behind when someone else answered. Pure functions; the model and the components use them.
+// Approval cards (spec 5.3): what a card shows for each request kind and which buttons it offers. Pure
+// functions; the model, the components and the lab's New look use them. The line an answered card leaves is
+// answered.ts.
 //
 // Buttons: only the decisions the adapter listed in `availableDecisions`, always in the order accept,
-// accept for session, decline, cancel. Anything else in the list (a newer decision, or an object-valued
+// accept for session, decline, cancel; Accept and Decline sit in the row, the others behind More
+// (groupButtons). Anything else in the list (a newer decision, or an object-valued
 // Codex amendment an adapter forgot to drop) gets no button: the phone cannot know what it means.
 import type { ApprovalRequestBody, Decision } from '../../../replica/types';
 import { unwrapShell } from '../session-model';
@@ -11,9 +13,9 @@ export const DECISION_ORDER: readonly Decision[] = ['accept', 'acceptForSession'
 
 export const DECISION_LABELS: Readonly<Record<Decision, string>> = {
   accept: 'Accept',
-  acceptForSession: 'Accept for session',
+  acceptForSession: 'Accept for this session',
   decline: 'Decline',
-  cancel: 'Cancel',
+  cancel: 'Cancel the turn',
 };
 
 /** What each decision does, for the button's accessible description. */
@@ -45,6 +47,24 @@ export function decisionButtons(available: readonly unknown[] | undefined): Deci
     hint: DECISION_HINTS[decision],
     tone: decision === 'accept' ? 'primary' : 'plain',
   }));
+}
+
+/** The card's buttons: Accept and Decline in the row, the rest (for this session, cancel) behind More. */
+export interface ButtonGroups {
+  main: DecisionButton[];
+  more: DecisionButton[];
+}
+
+const MAIN: ReadonlySet<Decision> = new Set(['accept', 'decline']);
+
+/**
+ * Splits the buttons into the row and the More list. When the adapter offers neither Accept nor Decline,
+ * every button sits in the row: a card must never hide all of its choices.
+ */
+export function groupButtons(buttons: readonly DecisionButton[]): ButtonGroups {
+  const main = buttons.filter((b) => MAIN.has(b.decision));
+  if (main.length === 0) return { main: [...buttons], more: [] };
+  return { main, more: buttons.filter((b) => !MAIN.has(b.decision)) };
 }
 
 export type DiffLineTone = 'add' | 'del' | 'hunk' | 'ctx';
@@ -109,15 +129,4 @@ export function approvalCard(request: ApprovalRequestBody): ApprovalCardView {
       };
     }
   }
-}
-
-/**
- * The line left where a card was, once it is gone without this device answering it. Undefined when this
- * device answered (nothing to say). `resolvedBy` is a clientId, or "agent" for a withdrawn request.
- */
-export function resolvedNotice(resolvedBy: string | undefined, ownClientId: string | undefined, deviceName: string | undefined): string | undefined {
-  if (resolvedBy === undefined) return 'Answered on another device';
-  if (ownClientId !== undefined && resolvedBy === ownClientId) return undefined;
-  if (resolvedBy === 'agent') return 'Withdrawn by the agent';
-  return `Answered on ${deviceName !== undefined && deviceName.trim() !== '' ? deviceName : 'another device'}`;
 }

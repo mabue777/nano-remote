@@ -1,48 +1,101 @@
-/* Approval and question cards (RequestCards.tsx, spec 5.3). A card awaiting your decision has a quiet
-   --fill-strong border (not orange); once your answer is on its way (aria-busy) the border goes. The full
-   card rebuild is a later look step. */
+/* Approval and question cards and their answered line (RequestCards.tsx, spec 5.3; the New look's items 5
+   and 13): a soft grey card (--fill, --radius-card) with no border or ring, the subject in a white inner box
+   (--surface, --radius-inner), one ink pill and one grey pill. The lab's New look renders the same cards.
+
+   The grey background is a separate layer (.shell) when the card is .shelled, so the expand and collapse
+   motion can scale it (motion-hooks.tsx growShells) while the content only fades: transform and opacity. */
 
 .requests {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  margin-top: var(--space-7);
+  gap: var(--space-6);
+  margin-top: var(--space-8);
 }
 
-.request-card {
-  background: var(--surface);
-  border: 1px solid var(--fill-strong);
-  border-radius: var(--radius);
-  padding: var(--space-6);
+.request-card,
+.request-answered {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
+  margin: 0;
+  padding: var(--space-8);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--fill);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
-.request-card[aria-busy='true'] {
-  border-color: transparent;
+.request-card.shelled,
+.request-answered.shelled {
+  background: none;
+}
+
+.request-card > .shell,
+.request-answered > .shell {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--fill);
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+
+.request-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.request-head > .icon {
+  flex: none;
 }
 
 .request-title {
-  font-size: var(--font-base);
+  flex: 1;
+  min-width: 0;
   margin: 0;
+  font: var(--type-headline);
+}
+
+/* The question's short header and "Pick any", under the title. */
+.request-sub {
+  margin: calc(-1 * var(--space-4)) 0 0; /* sits closer to the title than the card's gap */
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.request-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-6) var(--space-7);
+  border-radius: var(--radius-inner);
+  background: var(--surface);
 }
 
 .request-command {
   margin: 0;
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-sm);
-  background: var(--fill);
+  padding: 0;
+  background: none;
   font: var(--type-code);
+  font-size: 14px; /* one-off: the command is the card's subject (the lab's value) */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 160px;
   overflow: auto;
 }
 
-.request-cwd,
-.request-reason {
+.request-meta {
   margin: 0;
+  font: var(--type-footnote);
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
@@ -56,22 +109,20 @@
 }
 
 .request-file {
+  font: var(--type-callout);
   overflow-wrap: anywhere;
 }
 
+.request-file code {
+  font: var(--type-code);
+}
+
+/* The kind of change as a grey word (the Changes sheet's style), not a coloured badge. */
 .request-file .kind {
-  font-size: var(--font-xs);
+  font: var(--type-caption);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--muted);
-}
-
-.request-file .kind.add {
-  color: var(--ok);
-}
-
-.request-file .kind.delete {
-  color: var(--error);
 }
 
 .diff {
@@ -103,16 +154,74 @@
   color: var(--muted);
 }
 
+.request-error {
+  margin: 0;
+}
+
 .request-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-4);
 }
 
-.request-actions button {
-  flex: 1 1 40%;
+/* Pills: ink for the main action, grey for the other. */
+.request-card button.request-pill {
   min-height: var(--touch);
+  padding: 0 var(--space-10);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-strong);
+  color: var(--text);
+  font: var(--type-callout);
+  font-weight: 600;
 }
+
+.request-card button.request-pill.primary {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+/* More: grey words at the row's end; its choices open in place below. */
+.request-card button.request-more-button {
+  margin-left: auto;
+  min-height: var(--touch);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: var(--type-callout);
+  font-weight: 600;
+}
+
+.request-more {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.request-card button.request-menu-row {
+  min-height: var(--touch);
+  padding: 0 var(--space-7);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: var(--type-callout);
+  text-align: left;
+}
+
+.request-card button.request-menu-row + button.request-menu-row {
+  border-top: 0.5px solid var(--line);
+}
+
+.request-card button.request-menu-row:active {
+  transform: none;
+  background: var(--fill);
+}
+
+/* ---- Questions ---------------------------------------------------------------------------------- */
 
 .question-field {
   border: 0;
@@ -120,85 +229,200 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  min-width: 0;
 }
 
-.question-field legend {
+.question-legend {
   padding: 0;
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+  font: var(--type-callout);
 }
 
 .question-header {
   display: block;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  font: var(--type-footnote);
+  color: var(--muted);
 }
 
 .question-text {
   font-weight: 600;
 }
 
+.question-hint {
+  color: var(--muted);
+}
+
 .question-options {
-  list-style: none;
-  margin: 0;
+  gap: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  overflow: hidden;
 }
 
 .option {
+  position: relative;
   display: flex;
-  gap: var(--space-5);
-  align-items: flex-start;
-  min-height: var(--touch);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 52px; /* one-off: a two-line option row (the lab's value) */
+  padding: var(--space-3) var(--space-7);
+  cursor: pointer;
 }
 
-.option.selected {
-  border-color: var(--primary);
+.option + .option {
+  border-top: 0.5px solid var(--line);
 }
 
+/* The native radio or checkbox stays for keyboard and screen readers; .option-mark draws it. */
 .option input {
-  flex: none;
-  width: 20px;
-  height: 20px;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
   min-height: 0;
-  margin: var(--space-1) 0 0;
+  margin: 0;
   padding: 0;
-  accent-color: var(--primary);
 }
 
-.option > span {
+.option-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: var(--radius-round);
+  color: var(--primary-text);
+}
+
+/* Several may be picked: a rounded square instead of a circle. */
+.option-mark.checkbox {
+  border-radius: 6px; /* one-off: the check look */
+}
+
+.option.selected .option-mark {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.option:has(input:focus-visible) .option-mark {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.option-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font: var(--type-callout);
   text-align: left;
 }
 
 .option-description {
-  display: block;
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.option.other .option-label {
+  color: var(--muted);
+}
+
+.option.other.selected .option-label {
+  color: var(--text);
+}
+
+.option-field {
+  padding: 0 var(--space-7) var(--space-5);
+}
+
+.option-field .question-text-input,
+.question-free .question-text-input {
+  background: var(--fill);
+}
+
+.question-free {
+  padding: var(--space-4);
 }
 
 /* Blocking questions ride on the floating composer bar, above the card: no divider (the bar's fade and
    the card's own edge set them apart), inside the bar's 20 px margins. */
 .pinned-questions {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   margin: 0 0 var(--space-4);
   padding: 0;
   max-height: 55dvh;
   overflow-y: auto;
 }
 
-.request-notice {
+/* ---- Answered: one line where the card was ------------------------------------------------------ */
+
+.request-answered {
+  padding: var(--space-6) var(--space-8);
+}
+
+.request-answered-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-md);
-  background: var(--fill);
+  min-width: 0;
+  min-height: 24px; /* one-off: the line keeps the icon's height */
+}
+
+.request-answered-mark {
+  flex: none;
   color: var(--muted);
+}
+
+/* The title gives way first: the outcome or the answer is what the line is for. */
+.request-answered-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-callout);
+  font-weight: 600;
+}
+
+.request-answered-text {
+  flex: 0 1 auto;
+  max-width: 70%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--type-callout);
+  color: var(--muted);
+}
+
+.request-answered-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-answered-text.ok {
+  color: var(--ok);
+}
+
+.request-answered-text > .icon {
+  flex: none;
+}
+
+/* What appears inside a card (the More list, the answered line) fades in as the shell reshapes. */
+.request-reveal {
+  animation: request-reveal var(--duration-relaxed) var(--ease-enter) both;
+}
+
+@keyframes request-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }

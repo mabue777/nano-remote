@@ -53,14 +53,14 @@ test('the app badge shows 1 for the pending approval and clears once it is answe
   await expect.poll(() => badgeCalls(page)).toContain(1);
 
   await page.getByRole('list', { name: 'Sessions' }).getByRole('link', { name: new RegExp(TITLES[1]!) }).click();
-  await expect(page.getByLabel('Task state')).toHaveText('Waiting for your approval');
+  await expect(page.getByLabel('Session status')).toHaveText('Needs approval');
   const card = page.getByRole('group', { name: 'Approval: Run this command?' });
   await card.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(card).toHaveCount(0);
   await expect.poll(async () => (await badgeCalls(page)).at(-1)).toBe(0);
   const calls = await badgeCalls(page);
   expect(calls.slice(calls.indexOf(1))).toEqual([1, 0]); // 1, then 0, nothing else after
-  await expect(page.getByLabel('Task state')).toHaveText('Finished');
+  await expect(page.getByLabel('Session status')).toHaveText('Finished');
 });
 
 test('landing on a session with a pending request shows the card in the viewport', async ({ page, request }) => {
@@ -78,5 +78,5 @@ test('landing on a session with a pending request shows the card in the viewport
   await expect(card.getByRole('heading', { name: 'Run this command?' })).toBeInViewport();
   await expect(card.getByRole('button', { name: 'Accept', exact: true })).toBeInViewport();
   await expect(page.getByText('Step 1:')).not.toBeInViewport();
-  await expect(page.getByLabel('Task state')).toHaveText('Finished'); // idle after its turn; the card is the call to action
+  await expect(page.getByLabel('Session status')).toHaveText('Finished'); // idle after its turn; the card is the call to action
 });

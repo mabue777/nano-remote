@@ -1,11 +1,11 @@
-// The session page, /s/:sessionId: the turn list, the pending-request banner, the approval and question
-// cards (approvals/), the shared floating composer (ui/Composer.tsx), and the item detail sheet (views/:
+// The session page, /s/:sessionId: the turn list, the approval and question cards and the lines they leave
+// once answered (approvals/), the shared floating composer (ui/Composer.tsx), and the item detail sheet (views/:
 // command output, the turn's diff). All state and rules live in SessionModel and ApprovalsModel; this file
 // renders them and owns only the DOM work (auto-scroll, the pull-down gesture, keeping the reading position
 // when older turns are put in front, the expand and collapse motion, and a sent message rising out of the
 // composer). The transcript is the new look's (Transcript.tsx): flat one-line rows that
 // open under themselves, "Thinking", the paced answer, "Worked for" and the "N previous messages" fold.
-import type { ComponentChildren } from 'preact';
+import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
@@ -18,8 +18,9 @@ import type { AgentsSource } from '../capabilities';
 import { SessionActions } from '../session-actions';
 import { ActionsSheet, DeleteConfirmSheet } from '../SessionActionsSheets';
 import { useModel } from '../use-model';
-import { ApprovalsModel } from './approvals/approvals-model';
-import { InlineRequests, PinnedQuestions } from './approvals/RequestCards';
+import { placeByTurn, placeInTurn } from './approvals/answered';
+import { ApprovalsModel, type AnsweredRow } from './approvals/approvals-model';
+import { AnsweredLines, InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import type { AttachmentEntry } from './attachments/composer';
 import { collapse, reducedMotion, useAutoScroll, useFlip, type Flip } from './motion-hooks';
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
@@ -112,6 +113,18 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
     });
   }, [model, flip]);
 
+  // A card that is answered turns into its one-line answered state where it was: measure before that
+  // renders, so the card's grey shell shrinks to the line and what follows slides up.
+  useLayoutEffect(() => {
+    let answered = requests.answered.length;
+    return requests.subscribe(() => {
+      const next = requests.answered.length;
+      if (next === answered) return;
+      answered = next;
+      flip.prepare();
+    });
+  }, [requests, flip]);
+
   // After every render: keep the reading position when older turns were put in front; follow the bottom
   // again after a send or the jump pill.
   useLayoutEffect(() => {
@@ -147,9 +160,8 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   const pull = usePullToRefresh(() => (scroller.current?.scrollTop ?? 0) <= 0, loadOlder);
 
   const status = model.status;
-  const task = model.taskState;
-  const pending = model.pending;
   const turns = model.turns;
+  const answered = placeByTurn(requests.answered, new Set(turns.map((t) => t.turnId)));
   const steers = model.steerRows;
   const running = model.runningTurnId !== undefined;
   // Sending (technique 6): the message rises out of the composer, the field clears in the same frame, and the
@@ -178,15 +190,11 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         <h1 class="session-heading">
           {model.title}
           {model.bypass && (
-            <span class="bypass-tag" title="Approvals bypassed: the agent runs everything without asking" aria-label="Approvals bypassed">
-              Bypass
+            <span class="pill session-tag" title="Approvals bypassed: the agent runs everything without asking" aria-label="Approvals bypassed">
+              Full access
             </span>
           )}
         </h1>
-        <p class={`task-state status-word small ${task.tone}`} aria-label="Task state" data-tone={task.tone}>
-          <span class="dot" aria-hidden="true" />
-          {task.label}
-        </p>
         {/* One footnote line: agent · folder · model · effort, then Change (a control) where the agent allows it. */}
         <p class="session-meta-line small">
           {model.agentId ?? ''}
@@ -223,22 +231,6 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
           )}
         </p>
       </div>
-      {model.needsDecision && (
-        <p class="decision-notice small" role="alert" aria-label="Needs your decision">
-          <span class="dot" aria-hidden="true" />
-          {pending.approvals > 0 && (
-            <span aria-label={`${pending.approvals} approval${pending.approvals === 1 ? '' : 's'} waiting`}>
-              {pending.approvals} approval{pending.approvals === 1 ? '' : 's'} waiting
-            </span>
-          )}
-          {pending.approvals > 0 && pending.inputs > 0 && ' · '}
-          {pending.inputs > 0 && (
-            <span aria-label={`${pending.inputs} question${pending.inputs === 1 ? '' : 's'} waiting`}>
-              {pending.inputs} question{pending.inputs === 1 ? '' : 's'} waiting
-            </span>
-          )}
-        </p>
-      )}
       <BackgroundTasks rows={model.backgroundTasks} model={model} flip={flip} scroller={scroller} />
       {model.openError !== undefined && (
         <p class="error" role="alert">
@@ -281,7 +273,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         ) : (
           <ol class="turns" aria-label="Turns">
             {turns.map((turn) => (
-              <Turn key={turn.turnId} turn={turn} model={model} flip={flip} scroller={scroller} />
+              <Turn key={turn.turnId} turn={turn} model={model} flip={flip} scroller={scroller} answered={answered.byTurn.get(turn.turnId) ?? NO_ROWS} />
             ))}
           </ol>
         )}
@@ -292,9 +284,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             ))}
           </ul>
         )}
-        <div data-flip-key="requests">
-          <InlineRequests model={requests} />
-        </div>
+        <InlineRequests model={requests} answered={answered.orphans} />
         </div>
       </section>
 
@@ -395,12 +385,23 @@ interface TurnProps {
   model: SessionModel;
   flip: Flip;
   scroller: { current: HTMLElement | null };
+  /** The turn's answered approvals and questions, each placed after its item. */
+  answered: readonly AnsweredRow[];
 }
 
-function Turn({ turn, model, flip, scroller }: TurnProps) {
+const NO_ROWS: readonly AnsweredRow[] = [];
+
+function Turn({ turn, model, flip, scroller, answered }: TurnProps) {
   const layout = layoutTurn(turn.items, turn.final);
   const foldable = turn.final && layout.work.length > 0;
-  const shown = (item: ItemRow) => <ItemView key={item.itemId} item={item} model={model} flip={flip} scroller={scroller} />;
+  const visible = [...layout.lead, ...(!foldable || turn.unfolded ? layout.work : []), ...(layout.answer !== undefined ? [layout.answer] : [])];
+  const lines = placeInTurn(answered, new Set(visible.map((item) => item.itemId)));
+  const shown = (item: ItemRow) => (
+    <Fragment key={item.itemId}>
+      <ItemView item={item} model={model} flip={flip} scroller={scroller} />
+      <AnsweredLines rows={lines.after.get(item.itemId) ?? NO_ROWS} />
+    </Fragment>
+  );
   return (
     <li class={`turn ${turn.status}`} data-turn-status={turn.status}>
       {layout.lead.map(shown)}
@@ -408,6 +409,7 @@ function Turn({ turn, model, flip, scroller }: TurnProps) {
       {(!foldable || turn.unfolded) && layout.work.map(shown)}
       {turn.workedFor !== undefined && <WorkedFor label={turn.workedFor} flipKey={`${turn.turnId}/worked`} />}
       {layout.answer !== undefined && shown(layout.answer)}
+      <AnsweredLines rows={lines.end} />
       {turn.thinking && <Thinking flipKey={`${turn.turnId}/thinking`} />}
       {turn.changes !== undefined && (
         <button type="button" class="link small turn-changes" data-flip-key={`${turn.turnId}/changes`} onClick={() => model.openChanges(turn.turnId)}>

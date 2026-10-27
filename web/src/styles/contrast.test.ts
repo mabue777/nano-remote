@@ -26,6 +26,7 @@ const TEXT_PAIRS: [text: string, surface: string][] = [
   ['--primary-text', '--error'], // destructive buttons
   ['--ok', '--bg'],
   ['--ok', '--surface'], // the keep-awake status in its card
+  ['--ok', '--fill'], // "Approved" on an answered approval card
   ['--diff-add', '--bg'],
   ['--diff-add', '--surface'],
   ['--diff-add', '--fill'], // counts on the diff file rows

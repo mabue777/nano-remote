@@ -274,3 +274,41 @@ body:has(.lab[data-look='now']) {
   display: flex;
   gap: var(--space-3);
 }
+
+/* Request cards before look step 4 (the Now look's own markup, LabSession.tsx): a white card with an outline,
+   outlined options with a visible radio. The app's cards are the New look's (RequestCards.css). */
+:where(.lab[data-look='now']) .request-card {
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+:where(.lab[data-look='now']) .request-title {
+  font: inherit;
+  font-weight: 600;
+}
+
+:where(.lab[data-look='now']) .request-actions button {
+  flex: 1 1 40%;
+}
+
+:where(.lab[data-look='now']) .option {
+  min-height: var(--touch);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+:where(.lab[data-look='now']) .option + .option {
+  margin-top: var(--space-3);
+}
+
+:where(.lab[data-look='now']) .option input {
+  position: static;
+  opacity: 1;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+}

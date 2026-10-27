@@ -23,7 +23,6 @@ import {
   TASK_LINGER_S,
   queuedText,
   stopConfirmText,
-  taskStateOf,
   turnRow,
   unwrapShell,
   usageLine,
@@ -283,16 +282,15 @@ describe('SessionModel: what the screen shows', () => {
     expect(changes).toHaveBeenCalled();
   });
 
-  it('pending counters and the "needs your decision" banner follow the Journal', async () => {
+  it('pending counters follow the Journal', async () => {
     const { model, live } = await setup();
-    expect(model.needsDecision).toBe(false);
+    expect(model.pending.total).toBe(0);
     live(1, [
       ['approval/request', { request: approval('req_1') }],
       ['input/request', { request: inputRequest('req_2') }],
       ['status/changed', { status: 'waiting_approval' }],
     ]);
     expect(model.pending).toEqual({ approvals: 1, inputs: 1, total: 2 });
-    expect(model.needsDecision).toBe(true);
     expect(model.status.label).toBe('Needs approval');
     live(4, [['request/resolved', { requestId: 'req_1', kind: 'command', resolvedBy: 'dev_other', decision: 'accept' }]]);
     expect(model.pending.total).toBe(1);
@@ -633,30 +631,16 @@ describe('SessionModel: older turns (session/history)', () => {
   });
 });
 
-describe('task state line', () => {
-  it('taskStateOf: one of seven states from status and the last turn, toned like the list', () => {
-    expect(taskStateOf({ status: 'running' })).toEqual({ label: 'Running', tone: 'busy' });
-    expect(taskStateOf({ status: 'waiting_approval' })).toEqual({ label: 'Waiting for your approval', tone: 'attention' });
-    expect(taskStateOf({ status: 'waiting_input' })).toEqual({ label: 'Waiting for your answer', tone: 'attention' });
-    expect(taskStateOf({ status: 'error' })).toEqual({ label: 'Failed', tone: 'error' });
-    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'completed' })).toEqual({ label: 'Finished', tone: 'ok' });
-    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'failed' })).toEqual({ label: 'Failed', tone: 'error' });
-    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'interrupted' })).toEqual({ label: 'Interrupted', tone: 'muted' });
-    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'inProgress' })).toEqual({ label: 'Running', tone: 'busy' });
-    expect(taskStateOf({ status: 'idle' })).toEqual({ label: 'Idle', tone: 'muted' });
-    expect(taskStateOf({ status: 'closed', lastTurnStatus: 'completed' })).toEqual({ label: 'Finished', tone: 'muted' });
-    expect(taskStateOf({ status: 'idle', lastTurnStatus: 'paused' as never })).toEqual({ label: 'Idle', tone: 'muted' });
-  });
-
-  it('SessionModel.taskState follows the list row before open and the view after', async () => {
+describe('header status word', () => {
+  it('SessionModel.status follows the list row before open and the view after', async () => {
     const { model, live, client } = await setup({ open: false });
-    expect(model.taskState.label).toBe('Idle');
+    expect(model.status.label).toBe('Idle');
     model.start();
     client.last('session/open').resolve(snapshot(10, [turn('t1', { status: 'completed', completedAt: 20 })]));
     await settle();
-    expect(model.taskState).toEqual({ label: 'Finished', tone: 'ok' });
+    expect(model.status).toEqual({ label: 'Finished', tone: 'ok', status: 'idle' });
     live(11, [['status/changed', { status: 'waiting_approval' }]]);
-    expect(model.taskState.label).toBe('Waiting for your approval');
+    expect(model.status).toMatchObject({ label: 'Needs approval', tone: 'attention' });
   });
 });
 

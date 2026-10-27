@@ -153,6 +153,7 @@ test('focus zoom: every field in the real app is at least 16 px (pair, new sessi
       },
     },
   });
+  await page.getByText('Other…', { exact: true }).click(); // its field shows once "Other…" is chosen
   await expect(page.getByRole('textbox', { name: 'Other answer to Sections' })).toBeVisible();
   await expectNoFocusZoom(page, 3);
 
@@ -203,7 +204,9 @@ test('focus zoom: every field in the lab is at least 16 px, in the Now and the N
     await expectNoFocusZoom(page, 1);
     await field.fill('Keep it small.');
     await page.getByRole('button', { name: 'Send' }).click();
-    await expect(conversation.getByRole('group', { name: /^Question: / })).toBeVisible({ timeout: 15_000 });
+    const question = conversation.getByRole('group', { name: /^Question: / });
+    await expect(question).toBeVisible({ timeout: 15_000 });
+    if (look === 'New') await question.getByText('Other…', { exact: true }).click(); // its field shows once chosen
     await expectNoFocusZoom(page, look === 'New' ? 2 : 1);
     await page.goto('/lab?speed=40');
   }

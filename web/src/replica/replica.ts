@@ -70,6 +70,8 @@ export type ResolveOutcome = { status: 'ok' } | { status: 'already_resolved'; re
 export interface Resolution {
   resolvedBy: string;
   decision?: Decision;
+  /** A question's answers, when request/resolved carried them. */
+  answers?: Record<string, string[]>;
 }
 
 const RESOLUTIONS_KEPT = 200;
@@ -544,7 +546,7 @@ export class Replica {
 
   /**
    * Who resolved a request this Replica saw end, from `request/resolved` or an `already_resolved` answer
-   * (spec 5.3). Kept in memory only, for the "answered on another device" notice.
+   * (spec 5.3). Kept in memory only, for the answered line ("Approved on iPhone 15").
    */
   resolution(requestId: string): Resolution | undefined {
     return this.resolutions.get(requestId);
@@ -743,8 +745,8 @@ export class Replica {
     if (seq <= view.cursor) return true; // already applied (idempotent apply, spec 5.2)
     if (seq !== view.cursor + 1) return false;
     if (event.method === 'request/resolved') {
-      const { requestId, resolvedBy, decision } = event.params;
-      this.remember(requestId, { resolvedBy, ...(decision !== undefined ? { decision } : {}) });
+      const { requestId, resolvedBy, decision, answers } = event.params;
+      this.remember(requestId, { resolvedBy, ...(decision !== undefined ? { decision } : {}), ...(answers !== undefined ? { answers } : {}) });
     }
     applyEvent(view, event);
     reconcile(view);

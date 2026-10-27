@@ -136,7 +136,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await request.post('/test/run', { data: { sessionId: 'ses_fake_3', text: 'Sketch the README.' } });
       await expect(page.locator('[data-item="agent"]')).toHaveAttribute('data-streaming', 'true');
       await page.screenshot({ path: `${out}/${await scheme(page)}-session-streaming.png`, caret: 'hide' });
-      await expect(page.getByRole('alert', { name: 'Needs your decision' })).toBeVisible(); // the turn then waits
+      await expect(page.getByRole('group', { name: 'Approval: Run this command?' })).toBeVisible(); // the turn then waits
       await shot(page, 'session-after-stream');
     });
 
@@ -174,10 +174,113 @@ for (const colorScheme of ['light', 'dark'] as const) {
           },
         },
       });
-      const form = page.getByRole('form', { name: 'Question (the agent is waiting)' });
+      const form = page.getByRole('region', { name: 'Waiting for your answer' }).getByRole('group', { name: /^Question:/ });
       await expect(form).toBeVisible();
-      await form.getByRole('checkbox', { name: /Usage/ }).check();
+      await form.getByText('Usage', { exact: true }).click();
       await shot(page, 'question');
+    });
+
+    // Look step 4: the quiet approval and question cards and their answered line.
+    const addRequest = (request: APIRequestContext, body: Record<string, unknown>) => request.post('/test/request', { data: { sessionId: 'ses_fake_3', request: body } });
+    const openEmpty = async (page: Page, request: APIRequestContext) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_3');
+      await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+    };
+    const settle = (page: Page) => page.waitForTimeout(450); // the collapse and the fade end (300 ms)
+    const BRANCH = {
+      id: 'branch',
+      header: '',
+      question: 'Which branch should I push to?',
+      options: [
+        { label: 'fix-parser', description: 'The branch with the fix' },
+        { label: 'main', description: 'Straight to the default branch' },
+      ],
+      isOther: true,
+      isSecret: false,
+    };
+
+    test('card-approval-command, card-approval-more, card-approval-answered', async ({ page, request }) => {
+      await pair(page, request);
+      await page.goto('/s/ses_fake_2'); // seeded waiting for its command approval
+      const card = page.getByRole('group', { name: 'Approval: Run this command?' });
+      await expect(card).toBeVisible();
+      await shot(page, 'card-approval-command');
+      await card.getByRole('button', { name: 'More' }).click();
+      await expect(card.getByRole('group', { name: 'More choices' })).toBeVisible();
+      await settle(page);
+      await shot(page, 'card-approval-more');
+      await card.getByRole('button', { name: 'Accept', exact: true }).click();
+      await expect(page.getByLabel('Approval answered')).toContainText('Approved');
+      await expect(page.getByLabel('Session status')).toHaveText('Finished');
+      await settle(page);
+      await shot(page, 'card-approval-answered');
+    });
+
+    test('card-approval-files', async ({ page, request }) => {
+      await openEmpty(page, request);
+      await addRequest(request, { kind: 'fileChange', reason: 'Write the README and a note.', availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'], changes: CHANGES });
+      await expect(page.getByRole('group', { name: 'Approval: Change 3 files?' })).toBeVisible();
+      await shot(page, 'card-approval-files');
+    });
+
+    test('card-question-single, card-question-answered', async ({ page, request }) => {
+      await openEmpty(page, request);
+      await addRequest(request, { kind: 'input', isBlocking: false, questions: [BRANCH] });
+      const card = page.getByRole('group', { name: 'Question: Which branch should I push to?' });
+      await card.getByText('fix-parser', { exact: true }).click();
+      await shot(page, 'card-question-single');
+      await card.getByRole('button', { name: 'Send answer' }).click();
+      await expect(page.getByLabel('Question answered')).toContainText('fix-parser');
+      await settle(page);
+      await shot(page, 'card-question-answered');
+    });
+
+    test('card-question-multi-other', async ({ page, request }) => {
+      await openEmpty(page, request);
+      await addRequest(request, {
+        kind: 'input',
+        isBlocking: false,
+        questions: [
+          {
+            id: 'sections',
+            header: 'Sections',
+            question: 'Which sections should the README have?',
+            options: [
+              { label: 'Install', description: 'How to install.' },
+              { label: 'Usage', description: 'How to use it.' },
+            ],
+            multiSelect: true,
+            isOther: true,
+            isSecret: false,
+          },
+        ],
+      });
+      const card = page.getByRole('group', { name: 'Question: Which sections should the README have?' });
+      await card.getByText('Install', { exact: true }).click();
+      await card.getByText('Other…', { exact: true }).click();
+      await card.getByRole('textbox', { name: 'Other answer to Sections' }).fill('FAQ');
+      await page.getByRole('textbox', { name: 'Other answer to Sections' }).blur();
+      await shot(page, 'card-question-multi-other');
+    });
+
+    test('card-pinned-question', async ({ page, request }) => {
+      await openEmpty(page, request);
+      await addRequest(request, { kind: 'input', isBlocking: true, questions: [{ ...BRANCH, isOther: false }] });
+      await expect(page.getByRole('region', { name: 'Waiting for your answer' })).toBeVisible();
+      await shot(page, 'card-pinned-question');
+    });
+
+    test('card-bypass-header', async ({ page, request }) => {
+      await pair(page, request);
+      await page.getByRole('button', { name: 'New session' }).click();
+      const sheet = page.getByRole('dialog', { name: 'New session' });
+      await sheetsSettled(page);
+      await sheet.getByRole('switch', { name: 'Bypass approvals (full access)' }).click();
+      await sheet.getByLabel('Title (optional)').fill('Full access session');
+      await sheet.getByRole('button', { name: 'Start session' }).click();
+      await expect(page.getByLabel('Approvals bypassed')).toHaveText('Full access');
+      await shot(page, 'card-bypass-header');
     });
 
     test('changes', async ({ page, request }) => {

@@ -1,17 +1,35 @@
 // The New look's pieces (docs/research/visual-gap-openai-2026-10.md, ranked items 1-9, 13, 14): the flat
 // session list with host chips, the centred session header, flat tool rows, the "N previous messages" and
-// "Worked for" lines, the quiet approval and question cards and the sheets' bodies. The floating composer
-// is the app's (ui/Composer.tsx).
+// "Worked for" lines, and the sheets' bodies. The quiet approval and question cards are the app's
+// (screens/session/approvals/RequestCards.tsx) fed with the lab's fixtures; the floating composer is the
+// app's too (ui/Composer.tsx).
 // Styles: new-look.css, all under .lab[data-look='new']. The motion hooks (data-flip-key, data-shell-key,
 // data-body, Shell, lab-reveal) are the same the Now look uses, so every technique switch works in both looks.
 import type { RefObject } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { SheetHeader } from '../ui/Sheet';
-import { CrossFade, Shell } from './dom';
+import { CrossFade } from './dom';
 import { APPROVAL, QUESTION, type LabSession as Session, type ToolRow } from './fixtures';
 import type { Shown } from '../ui/motion/flip';
 import { Icon } from '../ui/Icon';
+import type { ApprovalRequestBody, Decision } from '../replica/types';
+import { approvalAnswered, questionAnswered, type AnsweredText } from '../screens/session/approvals/answered';
+import type { AnsweredRow, ApprovalCardState, QuestionCardState } from '../screens/session/approvals/approvals-model';
+import { approvalCard } from '../screens/session/approvals/decisions';
+import {
+  answerOf,
+  EMPTY_DRAFT,
+  isAnswered,
+  pickOther,
+  questionTitle,
+  questionView,
+  setOther,
+  toggleOption,
+  type Question,
+  type QuestionDraft,
+} from '../screens/session/approvals/questions';
+import { AnsweredLine, ApprovalCard, QuestionCard } from '../screens/session/approvals/RequestCards';
 import { indicatorOf, previousMessages, type Indicator } from './look';
 
 export interface NewListProps {
@@ -175,10 +193,36 @@ export function ChangesRow({ reveal, flipKey, onOpen }: { reveal: boolean; flipK
 
 export type ApprovalChoice = 'accept' | 'session' | 'decline' | 'cancel';
 
+const CHOICE: Readonly<Record<Decision, ApprovalChoice>> = { accept: 'accept', acceptForSession: 'session', decline: 'decline', cancel: 'cancel' };
+
+/** The fixture approval as the app's card sees it: every decision offered. */
+const APPROVAL_CARD: ApprovalCardState = {
+  ...approvalCard({
+    requestId: 'lab-approval',
+    kind: 'command',
+    sessionId: 'lab',
+    turnId: 't1',
+    itemId: 'lab-approval',
+    createdAt: 0,
+    command: APPROVAL.command,
+    cwd: APPROVAL.cwd,
+    reason: APPROVAL.reason,
+    availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'],
+  } as ApprovalRequestBody),
+  title: APPROVAL.title,
+};
+
+/** The fixture question: one pick from two branches, or your own words ("Other…"). */
+const LAB_QUESTION: Question = { id: 'branch', header: '', question: QUESTION.title, options: QUESTION.options, isOther: true, isSecret: false };
+
+function answeredRow(kind: 'approval' | 'question', title: string, text: AnsweredText): AnsweredRow {
+  return { requestId: `lab-${kind}`, kind, requestKind: kind === 'approval' ? 'command' : 'input', turnId: '', itemId: '', title, ...text };
+}
+
 /**
- * Item 5: a grey card, icon and bold title, the command in an inner box, one primary pill (Accept) and one
- * secondary pill (Decline); Accept for session and Cancel sit behind More. Answered, it keeps its place with
- * a check.
+ * Item 5: the app's approval card (screens/session/approvals/RequestCards.tsx) with the fixture: a grey
+ * card, icon and bold title, the command in an inner box, Accept and Decline; Accept for this session and
+ * Cancel the turn sit behind More. Answered, it keeps its place as one line with a check.
  */
 export function NewApprovalCard({
   flipKey,
@@ -193,121 +237,41 @@ export function NewApprovalCard({
   animate: boolean;
   onAnswer: (choice: ApprovalChoice) => void;
 }) {
-  const [more, setMore] = useState(false);
-  const shellClass = shelled ? ' lab-shelled' : '';
   if (state !== 'pending') {
-    const approved = state === 'approved';
-    return (
-      <section class={`lab-nl-card answered${shellClass}`} data-flip-key={flipKey} data-shell-key={flipKey} aria-label="Approval answered">
-        {shelled && <Shell />}
-        <div class={`lab-nl-card-head${animate ? ' lab-reveal' : ''}`}>
-          <Icon name={approved ? 'check' : 'x'} size={18} />
-          <span class="lab-nl-card-title">{APPROVAL.title}</span>
-          <span class={`lab-nl-answer ${approved ? 'ok' : 'muted'}`}>
-            {approved ? 'Approved' : 'Declined'}
-            {approved && <Icon name="check-circle" size={18} />}
-          </span>
-        </div>
-      </section>
-    );
+    const row = answeredRow('approval', APPROVAL.title, approvalAnswered({ by: 'me' }, state === 'approved' ? 'accept' : 'decline'));
+    return <AnsweredLine row={row} flipKey={flipKey} shelled={shelled} reveal={animate} />;
   }
-  return (
-    <section class={`lab-nl-card${shellClass}`} role="group" aria-label={`Approval: ${APPROVAL.title}`} data-flip-key={flipKey} data-shell-key={flipKey}>
-      {shelled && <Shell />}
-      <div class="lab-nl-card-head">
-        <Icon name="terminal" size={18} />
-        <h2 class="lab-nl-card-title">{APPROVAL.title}</h2>
-      </div>
-      <div class="lab-nl-inner">
-        <code class="lab-nl-command">{APPROVAL.command}</code>
-        <span class="lab-nl-inner-meta">
-          in {APPROVAL.cwd} · {APPROVAL.reason}
-        </span>
-      </div>
-      <div class="lab-nl-card-actions">
-        <button type="button" class="lab-nl-pill-button primary" onClick={() => onAnswer('accept')}>
-          Accept
-        </button>
-        <button type="button" class="lab-nl-pill-button" onClick={() => onAnswer('decline')}>
-          Decline
-        </button>
-        <button type="button" class="lab-nl-text-button lab-nl-more" aria-expanded={more} onClick={() => setMore(!more)}>
-          More
-        </button>
-      </div>
-      {more && (
-        <div class={`lab-nl-more-menu${animate ? ' lab-reveal' : ''}`} role="group" aria-label="More choices">
-          <button type="button" class="lab-nl-menu-row" onClick={() => onAnswer('session')}>
-            Accept for this session
-          </button>
-          <button type="button" class="lab-nl-menu-row danger" onClick={() => onAnswer('cancel')}>
-            Cancel the turn
-          </button>
-        </div>
-      )}
-    </section>
-  );
+  // The lab plays its own haptic tick (behind its switch), so the card's stays off.
+  return <ApprovalCard card={APPROVAL_CARD} flipKey={flipKey} shelled={shelled} reveal={animate} haptic={NO_HAPTIC} onDecide={(decision) => onAnswer(CHOICE[decision])} />;
 }
 
-/** Item 13: the question card, shaped like the approval card: options as rows in one inner box, one Send pill. */
+const NO_HAPTIC = () => undefined;
+
+/** Item 13: the app's question card with the fixture; answered, it keeps its place with a check and the answer. */
 export function NewQuestionCard({ flipKey, answer, shelled, animate, onAnswer }: { flipKey: string; answer: string | null; shelled: boolean; animate: boolean; onAnswer: (answer: string) => void }) {
-  const [choice, setChoice] = useState<string | null>(null);
-  const [other, setOther] = useState('');
-  const shellClass = shelled ? ' lab-shelled' : '';
+  const [draft, setDraft] = useState<QuestionDraft>(EMPTY_DRAFT);
   if (answer !== null) {
-    return (
-      <section class={`lab-nl-card answered${shellClass}`} data-flip-key={flipKey} data-shell-key={flipKey} aria-label="Question answered">
-        {shelled && <Shell />}
-        <div class={`lab-nl-card-head${animate ? ' lab-reveal' : ''}`}>
-          <Icon name="check" size={18} />
-          <span class="lab-nl-card-title">{QUESTION.title}</span>
-          <span class="lab-nl-answer muted">{answer}</span>
-        </div>
-      </section>
-    );
+    return <AnsweredLine row={answeredRow('question', QUESTION.title, questionAnswered({ by: 'me' }, answer))} flipKey={flipKey} shelled={shelled} reveal={animate} />;
   }
-  const picked = choice === 'other' ? other.trim() : choice;
+  const card: QuestionCardState = {
+    requestId: 'lab-question',
+    title: questionTitle([LAB_QUESTION]),
+    blocking: false,
+    questions: [questionView(LAB_QUESTION, draft)],
+    canSubmit: isAnswered(LAB_QUESTION, draft),
+    sending: false,
+  };
   return (
-    <section class={`lab-nl-card${shellClass}`} role="group" aria-label={`Question: ${QUESTION.title}`} data-flip-key={flipKey} data-shell-key={flipKey}>
-      {shelled && <Shell />}
-      <div class="lab-nl-card-head">
-        <Icon name="question" size={18} />
-        <h2 class="lab-nl-card-title">{QUESTION.title}</h2>
-      </div>
-      <div class="lab-nl-inner lab-nl-options" role="radiogroup" aria-label="Answers">
-        {[...QUESTION.options, { label: 'other', description: '' }].map((option) => {
-          const selected = choice === option.label;
-          return (
-            <label key={option.label} class={`lab-nl-option${selected ? ' selected' : ''}`}>
-              <input type="radio" name="lab-question" checked={selected} onChange={() => setChoice(option.label)} />
-              <span class="lab-nl-radio" aria-hidden="true">
-                {selected && <Icon name="check" size={14} />}
-              </span>
-              {option.label === 'other' ? (
-                <input
-                  class="lab-nl-other"
-                  aria-label="Other answer"
-                  placeholder="Other…"
-                  value={other}
-                  onFocus={() => setChoice('other')}
-                  onInput={(event) => setOther((event.currentTarget as HTMLInputElement).value)}
-                />
-              ) : (
-                <span class="lab-nl-option-text">
-                  <span>{option.label}</span>
-                  <span class="lab-nl-inner-meta">{option.description}</span>
-                </span>
-              )}
-            </label>
-          );
-        })}
-      </div>
-      <div class="lab-nl-card-actions">
-        <button type="button" class="lab-nl-pill-button primary" disabled={picked === null || picked === ''} onClick={() => picked && onAnswer(picked)}>
-          Send answer
-        </button>
-      </div>
-    </section>
+    <QuestionCard
+      card={card}
+      flipKey={flipKey}
+      shelled={shelled}
+      reveal={animate}
+      onToggle={(_, label) => setDraft(toggleOption(LAB_QUESTION, draft, label))}
+      onOther={() => setDraft(pickOther(LAB_QUESTION, draft))}
+      onText={(_, text) => setDraft(setOther(LAB_QUESTION, draft, text))}
+      onSubmit={() => onAnswer(answerOf(LAB_QUESTION, draft).join(', '))}
+    />
   );
 }
 

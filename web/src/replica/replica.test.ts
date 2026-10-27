@@ -396,6 +396,9 @@ describe('Replica: requests and approvals (spec 5.3)', () => {
     expect(replica.session(SID)!.approvals).toEqual({});
     expect(replica.resolution('r1')).toEqual({ resolvedBy: 'dev_mac', decision: 'decline' });
     expect(replica.resolution('r404')).toBeUndefined();
+    client.notify('input/request', ev(3, 'input/request', { request: inputRequest('q1') }).params);
+    client.notify('request/resolved', ev(4, 'request/resolved', { requestId: 'q1', kind: 'input', resolvedBy: 'dev_mac', answers: { folder: ['Desktop'] } }).params);
+    expect(replica.resolution('q1')).toEqual({ resolvedBy: 'dev_mac', answers: { folder: ['Desktop'] } });
   });
 
   it('interrupt sends turn/interrupt', async () => {

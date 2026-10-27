@@ -122,7 +122,7 @@ test('Stop asks first while tasks run: "Keep running" stops nothing, "Stop anywa
 
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByRole('dialog', { name: 'Stop the turn?' }).getByRole('button', { name: 'Stop anyway' }).click();
-  await expect(page.getByLabel('Task state')).toHaveText('Interrupted');
+  await expect(page.getByLabel('Session status')).toHaveText('Interrupted');
   expect(await lastInterrupt(request)).toMatchObject({ sessionId: SESSION });
   const strip = page.getByRole('region', { name: /Background tasks/ });
   await expect(strip.getByRole('heading')).toHaveText('Background tasks');

@@ -50,16 +50,15 @@
 }
 
 /* Primary actions are ink (item 1), pills (item 14). The app's floating composer keeps its own round
-   buttons and bare field (ui/Composer.css). */
-.lab[data-look='new'] button:not(.composer-round) {
+   buttons and bare field (ui/Composer.css), and the app's request cards their own (RequestCards.css). */
+.lab[data-look='new'] button:not(.composer-round):where(:not(.request-card button)) {
   border-color: transparent;
   background: var(--fill);
   border-radius: var(--radius-pill);
   font-weight: 500;
 }
 
-.lab[data-look='new'] button.primary,
-.lab[data-look='new'] .lab-nl-pill-button.primary {
+.lab[data-look='new'] button.primary {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--primary-text);
@@ -476,191 +475,6 @@
   background: var(--surface-raised);
   color: var(--text);
   box-shadow: var(--shadow-lg), var(--shadow-ring);
-}
-
-/* ---------- Approval and question cards (items 5, 13) ---------- */
-.lab[data-look='new'] .lab-nl-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-8);
-  border-radius: var(--radius-card);
-  background: var(--fill);
-  overflow-wrap: anywhere;
-}
-
-/* Expand and collapse on Smooth: the grey background is the shell that scales (lab.css .lab-shell). */
-.lab[data-look='new'] .lab-nl-card.lab-shelled {
-  background: none;
-}
-
-.lab[data-look='new'] .lab-nl-card > .lab-shell {
-  inset: 0;
-  border: 0;
-  background: var(--fill);
-}
-
-.lab[data-look='new'] .lab-nl-card.answered {
-  padding: var(--space-6) var(--space-8);
-}
-
-.lab-nl-card-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.lab-nl-card-title {
-  flex: 1;
-  min-width: 0;
-  font: var(--type-headline);
-}
-
-.lab-nl-answer {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font: var(--type-callout);
-}
-
-.lab-nl-answer.ok {
-  color: var(--ok);
-}
-
-.lab-nl-answer.muted {
-  color: var(--muted);
-}
-
-.lab-nl-inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-6) var(--space-7);
-  border-radius: var(--radius-inner);
-  background: var(--surface);
-}
-
-.lab-nl-command {
-  font: var(--type-code);
-  font-size: 14px; /* one-off: the command is the card's subject */
-}
-
-.lab-nl-inner-meta {
-  font: var(--type-footnote);
-  color: var(--muted);
-}
-
-.lab-nl-card-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.lab[data-look='new'] .lab-nl-pill-button {
-  min-height: var(--touch);
-  padding: 0 var(--space-10);
-  border: 0;
-  background: var(--surface);
-  color: var(--text);
-  font: var(--type-callout);
-  font-weight: 600;
-}
-
-.lab[data-look='new'] .lab-nl-more {
-  margin-left: auto;
-}
-
-.lab[data-look='new'] .lab-nl-more-menu {
-  display: flex;
-  flex-direction: column;
-  border-radius: var(--radius-inner);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.lab[data-look='new'] .lab-nl-menu-row {
-  min-height: var(--touch);
-  padding: 0 var(--space-7);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--text);
-  font: var(--type-callout);
-  text-align: left;
-}
-
-.lab[data-look='new'] .lab-nl-menu-row + .lab-nl-menu-row {
-  border-top: 0.5px solid var(--line);
-}
-
-.lab[data-look='new'] .lab-nl-menu-row.danger {
-  color: var(--error);
-}
-
-.lab-nl-options {
-  gap: 0;
-  padding: 0;
-}
-
-.lab-nl-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  min-height: 52px;
-  padding: var(--space-3) var(--space-7);
-}
-
-.lab-nl-option + .lab-nl-option {
-  border-top: 0.5px solid var(--line);
-}
-
-/* The native radio stays for keyboard and screen readers, drawn by .lab-nl-radio. */
-.lab-nl-option input[type='radio'] {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-}
-
-.lab-nl-radio {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-round);
-  border: 1.5px solid var(--text-tertiary);
-}
-
-.lab-nl-option.selected .lab-nl-radio {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: var(--primary-text);
-}
-
-.lab-nl-option:has(input:focus-visible) .lab-nl-radio {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.lab-nl-option-text {
-  display: flex;
-  flex-direction: column;
-  font: var(--type-callout);
-}
-
-.lab[data-look='new'] .lab-nl-other {
-  flex: 1;
-  min-width: 0;
-  padding: var(--space-3) 0;
-  background: none;
-  border: 0;
-  font-size: 16px; /* below 16 px iOS zooms on focus */
 }
 
 /* The composer (item 3) is the app's: ui/Composer.css. */

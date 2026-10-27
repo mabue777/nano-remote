@@ -1,30 +1,37 @@
 // The session's pending requests as cards (spec 5.3): approval cards with their decision buttons, question
-// forms, and the short notices left when a card goes away because someone else answered.
+// forms, and the one-line answered state each card leaves behind.
 //
 // The cards come straight from the Replica's view (`approvals`, `inputs`), which session/open fills with
 // `pending` on open and after every reconnect and which `request/resolved` empties, so a card shows as soon
 // as the view has it and goes when the host says so. This model adds what only the screen knows: the
-// decision or answer in flight, a refused send's error, the question drafts, and the notices.
+// decision or answer in flight, a refused send's error, the question drafts, and the answered lines.
 //
-// Notices: a card that disappears while this device was not answering it, or whose answer came back
-// `already_resolved`, leaves "Answered on <device>" (the device named by request/resolved, looked up with
-// device/list), or "Withdrawn by the agent". Notices fade after `noticeMs`.
+// Answered lines: a card that goes away stays where it was as one line (answered.ts): "Approved",
+// "Declined", the answer to a question, or who resolved it elsewhere ("Approved on iPhone 15", the device
+// named by request/resolved and looked up with device/list; "Withdrawn by the agent"). The lines live as
+// long as this model (the session screen); the Replica keeps resolutions in memory only and session/open
+// does not list resolved requests, so a reload starts without them.
 import type { Resolution, ResolveOutcome } from '../../../replica/replica';
 import type { ApprovalRequestBody, Decision, InputRequestBody, SessionView } from '../../../replica/types';
 import { errorText, Model } from '../../model';
-import { approvalCard, resolvedNotice, type ApprovalCardView } from './decisions';
+import { approvalAnswered, questionAnswered, type AnsweredText, type Resolver } from './answered';
+import { approvalCard, type ApprovalCardView } from './decisions';
 import {
-  allowsText,
   answersOf,
+  answerSummary,
   canSubmit,
   EMPTY_DRAFT,
-  isMulti,
+  pickOther,
+  questionTitle,
+  questionView,
   setOther,
   toggleOption,
   type QuestionDraft,
+  type QuestionView,
 } from './questions';
 
-/** What the cards need from the Replica; Replica fits. */
+export type { QuestionView } from './questions';
+
 export interface ApprovalsReplica {
   session(sessionId: string): SessionView | undefined;
   subscribe(listener: () => void): () => void;
@@ -40,8 +47,6 @@ export interface ApprovalsModelOptions {
   clientId?: string;
   /** Display name of a device by clientId (device/list). */
   deviceName?: (clientId: string) => Promise<string | undefined>;
-  /** How long a notice stays; 0 keeps it until dismissed. */
-  noticeMs?: number;
 }
 
 export interface ApprovalCardState extends ApprovalCardView {
@@ -50,22 +55,10 @@ export interface ApprovalCardState extends ApprovalCardView {
   error?: string;
 }
 
-export interface QuestionView {
-  id: string;
-  header: string;
-  question: string;
-  options: { label: string; description: string; selected: boolean }[];
-  multi: boolean;
-  /** Free text offered: "Other" next to options, or the only answer when there are none. */
-  text: boolean;
-  /** True when the free text is the "Other" choice next to options. */
-  isOther: boolean;
-  secret: boolean;
-  other: string;
-}
-
 export interface QuestionCardState {
   requestId: string;
+  /** The bold title: the question, or "N questions". */
+  title: string;
   blocking: boolean;
   questions: QuestionView[];
   canSubmit: boolean;
@@ -73,20 +66,32 @@ export interface QuestionCardState {
   error?: string;
 }
 
-export interface Notice {
+/** A card that was answered, as the one line it leaves where it was. */
+export interface AnsweredRow extends AnsweredText {
   requestId: string;
+  kind: 'approval' | 'question';
+  /** The card's kind of approval (command, fileChange, permission) or "input": picks the icon. */
+  requestKind: string;
+  /** Where it belongs in the conversation. */
+  turnId: string;
+  itemId: string;
   title: string;
-  text: string;
 }
 
-const NOTICE_MS = 5000;
+/** What is kept of a request on screen, to describe it once it is gone. */
+interface Shown {
+  kind: 'approval' | 'question';
+  requestKind: string;
+  turnId: string;
+  itemId: string;
+  title: string;
+  questions: InputRequestBody['questions'];
+}
 
-function titleOf(request: ApprovalRequestBody | InputRequestBody): string {
-  if (request.kind === 'input') {
-    const first = request.questions[0];
-    return first === undefined ? 'Question' : first.header !== '' ? first.header : first.question;
-  }
-  return approvalCard(request).title;
+function shownOf(request: ApprovalRequestBody | InputRequestBody): Shown {
+  const base = { requestKind: request.kind, turnId: request.turnId, itemId: request.itemId };
+  if (request.kind === 'input') return { ...base, kind: 'question', title: questionTitle(request.questions), questions: request.questions };
+  return { ...base, kind: 'approval', title: approvalCard(request).title, questions: [] };
 }
 
 export class ApprovalsModel extends Model {
@@ -94,15 +99,16 @@ export class ApprovalsModel extends Model {
   private readonly replica: ApprovalsReplica;
   private readonly clientId: string | undefined;
   private readonly deviceName: ((clientId: string) => Promise<string | undefined>) | undefined;
-  private readonly noticeMs: number;
   /** requestId -> what is being sent for it. */
   private readonly sending = new Map<string, Decision | 'answer'>();
+  /** requestId -> the answers being sent, for the answered line. */
+  private readonly sentAnswers = new Map<string, Record<string, string[]>>();
   private readonly errors = new Map<string, string>();
   private readonly drafts = new Map<string, Record<string, QuestionDraft>>();
-  /** Requests on screen at the last change, with their title, to notice the ones that go. */
-  private shown = new Map<string, string>();
-  private noticeList: Notice[] = [];
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Requests on screen at the last change, to describe the ones that go. */
+  private shown = new Map<string, Shown>();
+  /** Answered lines, in the order the cards were answered. */
+  private answeredRows = new Map<string, AnsweredRow>();
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -112,7 +118,6 @@ export class ApprovalsModel extends Model {
     this.replica = options.replica;
     this.clientId = options.clientId;
     this.deviceName = options.deviceName;
-    this.noticeMs = options.noticeMs ?? NOTICE_MS;
     this.shown = this.current();
     this.unsubscribe = this.replica.subscribe(() => {
       this.reconcile();
@@ -123,8 +128,6 @@ export class ApprovalsModel extends Model {
   dispose(): void {
     this.disposed = true;
     this.unsubscribe();
-    for (const timer of this.timers.values()) clearTimeout(timer);
-    this.timers.clear();
   }
 
   // ---- reading ----------------------------------------------------------------------------------
@@ -162,8 +165,9 @@ export class ApprovalsModel extends Model {
     return this.questions.filter((q) => q.blocking);
   }
 
-  get notices(): readonly Notice[] {
-    return this.noticeList;
+  /** Every answered line, in the order the cards were answered. */
+  get answered(): AnsweredRow[] {
+    return [...this.answeredRows.values()];
   }
 
   get count(): number {
@@ -176,21 +180,9 @@ export class ApprovalsModel extends Model {
     const error = this.errors.get(request.requestId);
     return {
       requestId: request.requestId,
+      title: questionTitle(request.questions),
       blocking: request.isBlocking,
-      questions: request.questions.map((q) => {
-        const draft = drafts[q.id] ?? EMPTY_DRAFT;
-        return {
-          id: q.id,
-          header: q.header,
-          question: q.question,
-          options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description, selected: draft.selected.includes(o.label) })),
-          multi: isMulti(q),
-          text: allowsText(q),
-          isOther: q.isOther && (q.options ?? []).length > 0,
-          secret: q.isSecret,
-          other: draft.other,
-        };
-      }),
+      questions: request.questions.map((q) => questionView(q, drafts[q.id])),
       canSubmit: canSubmit(request, drafts) && !this.sending.has(request.requestId),
       sending: this.sending.has(request.requestId),
       ...(error !== undefined ? { error } : {}),
@@ -212,6 +204,11 @@ export class ApprovalsModel extends Model {
     this.edit(requestId, questionId, (q, d) => toggleOption(q, d, label));
   }
 
+  /** Taps the "Other…" row of a question. */
+  chooseOther(requestId: string, questionId: string): void {
+    this.edit(requestId, questionId, (q, d) => pickOther(q, d));
+  }
+
   /** Types the free-text answer of a question. */
   setText(requestId: string, questionId: string, text: string): void {
     this.edit(requestId, questionId, (q, d) => setOther(q, d, text));
@@ -224,16 +221,8 @@ export class ApprovalsModel extends Model {
     const drafts = this.drafts.get(requestId) ?? {};
     if (!canSubmit(request, drafts)) return;
     const answers = answersOf(request, drafts);
+    this.sentAnswers.set(requestId, answers);
     await this.send(requestId, 'answer', () => this.replica.answerInput(this.sessionId, requestId, answers));
-  }
-
-  dismissNotice(requestId: string): void {
-    const timer = this.timers.get(requestId);
-    if (timer !== undefined) clearTimeout(timer);
-    this.timers.delete(requestId);
-    const before = this.noticeList.length;
-    this.noticeList = this.noticeList.filter((n) => n.requestId !== requestId);
-    if (this.noticeList.length !== before) this.changed();
   }
 
   // ---- internals --------------------------------------------------------------------------------
@@ -250,70 +239,96 @@ export class ApprovalsModel extends Model {
   }
 
   private async send(requestId: string, what: Decision | 'answer', call: () => Promise<ResolveOutcome>): Promise<void> {
-    const title = this.shown.get(requestId) ?? 'Request';
+    const shown = this.shown.get(requestId);
     this.sending.set(requestId, what);
     this.errors.delete(requestId);
     this.changed();
     try {
       const outcome = await call();
-      if (outcome.status === 'already_resolved') this.notice(requestId, title, outcome.resolvedBy);
-      else if (outcome.status === 'not_found') this.addNotice({ requestId, title, text: 'No longer waiting for an answer' });
+      if (shown !== undefined) {
+        if (outcome.status === 'ok') this.answer(requestId, shown, { by: 'me' }, what);
+        else if (outcome.status === 'not_found') this.answer(requestId, shown, { by: 'gone' });
+        else this.answerElsewhere(requestId, shown, outcome.resolvedBy, this.replica.resolution(requestId));
+      }
     } catch (error) {
       this.errors.set(requestId, `Not sent: ${errorText(error)}`);
     } finally {
       this.sending.delete(requestId);
+      this.sentAnswers.delete(requestId);
       this.changed();
     }
   }
 
-  private current(): Map<string, string> {
+  private current(): Map<string, Shown> {
     const view = this.view;
-    const now = new Map<string, string>();
+    const now = new Map<string, Shown>();
     if (view === undefined) return now;
-    for (const request of Object.values(view.approvals)) now.set(request.requestId, titleOf(request));
-    for (const request of Object.values(view.inputs)) now.set(request.requestId, titleOf(request));
+    for (const request of Object.values(view.approvals)) now.set(request.requestId, shownOf(request));
+    for (const request of Object.values(view.inputs)) now.set(request.requestId, shownOf(request));
     return now;
   }
 
-  /** Cards that went away: a notice unless this device answered them; their local state is dropped. */
+  /** Cards that went away leave their answered line; their local state is dropped. */
   private reconcile(): void {
     const now = this.current();
-    for (const [requestId, title] of this.shown) {
+    for (const [requestId, shown] of this.shown) {
       if (now.has(requestId)) continue;
       this.drafts.delete(requestId);
       this.errors.delete(requestId);
-      // Our own answer in flight: its outcome decides (already_resolved names the winner).
-      if (this.sending.has(requestId)) continue;
-      this.notice(requestId, title, this.replica.resolution(requestId)?.resolvedBy);
+      const what = this.sending.get(requestId);
+      // Our own answer in flight: the card turns into our line at once (the outcome corrects it if
+      // someone else was first), so it never vanishes before its line shows.
+      if (what !== undefined) this.answer(requestId, shown, { by: 'me' }, what);
+      else {
+        const resolution = this.replica.resolution(requestId);
+        this.answerElsewhere(requestId, shown, resolution?.resolvedBy, resolution);
+      }
     }
     this.shown = now;
   }
 
-  private notice(requestId: string, title: string, resolvedBy: string | undefined): void {
-    const text = resolvedNotice(resolvedBy, this.clientId, undefined);
-    if (text === undefined) return;
-    this.addNotice({ requestId, title, text });
-    if (resolvedBy === undefined || resolvedBy === 'agent' || this.deviceName === undefined) return;
+  /** The line for a request resolved by `resolvedBy` (a clientId, "agent", or unknown). */
+  private answerElsewhere(requestId: string, shown: Shown, resolvedBy: string | undefined, resolution: Resolution | undefined): void {
+    if (resolvedBy === undefined) {
+      this.answer(requestId, shown, { by: 'unknown' });
+      return;
+    }
+    const decision = resolution?.decision;
+    const answers = resolution?.answers;
+    if (resolvedBy === 'agent') {
+      this.answer(requestId, shown, { by: 'agent' });
+      return;
+    }
+    if (this.clientId !== undefined && resolvedBy === this.clientId) {
+      this.answer(requestId, shown, { by: 'me' }, decision ?? 'answer', answers);
+      return;
+    }
+    this.answer(requestId, shown, { by: 'device' }, decision ?? 'answer', answers);
+    if (this.deviceName === undefined) return;
     this.deviceName(resolvedBy).then(
       (name) => {
-        const named = resolvedNotice(resolvedBy, this.clientId, name);
-        const notice = this.noticeList.find((n) => n.requestId === requestId);
-        if (this.disposed || notice === undefined || named === undefined || named === notice.text) return;
-        this.noticeList = this.noticeList.map((n) => (n.requestId === requestId ? { ...n, text: named } : n));
+        if (this.disposed || name === undefined || !this.answeredRows.has(requestId)) return;
+        this.answer(requestId, shown, { by: 'device', name }, decision ?? 'answer', answers);
         this.changed();
       },
       () => undefined,
     );
   }
 
-  private addNotice(notice: Notice): void {
-    if (this.noticeList.some((n) => n.requestId === notice.requestId)) return;
-    this.noticeList = [...this.noticeList, notice];
-    if (this.noticeMs > 0) {
-      this.timers.set(
-        notice.requestId,
-        setTimeout(() => this.dismissNotice(notice.requestId), this.noticeMs),
-      );
-    }
+  private answer(requestId: string, shown: Shown, resolver: Resolver, what?: Decision | 'answer', answers?: Record<string, string[]>): void {
+    const text =
+      shown.kind === 'approval'
+        ? approvalAnswered(resolver, what === 'answer' ? undefined : what)
+        : questionAnswered(resolver, answerSummary(shown.questions, answers ?? this.sentAnswers.get(requestId) ?? {}));
+    // Keeps its place among the answered lines when a later outcome or a device name rewrites it.
+    this.answeredRows.set(requestId, {
+      requestId,
+      kind: shown.kind,
+      requestKind: shown.requestKind,
+      turnId: shown.turnId,
+      itemId: shown.itemId,
+      title: shown.title,
+      ...text,
+    });
   }
 }
