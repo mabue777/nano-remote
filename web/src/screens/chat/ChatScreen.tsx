@@ -14,7 +14,8 @@ import { Switch } from '../../ui/Switch';
 import { ChatModel, type MessageRow } from './chat-model';
 import { useModel } from '../use-model';
 import { usePress } from './hooks';
-import { parseMarkdown, withoutFreshTail, type Block, type Inline } from './markdown';
+import { Markdown } from './MarkdownView';
+import { parseMarkdown, withoutFreshTail, type Block } from './markdown';
 import { SettingsPath } from './ChatsPanel';
 import type { ChatServices } from './services';
 import { collapse, reducedMotion, useAutoScroll, useFlip, usePacedText, type Flip } from '../session/motion-hooks';
@@ -256,90 +257,3 @@ function ModelPicker({ model, onSettings }: { model: ChatModel; onSettings: (() 
   );
 }
 
-/** `tail`: the newest pieces, appended to the last block's text so they fade in (see withoutFreshTail). */
-function Markdown({ blocks, tail }: { blocks: Block[]; tail?: Segment[] }) {
-  return (
-    <div class="markdown">
-      {blocks.map((block, i) => {
-        const end = tail !== undefined && i === blocks.length - 1 ? <FreshText settled="" fresh={tail} /> : null;
-        switch (block.kind) {
-          case 'p':
-            return (
-              <p key={i}>
-                {inlines(block.inlines)}
-                {end}
-              </p>
-            );
-          case 'h':
-            return block.level === 1 ? (
-              <h3 key={i}>
-                {inlines(block.inlines)}
-                {end}
-              </h3>
-            ) : (
-              <h4 key={i}>
-                {inlines(block.inlines)}
-                {end}
-              </h4>
-            );
-          case 'code':
-            return (
-              <pre key={i} class="code-block" data-lang={block.lang || undefined}>
-                <code>{block.text}</code>
-              </pre>
-            );
-          case 'ul':
-            return (
-              <ul key={i}>
-                {block.items.map((item, j) => (
-                  <li key={j}>
-                    {inlines(item)}
-                    {j === block.items.length - 1 && end}
-                  </li>
-                ))}
-              </ul>
-            );
-          case 'ol':
-            return (
-              <ol key={i} start={block.start}>
-                {block.items.map((item, j) => (
-                  <li key={j}>
-                    {inlines(item)}
-                    {j === block.items.length - 1 && end}
-                  </li>
-                ))}
-              </ol>
-            );
-          case 'quote':
-            return (
-              <blockquote key={i}>
-                {inlines(block.inlines)}
-                {end}
-              </blockquote>
-            );
-        }
-      })}
-    </div>
-  );
-}
-
-function inlines(parts: Inline[]): ComponentChildren {
-  return parts.map((part, i) => {
-    switch (part.kind) {
-      case 'text':
-        return part.text;
-      case 'code':
-        return <code key={i}>{part.text}</code>;
-      case 'strong':
-        return <strong key={i}>{part.text}</strong>;
-      case 'em':
-        return <em key={i}>{part.text}</em>;
-      case 'link':
-        return (
-          <a key={i} href={part.href} target="_blank" rel="noopener noreferrer">
-            {part.text}
-          </a>
-        );
-    }
-  });
-}

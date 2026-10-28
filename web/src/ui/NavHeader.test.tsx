@@ -32,6 +32,15 @@ describe('NavHeader', () => {
     expect(onMore).toHaveBeenCalledTimes(1);
   });
 
+  it('extra actions sit before ⋯ in a widened bar', () => {
+    const wide = NavHeader({ href: '/', backLabel: 'Back', onBack, title: 'T', moreLabel: 'More', onMore, actions: 'find' }) as Node;
+    expect(wide.props.class).toBe('nav nav-wide');
+    const end = childNodes(wide)[2]!;
+    expect(end.props.class).toBe('nav-actions');
+    expect((end.props.children as unknown[])[0]).toBe('find');
+    expect(childNodes(end)[0]!.props['aria-label']).toBe('More');
+  });
+
   it('without children there is no footnote line', () => {
     const bare = NavHeader({ href: '/', backLabel: 'Sessions', onBack, title: 'T', moreLabel: 'More', onMore }) as Node;
     expect(allNodes(bare).filter(byType('p'))).toHaveLength(0);

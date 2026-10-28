@@ -1,5 +1,7 @@
 // A tiny history router for the app's pages: /pair, / (home), /chats (home on its Chats tab),
-// /settings (Settings; /settings/providers is its old address and opens it too), /s/:sessionId, /c/:chatId (a local chat) and /lab (the
+// /settings (Settings; /settings/providers is its old address and opens it too), /s/:sessionId,
+// /s/:sessionId/file?path=<path>[&line=<n>] (a file of the session folder, pushed over the session),
+// /c/:chatId (a local chat) and /lab (the
 // hidden interaction lab, reached only by typing the URL). The host answers each of these paths with index.html (host/src/http/static.ts), so a reload or a push link
 // lands on the right page. The fragment is left alone: the pairing link carries its code there
 // (`/pair#code=12345678`, spec 8), and a fragment never reaches the host.
@@ -17,15 +19,21 @@ export type Route =
   | { name: 'chats' }
   | { name: 'settings' }
   | { name: 'session'; sessionId: string }
+  /** A file of the session folder; `line` (1-based) is scrolled to and tinted once. */
+  | { name: 'file'; sessionId: string; path: string; line?: number }
   | { name: 'chat'; chatId: string }
   | { name: 'lab' }
   | { name: 'notFound'; path: string };
 
 const SESSION = /^\/s\/([^/]+)\/?$/;
+const FILE = /^\/s\/([^/]+)\/file\/?$/;
 const CHAT = /^\/c\/([^/]+)\/?$/;
 
-/** The route a pathname names. Unknown paths are `notFound` (the app shows a way home). */
-export function parseRoute(pathname: string): Route {
+/**
+ * The route a pathname (and query, for the file page) names. Unknown paths are `notFound` (the app shows a
+ * way home); a file page without a `path` is `notFound` too.
+ */
+export function parseRoute(pathname: string, search = ''): Route {
   const path = pathname === '' ? '/' : pathname;
   if (path === '/' || path === '/index.html') return { name: 'home' };
   if (path === '/pair' || path === '/pair/') return { name: 'pair' };
@@ -34,6 +42,14 @@ export function parseRoute(pathname: string): Route {
   if (path === '/lab' || path === '/lab/') return { name: 'lab' };
   const sessionId = idOf(SESSION, path);
   if (sessionId !== undefined) return { name: 'session', sessionId };
+  const fileSession = idOf(FILE, path);
+  if (fileSession !== undefined) {
+    const query = new URLSearchParams(search);
+    const file = query.get('path') ?? '';
+    if (file === '') return { name: 'notFound', path: path + search };
+    const line = Number(query.get('line'));
+    return Number.isInteger(line) && line > 0 ? { name: 'file', sessionId: fileSession, path: file, line } : { name: 'file', sessionId: fileSession, path: file };
+  }
   const chatId = idOf(CHAT, path);
   if (chatId !== undefined) return { name: 'chat', chatId };
   return { name: 'notFound', path };
@@ -64,6 +80,11 @@ export function routePath(route: Route): string {
       return '/settings';
     case 'session':
       return `/s/${encodeURIComponent(route.sessionId)}`;
+    case 'file': {
+      const query = new URLSearchParams({ path: route.path });
+      if (route.line !== undefined) query.set('line', String(route.line));
+      return `/s/${encodeURIComponent(route.sessionId)}/file?${query.toString()}`;
+    }
     case 'chat':
       return `/c/${encodeURIComponent(route.chatId)}`;
     case 'lab':
@@ -75,13 +96,17 @@ export function routePath(route: Route): string {
 
 export type Direction = 'push' | 'pop' | 'none';
 
-/** How deep a page sits: Home 0, a session or chat 1, Settings 2 (it opens from Home and from a chat). */
+/**
+ * How deep a page sits: Home 0, a session or chat 1, Settings and a session's file 2 (Settings opens from
+ * Home and from a chat; a file from its session).
+ */
 export function depthOf(route: Route): number {
   switch (route.name) {
     case 'session':
     case 'chat':
       return 1;
     case 'settings':
+    case 'file':
       return 2;
     default:
       return 0;
@@ -170,7 +195,7 @@ export class Router {
     options: RouterOptions = {},
   ) {
     this.browserAnimated = options.browserAnimated ?? ((event) => event.hasUAVisualTransition === true);
-    this.current = parseRoute(win.location.pathname);
+    this.current = parseRoute(win.location.pathname, win.location.search);
     // The app puts each page's scroll back itself (routes/PageStack.tsx); the browser's own restore would
     // land in the middle of the slide.
     if (win.history.scrollRestoration !== undefined) win.history.scrollRestoration = 'manual';
@@ -243,7 +268,7 @@ export class Router {
   }
 
   private sync(animate: boolean): void {
-    const next = parseRoute(this.win.location.pathname);
+    const next = parseRoute(this.win.location.pathname, this.win.location.search);
     if (sameRoute(next, this.current)) return;
     const navigation: Navigation = { from: this.current, to: next, direction: directionOf(this.current, next), animate };
     this.current = next;

@@ -335,12 +335,13 @@ describe('device methods', () => {
 });
 
 describe('static files', () => {
-  it('serves the web app with content types, and /pair, /chats, settings (and its old /settings/providers), the lab, session and chat pages as client routes', async () => {
+  it('serves the web app with content types, and /pair, /chats, settings (and its old /settings/providers), the lab, session, session file and chat pages as client routes', async () => {
     const { base } = await start();
     const cases: [string, string][] = [
       ['/', 'text/html; charset=utf-8'],
       ['/pair', 'text/html; charset=utf-8'],
       ['/s/ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D', 'text/html; charset=utf-8'],
+      ['/s/ses_01JFQ3K8M2XW7Z4R9VBNTH6C5D/file?path=src%2Fparser.ts&line=42', 'text/html; charset=utf-8'],
       ['/chats', 'text/html; charset=utf-8'],
       ['/settings', 'text/html; charset=utf-8'],
       ['/settings/providers', 'text/html; charset=utf-8'],
@@ -364,6 +365,8 @@ describe('static files', () => {
     expect(await (await fetch(`${base}/c/3f2a9c1e`)).text()).toContain('<title>Nano</title>');
     expect((await fetch(`${base}/s/a/b`)).status).toBe(404);
     expect((await fetch(`${base}/c/a/b`)).status).toBe(404);
+    expect((await fetch(`${base}/c/a/file`)).status).toBe(404);
+    expect((await fetch(`${base}/s/a/file/x`)).status).toBe(404);
     expect((await fetch(`${base}/assets/app-Abc12345.js`)).headers.get('cache-control')).toContain('immutable');
     expect((await fetch(`${base}/`)).headers.get('cache-control')).toBe('no-cache');
   });

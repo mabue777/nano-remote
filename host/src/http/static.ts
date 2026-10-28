@@ -13,10 +13,11 @@ export const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.ur
 export const CLIENT_ROUTES: readonly string[] = ['/', '/pair', '/chats', '/settings', '/settings/providers', '/lab'];
 
 /**
- * Session pages, `/s/<sessionId>`, and local chat pages, `/c/<chatId>` (web/src/routes): also index.html,
- * so a reload or a push link works.
+ * Session pages, `/s/<sessionId>`, a session's file page, `/s/<sessionId>/file` (the file named in its
+ * query), and local chat pages, `/c/<chatId>` (web/src/routes): also index.html, so a reload or a push
+ * link works.
  */
-const PAGE_ROUTE = /^\/[sc]\/[A-Za-z0-9_-]{1,128}$/;
+const PAGE_ROUTE = /^\/[sc]\/[A-Za-z0-9_-]{1,128}$|^\/s\/[A-Za-z0-9_-]{1,128}\/file$/;
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

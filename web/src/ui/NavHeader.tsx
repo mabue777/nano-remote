@@ -1,6 +1,7 @@
 // The centred top bar of a page below Home (docs/research/new-look-prototype.md item 8): a round back button
 // (icon only; the link keeps its href for a long-press), the title centred on one line with one footnote line
-// under it, and a round ⋯ button. Used by the session view and the lab's New look. Styles: .nav* and
+// under it, and a round ⋯ button, optionally with more round buttons before it (`actions`; the file viewer's
+// find button). Used by the session view, the file viewer and the lab's New look. Styles: .nav* and
 // .round-button in styles/components.css.
 import type { ComponentChildren } from 'preact';
 
@@ -19,11 +20,18 @@ export interface NavHeaderProps {
   /** The ⋯ button's accessible name. */
   moreLabel: string;
   onMore: () => void;
+  /** Round buttons before ⋯ (the left column widens to match, so the title stays centred). */
+  actions?: ComponentChildren;
 }
 
-export function NavHeader({ href, backLabel, onBack, title, children, moreLabel, onMore }: NavHeaderProps) {
+export function NavHeader({ href, backLabel, onBack, title, children, moreLabel, onMore, actions }: NavHeaderProps) {
+  const more = (
+    <button type="button" class="round-button" aria-label={moreLabel} aria-haspopup="dialog" onClick={onMore}>
+      <Icon name="more" size={22} />
+    </button>
+  );
   return (
-    <header class="nav">
+    <header class={actions === undefined ? 'nav' : 'nav nav-wide'}>
       <a
         class="round-button"
         href={href}
@@ -39,9 +47,14 @@ export function NavHeader({ href, backLabel, onBack, title, children, moreLabel,
         <h1 title={title}>{title}</h1>
         {children !== undefined && <p class="nav-footnote">{children}</p>}
       </div>
-      <button type="button" class="round-button" aria-label={moreLabel} aria-haspopup="dialog" onClick={onMore}>
-        <Icon name="more" size={22} />
-      </button>
+      {actions === undefined ? (
+        more
+      ) : (
+        <div class="nav-actions">
+          {actions}
+          {more}
+        </div>
+      )}
     </header>
   );
 }

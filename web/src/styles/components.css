@@ -255,6 +255,20 @@
   background: var(--bg);
 }
 
+.nav-wide {
+  grid-template-columns: calc(2 * var(--touch) + var(--space-4)) minmax(0, 1fr) calc(2 * var(--touch) + var(--space-4));
+}
+
+.nav-wide > .round-button {
+  justify-self: start;
+}
+
+.nav-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
 .round-button {
   flex: none;
   display: inline-flex;

@@ -31,6 +31,9 @@
 // paired cookie only. `POST /test/uploads` answers {uploads: [{blobId, sessionId, name, mediaType, size,
 // width?, height?}]} (the pixel size of PNG and JPEG uploads); `POST /test/upload-fail {status}` makes the
 // next upload answer that status ({} clears it).
+// Session files (spec 4.1): the finished session's folder holds SEEDED_FILES (fs/readFile reads them, `GET
+// /v1/file?sessionId=&path=` serves them to a paired cookie with ETag and ranges); `POST /test/file
+// {sessionId, path, text | base64}` adds or replaces one.
 // `POST /test/new-build {version, stuck?}` serves /sw.js under that build version, as after a redeploy (a reset
 // goes back to the built one); `stuck: true` makes that worker ignore SKIP_WAITING, so it never takes over
 // (the iPhone report of 2026-10-25: Reload greyed out and nothing happened).
@@ -52,7 +55,7 @@ import { FakeHost } from './fake-host';
 import { startFakeProvider } from './fake-provider';
 
 const PUBLIC = fileURLToPath(new URL('../../host/public/', import.meta.url));
-const CLIENT_ROUTE = /^\/((pair|chats|settings|settings\/providers|lab)\/?)?$|^\/[sc]\/[^/]+$/;
+const CLIENT_ROUTE = /^\/((pair|chats|settings|settings\/providers|lab)\/?)?$|^\/[sc]\/[^/]+$|^\/s\/[^/]+\/file$/;
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -94,6 +97,32 @@ export function imageSize(bytes: Buffer): { width: number; height: number } | un
   return undefined;
 }
 
+/** A TypeScript file of `lines` lines, with one very long line (10) and a TODO now and then. */
+function codeFile(lines: number): string {
+  const out = ['// The parser of the phone-test project.', "import { readFileSync } from 'node:fs';", ''];
+  for (let i = out.length + 1; i <= lines; i += 1) {
+    if (i === 10) out.push(`export const LONG = '${'a long line that does not fit on a phone screen '.repeat(4).trim()}';`);
+    else if (i % 25 === 0) out.push(`  // TODO: handle case ${i}`);
+    else if (i % 5 === 0) out.push(`export function parse${i}(input: string): number {`);
+    else if (i % 5 === 4) out.push('}');
+    else out.push(`  return input.length + ${i}; // Line ${i}`);
+  }
+  return out.join('\n') + '\n';
+}
+
+/** A 1x1 PNG. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+/** The files of the finished session's folder (ses_fake_1), for the file viewer. */
+export const SEEDED_FILES: Record<string, string | Buffer> = {
+  'src/parser.ts': codeFile(1200),
+  'README.md': '# phone-test\n\nA small project the **agent** works in.\n\n## Usage\n\n- Run `npm test`\n- Read [the docs](https://example.com/docs)\n\n```ts\nconst x = 1;\n```\n\n> Quoted note.\n',
+  'notes.txt': 'Plain notes.\nA second line that is long enough to wrap on a phone screen when wrapping is on, which it is for text.\n',
+  'logs/big.log': Array.from({ length: 9000 }, (_, i) => `${String(i + 1).padStart(5, '0')} INFO request served in ${i % 97} ms`).join('\n') + '\n',
+  'logo.png': PNG,
+  'empty.txt': '',
+};
+
 /** Three sessions: finished (ses_fake_1), waiting for an approval (ses_fake_2), and new (ses_fake_3). */
 function seed(host: FakeHost): void {
   host.reset();
@@ -101,6 +130,8 @@ function seed(host: FakeHost): void {
   const finished = host.createSession({ title: SEEDED_TITLES[0] });
   host.runScriptedTurn(finished, 'Create a file named hello.txt in the current directory.');
   host.resolveElsewhere(finished, 'accept');
+  const fileTime = Date.parse('2026-10-20T14:02:00Z');
+  for (const [name, content] of Object.entries(SEEDED_FILES)) host.files.put(finished, name, content, fileTime);
   const waiting = host.createSession({ title: SEEDED_TITLES[1], agentId: 'claude' });
   host.runScriptedTurn(waiting, 'Run the tests.');
   const fresh = host.createSession({ title: SEEDED_TITLES[2] });
@@ -225,6 +256,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/turn-diff':
               host.turnDiffs.set(body.sessionId, { ...(body.result ? { result: body.result } : {}), ...(body.error ? { error: body.error } : {}) });
               return json(200, { ok: true });
+            case '/test/file':
+              host.files.put(body.sessionId, body.path, body.base64 !== undefined ? Buffer.from(body.base64, 'base64') : String(body.text ?? ''));
+              return json(200, { ok: true });
             case '/test/new-build':
               swVersion = String(body.version);
               swStuck = body.stuck === true;
@@ -335,6 +369,12 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
       if (blob === undefined) return json(404, { error: { code: 'not_found', message: 'no such attachment' } });
       response.writeHead(200, { 'content-type': blob.mediaType, 'content-length': String(blob.bytes.length), 'x-content-type-options': 'nosniff' });
       return void response.end(request.method === 'HEAD' ? undefined : blob.bytes);
+    }
+    if (url.pathname === '/v1/file') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: { code: 'invalid_params', message: 'use GET, HEAD', data: { path: '' } } }, { allow: 'GET, HEAD' });
+      if (!paired(request)) return json(401, { error: { code: 'unauthorized', message: 'device token missing, unknown or revoked' } });
+      const sessionId = url.searchParams.get('sessionId') ?? '';
+      return host.files.serve(request, response, url, host.hasSession(sessionId) ? host.session(sessionId).summary.cwd : undefined);
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: { code: 'method_not_found', message: 'GET only' } });
     const file = CLIENT_ROUTE.test(url.pathname) ? path.join(PUBLIC, 'index.html') : path.join(PUBLIC, path.posix.normalize(url.pathname));

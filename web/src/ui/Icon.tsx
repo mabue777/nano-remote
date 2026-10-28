@@ -8,7 +8,7 @@
 //   hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 //   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE.
 // Names follow Lucide's (chevron-left, ellipsis, settings, folder, terminal, file-diff, check, loader-circle,
-// message-circle-question, square, arrow-up, ...). "stop" is Lucide's square, smaller and filled. No OpenAI
+// message-circle-question, square, arrow-up, search, copy, wrap-text ...). "stop" is Lucide's square, smaller and filled. No OpenAI
 // or SF Symbols artwork.
 import type { JSX } from 'preact';
 
@@ -16,6 +16,27 @@ const PATHS = {
   back: <path d="m15 18-6-6 6-6" />,
   'chevron-right': <path d="m9 18 6-6-6-6" />,
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  'chevron-up': <path d="m18 15-6-6-6 6" />,
+  search: (
+    <>
+      <path d="m21 21-4.34-4.34" />
+      <circle cx="11" cy="11" r="8" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </>
+  ),
+  wrap: (
+    <>
+      <path d="m16 16-3 3 3 3" />
+      <path d="M3 12h14.5a1 1 0 0 1 0 7H13" />
+      <path d="M3 19h6" />
+      <path d="M3 5h18" />
+    </>
+  ),
   plus: (
     <>
       <path d="M5 12h14" />

@@ -19,11 +19,13 @@
 // background tasks first; delete forgets the session. turn/diff is computed from the turn's fileChange items (the last
 // change per path), answered from `turnDiffs` when a test set one, or refused `not_supported` for sessions
 // in `noDiffs`. runReviewTurn() plays a turn
-// whose command streams colored output until finishReviewTurn() ends it with file edits.
+// whose command streams colored output until finishReviewTurn() ends it with file edits. `files` holds the
+// session folders' files (fake-files.ts): fs/readFile reads them under the scope rule of spec 4.1.
 import type { IncomingMessage, Server } from 'node:http';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import { FakeFiles, FileError } from './fake-files';
 import { exampleMessage } from './fixtures';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -353,6 +355,8 @@ export class FakeHost {
    * turn's fileChange items.
    */
   readonly turnDiffs = new Map<string, { result?: Json; error?: { code: string; message: string; data?: Json } }>();
+  /** The session folders' files, for fs/readFile and /v1/file (spec 4.1). */
+  readonly files = new FakeFiles();
   private readonly delays = new Map<string, number>();
   private server: WebSocketServer | undefined;
   private refusal: { code: number; reason: string } | undefined;
@@ -459,6 +463,7 @@ export class FakeHost {
     this.noDiffs.clear();
     this.settingsLocked.clear();
     this.turnDiffs.clear();
+    this.files.clear();
     this.nextSession = 0;
     this.pushSubscriptions.clear();
     this.pushTests.length = 0;
@@ -663,6 +668,16 @@ export class FakeHost {
         if (entries === undefined) throw new HostError({ code: 'not_found', message: `no directory ${params.path}` });
         const base = params.path === '/' ? '' : params.path;
         return { result: { entries: entries.map((e) => ({ ...e, path: `${base}/${e.name}` })) } };
+      }
+      case 'fs/readFile': {
+        const session = this.sessions.get(params.sessionId);
+        if (session === undefined) throw new HostError({ code: 'not_found', message: `no session ${params.sessionId}`, data: { sessionId: params.sessionId } });
+        try {
+          return { result: this.files.read(params.sessionId, session.summary.cwd, params) };
+        } catch (error) {
+          if (error instanceof FileError) throw new HostError({ code: error.code, message: error.message, data: error.data });
+          throw error;
+        }
       }
       case 'session/start': {
         const sessionId = this.createSession({ agentId: params.agentId, cwd: params.cwd, title: params.title ?? 'New session' });

@@ -1,0 +1,336 @@
+/* The file viewer (FileViewer.tsx; docs/plan/file-viewer.md "Look and motion rules"): warm neutrals, no
+   borders, the accent only for find matches and the jumped-to line, 20 px page margins, --type-code for the
+   text and --type-footnote for meta lines. Loaded with the viewer's own chunk. */
+
+/* The page scrolls the window; the header and the find bar stay at the top, over the safe area. */
+.file-viewer {
+  padding-top: 0;
+}
+
+.file-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * (var(--safe-right) + var(--page-x))) 0 calc(-1 * (var(--safe-left) + var(--page-x)));
+  padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--page-x)) 0 calc(var(--safe-left) + var(--page-x));
+  background: var(--bg);
+}
+
+.file-top .nav {
+  position: static;
+}
+
+.file-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+}
+
+.file-status {
+  margin: var(--space-12) 0;
+  font: var(--type-callout);
+}
+
+.file-status p {
+  margin: 0 0 var(--space-6);
+}
+
+/* ---------- the text ---------- */
+
+/* Full bleed: the gutter starts at the page margin and the text keeps a 20 px margin on the right, while a
+   long line scrolls sideways under the pinned gutter. */
+.file-text {
+  --gutter: calc(var(--page-x) + var(--gutter-digits, 3) * 1ch + var(--space-6));
+  margin: 0 calc(-1 * (var(--safe-right) + var(--page-x))) 0 calc(-1 * (var(--safe-left) + var(--page-x)));
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  font: var(--type-code);
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  tab-size: 4;
+}
+
+.wrapped .file-text {
+  overflow-x: hidden;
+}
+
+.file-lines {
+  min-width: 100%;
+  width: max-content;
+  padding-bottom: var(--space-4);
+}
+
+.wrapped .file-lines {
+  width: auto;
+}
+
+.file-line {
+  display: flex;
+  min-height: 18px; /* --type-code's line height */
+}
+
+.file-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--gutter);
+  padding: 0 var(--space-6) 0 calc(var(--safe-left) + var(--page-x));
+  background: var(--bg);
+  color: var(--text-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.file-code {
+  flex: 1;
+  min-width: 0;
+  padding-right: calc(var(--safe-right) + var(--page-x));
+  white-space: pre;
+  color: var(--text);
+}
+
+.wrapped .file-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.file-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: pre;
+  font: var(--type-code);
+}
+
+/* Find matches: the accent at low opacity; the current one stronger. */
+.find-hit {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: inherit;
+}
+
+.find-hit.current {
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* A path:line jump tints its line once, fading out. */
+.file-line.flash,
+.file-line.flash .file-gutter {
+  animation: file-line-flash 1.6s var(--ease-standard) both;
+}
+
+@keyframes file-line-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  }
+  100% {
+    background: var(--bg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-line.flash,
+  .file-line.flash .file-gutter {
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  }
+}
+
+/* ---------- rendered markdown ---------- */
+
+.file-markdown {
+  padding: var(--space-4) 0 var(--space-12);
+  font: var(--type-body);
+}
+
+.file-markdown .markdown h3 {
+  font: var(--type-headline);
+  font-size: 22px;
+  line-height: 28px;
+  margin-top: var(--space-6);
+}
+
+.file-markdown .markdown h4 {
+  font: var(--type-headline);
+  margin-top: var(--space-4);
+}
+
+.file-markdown .markdown > * {
+  margin-bottom: var(--space-6);
+}
+
+.file-markdown .markdown .code-block {
+  border: 0;
+  background: var(--fill);
+}
+
+/* ---------- find bar ---------- */
+
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+}
+
+.find-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 36px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--text-tertiary);
+}
+
+.find-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: var(--type-body);
+  font-size: 16px; /* 16 px or more: iOS does not zoom into the field */
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.find-field input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.find-count {
+  flex: none;
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.find-bar button.find-case,
+.find-bar button.find-step {
+  flex: none;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  background: transparent;
+  color: var(--text);
+}
+
+.find-bar button.find-case {
+  border-radius: var(--radius-sm);
+  font: var(--type-callout);
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.find-bar button.find-case.on {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.find-bar .find-done {
+  flex: none;
+  min-height: 36px;
+  padding: 0 0 0 var(--space-3);
+}
+
+/* ---------- show more, binary card, menu, toast ---------- */
+
+.file-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) 0 var(--space-12);
+}
+
+.file-more-line,
+.file-more .error {
+  margin: 0;
+  font: var(--type-footnote);
+  color: var(--text-tertiary);
+}
+
+.file-more .error {
+  color: var(--error);
+}
+
+.file-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-12);
+  padding: var(--space-12) var(--space-10);
+  border-radius: var(--radius-card);
+  background: var(--fill);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.file-card-kind {
+  margin: var(--space-4) 0 0;
+  font: var(--type-headline);
+  color: var(--text);
+}
+
+.file-card-meta {
+  margin: 0;
+  font: var(--type-footnote);
+}
+
+.file-card-actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.file-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.file-download {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-7);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.file-download.primary {
+  background: var(--primary);
+  color: var(--primary-text);
+  font-weight: 600;
+}
+
+.file-card .error {
+  margin: 0;
+  font: var(--type-footnote);
+}
+
+.file-menu .group-value {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-toast {
+  bottom: calc(var(--safe-bottom) + var(--space-12));
+}

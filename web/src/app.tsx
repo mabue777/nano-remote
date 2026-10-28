@@ -33,6 +33,7 @@ import { browserResize } from './screens/session/attachments/resize';
 import { xhrUploader } from './screens/session/attachments/upload';
 import type { AttachmentServices } from './screens/session/session-model';
 import { SessionScreen } from './screens/session/SessionScreen';
+import { FileRoute, preloadFileViewer } from './screens/session/files/FileRoute';
 import { StreamClient } from './stream/client';
 
 export interface AppProps {
@@ -128,9 +129,11 @@ interface ConnectedProps {
   onUnpaired: () => void;
 }
 
-/** The page Back goes to: Home from a session or Settings, the Chats tab from a chat. */
+/** The page Back goes to: Home from a session or Settings, the Chats tab from a chat, the session from its file. */
 function connectedParent(route: Route): Route | null {
   switch (route.name) {
+    case 'file':
+      return { name: 'session', sessionId: route.sessionId };
     case 'session':
     case 'settings':
       return { name: 'home' };
@@ -192,6 +195,11 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
   }, [services, chat]);
 
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
+  // A session's files open in a lazily loaded viewer: start loading it once a session is on screen.
+  const inSession = route.name === 'session' || route.name === 'file';
+  useEffect(() => {
+    if (inSession) void preloadFileViewer().catch(() => undefined);
+  }, [inSession]);
   return (
     <PageStack
       route={route}
@@ -258,6 +266,29 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
             onBack={() => router.back('/')}
           />
         );
+      case 'file': {
+        const { replica } = services;
+        const sessionId = route.sessionId;
+        const sessionFolder = {
+          name: () => {
+            const cwd = replica.session(sessionId)?.session?.cwd ?? [...replica.sessions, ...replica.archivedSessions].find((s) => s.sessionId === sessionId)?.cwd;
+            return cwd?.split('/').filter((part) => part !== '').at(-1);
+          },
+          subscribe: (listener: () => void) => replica.subscribe(listener),
+        };
+        return (
+          <FileRoute
+            key={`${route.sessionId}:${route.path}:${route.line ?? ''}`}
+            sessionId={route.sessionId}
+            path={route.path}
+            {...(route.line !== undefined ? { line: route.line } : {})}
+            reader={services.client}
+            storage={storage}
+            sessionFolder={sessionFolder}
+            onBack={() => router.back({ name: 'session', sessionId: route.sessionId })}
+          />
+        );
+      }
       case 'notFound':
         return (
           <main class="screen">

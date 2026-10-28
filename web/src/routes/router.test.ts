@@ -117,6 +117,26 @@ describe('parseRoute and routePath', () => {
     expect(parseRoute(path)).toEqual(route);
   });
 
+  it.each([
+    ['/s/ses_1/file', '?path=src%2Fparser.ts', { name: 'file', sessionId: 'ses_1', path: 'src/parser.ts' }],
+    ['/s/ses_1/file/', '?path=README.md&line=42', { name: 'file', sessionId: 'ses_1', path: 'README.md', line: 42 }],
+    ['/s/ses_1/file', '?path=a.ts&line=0', { name: 'file', sessionId: 'ses_1', path: 'a.ts' }],
+    ['/s/ses_1/file', '?path=a.ts&line=x', { name: 'file', sessionId: 'ses_1', path: 'a.ts' }],
+    ['/s/ses_1/file', '', { name: 'notFound', path: '/s/ses_1/file' }],
+    ['/s/ses_1/file', '?path=', { name: 'notFound', path: '/s/ses_1/file?path=' }],
+    ['/s/ses_1/files', '?path=a', { name: 'notFound', path: '/s/ses_1/files' }],
+  ])('a file page: %s%s', (path, search, route) => {
+    expect(parseRoute(path, search)).toEqual(route);
+  });
+
+  it('routePath inverts parseRoute for a file page', () => {
+    const route: Route = { name: 'file', sessionId: 's 1', path: 'src/a b.ts', line: 7 };
+    expect(routePath(route)).toBe('/s/s%201/file?path=src%2Fa+b.ts&line=7');
+    const url = new URL(routePath(route), 'http://x');
+    expect(parseRoute(url.pathname, url.search)).toEqual(route);
+    expect(routePath({ name: 'file', sessionId: 's', path: 'a.ts' })).toBe('/s/s/file?path=a.ts');
+  });
+
   it('routePath inverts parseRoute', () => {
     expect(routePath({ name: 'home' })).toBe('/');
     expect(routePath({ name: 'pair' })).toBe('/pair');
@@ -152,6 +172,19 @@ describe('Router', () => {
     win.back();
     expect(router.route).toEqual({ name: 'home' });
     expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  it('a file page is pushed over its session with its query, and back pops to the session', () => {
+    const win = new FakeWindow('/s/ses_1/file?path=src%2Fa.ts&line=3');
+    const router = new Router(win);
+    expect(router.route).toEqual({ name: 'file', sessionId: 'ses_1', path: 'src/a.ts', line: 3 });
+    const other = new Router(new FakeWindow('/s/ses_1'));
+    const seen = vi.fn();
+    other.subscribe(seen);
+    other.navigate({ name: 'file', sessionId: 'ses_1', path: 'b.md' });
+    expect(seen).toHaveBeenLastCalledWith({ name: 'file', sessionId: 'ses_1', path: 'b.md' }, expect.objectContaining({ direction: 'push' }));
+    other.navigate({ name: 'file', sessionId: 'ses_1', path: 'c.md' });
+    expect(seen).toHaveBeenLastCalledWith({ name: 'file', sessionId: 'ses_1', path: 'c.md' }, expect.objectContaining({ direction: 'none' }));
   });
 
   it('replace swaps the entry, so back does not return to the pairing page', () => {
@@ -314,8 +347,10 @@ describe('depthOf and directionOf', () => {
   const session: Route = { name: 'session', sessionId: 's' };
   const chat: Route = { name: 'chat', chatId: 'c' };
   const settings: Route = { name: 'settings' };
+  const file: Route = { name: 'file', sessionId: 's', path: 'a.ts' };
 
-  it('Home and its tabs are the top, sessions and chats one level down, Settings two', () => {
+  it('Home and its tabs are the top, sessions and chats one level down, Settings and a file two', () => {
+    expect(depthOf(file)).toBe(2);
     expect([home, chats, { name: 'pair' } as Route, { name: 'lab' } as Route, { name: 'notFound', path: '/x' } as Route].map(depthOf)).toEqual([0, 0, 0, 0, 0]);
     expect([session, chat].map(depthOf)).toEqual([1, 1]);
     expect(depthOf(settings)).toBe(2);
@@ -326,6 +361,8 @@ describe('depthOf and directionOf', () => {
     [home, settings, 'push'],
     [chats, chat, 'push'],
     [chat, settings, 'push'],
+    [session, file, 'push'],
+    [file, session, 'pop'],
     [session, home, 'pop'],
     [settings, home, 'pop'],
     [chat, chats, 'pop'],
