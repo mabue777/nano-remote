@@ -17,6 +17,7 @@ import { ACTIVITY, CHANGES, DIFF_LINES, SESSIONS, type LabSession as Session } f
 import { drop, withLeaving, type Shown } from '../ui/motion/flip';
 import { LabSession } from './LabSession';
 import { LabSheet } from './LabSheet';
+import { MarkupScene } from './MarkupScene';
 import { ALL_HOSTS, hostsOf, loadLook, onHost, saveLook, type Look } from './look';
 import { AddBody, NewList, SessionDetailsBody } from './NewLook';
 import { allAt, loadSettings, saveSettings, TECHNIQUES, type LabSettings, type Mode, type TechniqueId } from './settings';
@@ -44,6 +45,8 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
   const [view, setView] = useState<View>('list');
   const [sheet, setSheet] = useState<SheetName>(null);
   const [panel, setPanel] = useState(false);
+  const [markup, setMarkup] = useState(false);
+  const [markupResult, setMarkupResult] = useState('');
   const [replay, setReplay] = useState(0);
   const [sessions, setSessions] = useState<Shown<Session>[]>(() => SESSIONS.map((item) => ({ item, leaving: false })));
   const [peek, setPeek] = useState(false);
@@ -270,66 +273,82 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
   );
 
   return (
-    <div class="lab" ref={root} data-look={look} {...Object.fromEntries(TECHNIQUES.map((t) => [`data-${t.id}`, settings[t.id]]))}>
-      {staged ? (
-        <div class={`lab-stage${keyboardSmooth ? ' lab-keyboard' : ''}`} ref={stage}>
-          {(pageSmooth || view === 'list') && (
-            <div class="lab-page lab-list-page" ref={listPage} hidden={!listVisible} data-under={view === 'session' ? 'true' : undefined}>
-              {listNode}
-            </div>
-          )}
-          {view === 'session' && (
-            <div class="lab-page lab-session-page" ref={sessionPage}>
-              {sessionNode}
-            </div>
-          )}
-        </div>
-      ) : view === 'list' ? (
-        listNode
-      ) : (
-        sessionNode
-      )}
+    <>
+      <div class="lab" ref={root} data-look={look} {...Object.fromEntries(TECHNIQUES.map((t) => [`data-${t.id}`, settings[t.id]]))}>
+        {staged ? (
+          <div class={`lab-stage${keyboardSmooth ? ' lab-keyboard' : ''}`} ref={stage}>
+            {(pageSmooth || view === 'list') && (
+              <div class="lab-page lab-list-page" ref={listPage} hidden={!listVisible} data-under={view === 'session' ? 'true' : undefined}>
+                {listNode}
+              </div>
+            )}
+            {view === 'session' && (
+              <div class="lab-page lab-session-page" ref={sessionPage}>
+                {sessionNode}
+              </div>
+            )}
+          </div>
+        ) : view === 'list' ? (
+          listNode
+        ) : (
+          sessionNode
+        )}
 
-      {sheet === 'changes' && (
-        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-changes-title" class="lab-changes-sheet" onClosed={() => setSheet(null)}>
-          {(close) => <ChangesBody onClose={close} />}
-        </LabSheet>
-      )}
-      {sheet === 'new' && (
-        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-new-title" onClosed={() => setSheet(null)}>
-          {(close) => <NewSessionBody onClose={close} />}
-        </LabSheet>
-      )}
-      {sheet === 'details' && (
-        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-details-title" onClosed={() => setSheet(null)}>
-          {(close) => <SessionDetailsBody status={task} onChanges={() => setSheet('changes')} onClose={close} />}
-        </LabSheet>
-      )}
-      {sheet === 'add' && (
-        <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-add-title" onClosed={() => setSheet(null)}>
-          {(close) => <AddBody onClose={close} />}
-        </LabSheet>
-      )}
+        {sheet === 'changes' && (
+          <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-changes-title" class="lab-changes-sheet" onClosed={() => setSheet(null)}>
+            {(close) => <ChangesBody onClose={close} />}
+          </LabSheet>
+        )}
+        {sheet === 'new' && (
+          <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-new-title" onClosed={() => setSheet(null)}>
+            {(close) => <NewSessionBody onClose={close} />}
+          </LabSheet>
+        )}
+        {sheet === 'details' && (
+          <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-details-title" onClosed={() => setSheet(null)}>
+            {(close) => <SessionDetailsBody status={task} onChanges={() => setSheet('changes')} onClose={close} />}
+          </LabSheet>
+        )}
+        {sheet === 'add' && (
+          <LabSheet smooth={sheetSmooth} reduced={reduced} labelledBy="lab-add-title" onClosed={() => setSheet(null)}>
+            {(close) => <AddBody onClose={close} />}
+          </LabSheet>
+        )}
 
-      <button type="button" class="lab-fab" aria-haspopup="dialog" onClick={() => setPanel(true)}>
-        Lab
-      </button>
-      {panel && (
-        <LabPanel
-          settings={settings}
-          look={look}
-          reduced={reduced}
-          onLook={chooseLook}
-          onChoose={choose}
-          onAll={(mode) => set(allAt(mode))}
-          onReplay={() => {
-            setReplay((n) => n + 1);
-            setPanel(false);
+        <button type="button" class="lab-fab" aria-haspopup="dialog" onClick={() => setPanel(true)}>
+          Lab
+        </button>
+        {panel && (
+          <LabPanel
+            settings={settings}
+            look={look}
+            reduced={reduced}
+            onLook={chooseLook}
+            onChoose={choose}
+            onAll={(mode) => set(allAt(mode))}
+            markupResult={markupResult}
+            onMarkup={() => {
+              setPanel(false);
+              setMarkup(true);
+            }}
+            onReplay={() => {
+              setReplay((n) => n + 1);
+              setPanel(false);
+            }}
+            onClose={() => setPanel(false)}
+          />
+        )}
+      </div>
+      {/* Outside .lab: the cover wears the app's own look, not the lab's Now look (now-look.css). */}
+      {markup && (
+        <MarkupScene
+          onClosed={(result) => {
+            setMarkup(false);
+            setMarkupResult(result);
           }}
-          onClose={() => setPanel(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -478,11 +497,14 @@ interface LabPanelProps {
   onChoose: (id: TechniqueId, mode: Mode) => void;
   onAll: (mode: Mode) => void;
   onReplay: () => void;
+  /** The last Markup scene's outcome ("Done with 3 marks."), empty before the first. */
+  markupResult: string;
+  onMarkup: () => void;
   onClose: () => void;
 }
 
 /** The switches. Always plain (no motion), so the panel itself never colours the comparison. */
-function LabPanel({ settings, look, reduced, onLook, onChoose, onAll, onReplay, onClose }: LabPanelProps) {
+function LabPanel({ settings, look, reduced, onLook, onChoose, onAll, onReplay, markupResult, onMarkup, onClose }: LabPanelProps) {
   return (
     <div class="sheet-backdrop lab-panel-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <section class="sheet lab-panel" role="dialog" aria-modal="true" aria-labelledby="lab-panel-title">
@@ -504,6 +526,15 @@ function LabPanel({ settings, look, reduced, onLook, onChoose, onAll, onReplay, 
               </button>
             ))}
           </div>
+        </div>
+        <div class="lab-technique lab-scene" role="group" aria-label="Markup">
+          <div class="lab-technique-text">
+            <strong>Markup</strong>
+            <span class="muted small">{markupResult || 'Draw on a screenshot: one finger draws, two fingers pan and pinch, double tap fits.'}</span>
+          </div>
+          <button type="button" class="small" onClick={onMarkup}>
+            Open
+          </button>
         </div>
         <div class="actions lab-panel-all">
           <button type="button" class="small" onClick={() => onAll('now')}>

@@ -2,10 +2,12 @@
    comparison. The app's tokens and base rules are the New look now (styles/tokens.css); this file puts the
    earlier values back under .lab[data-look='now'] only. Rules use :where() so they keep the specificity of
    the app rule they undo and win by coming later (the lab's chunk loads after the app's stylesheet). The
-   back header's chevron and the other line icons show in both looks: the lab renders the real components. */
+   back header's chevron and the other line icons show in both looks: the lab renders the real components.
+   The Markup scene's cover (outside .lab) wears the app's look, so the page-wide values
+   step aside while it is open. */
 
 .lab[data-look='now'],
-body:has(.lab[data-look='now']) {
+body:has(.lab[data-look='now']):not(:has(.markup)) {
   --bg: #f6f6f4;
   --surface: #ffffff;
   --surface-raised: #ffffff;
@@ -32,7 +34,7 @@ body:has(.lab[data-look='now']) {
 
 @media (prefers-color-scheme: dark) {
   .lab[data-look='now'],
-  body:has(.lab[data-look='now']) {
+  body:has(.lab[data-look='now']):not(:has(.markup)) {
     --bg: #121211;
     --surface: #1d1d1b;
     --surface-raised: #1d1d1b;

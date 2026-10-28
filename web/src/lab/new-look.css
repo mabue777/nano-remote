@@ -509,8 +509,9 @@
   background: var(--diff-del-bg);
 }
 
-/* The Lab panel's own Look row sits apart from the technique list. */
-.lab-look {
+/* The Lab panel's own Look row and the Markup scene row sit apart from the technique list. */
+.lab-look,
+.lab-scene {
   margin-bottom: var(--space-6);
   padding-bottom: var(--space-6);
   border-bottom: 1px solid var(--line);
