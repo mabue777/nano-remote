@@ -35,7 +35,17 @@
           "properties": {
             "maxMessageBytes": {"type": "integer", "minimum": 1},
             "snapshotTurns": {"type": "integer", "minimum": 1},
-            "maxAttachmentBytes": {"type": "integer", "minimum": 1, "description": "Largest attachment POST /v1/blob accepts (spec 8.1). Absent: the host takes no attachments. Additive within v1."}
+            "maxAttachmentBytes": {"type": "integer", "minimum": 1, "description": "Largest attachment POST /v1/blob accepts (spec 8.1). Absent: the host takes no attachments. Additive within v1."},
+            "maxFileReadBytes": {"type": "integer", "minimum": 1, "description": "Most bytes one fs/readFile answer carries (spec 4.1). Additive within v1."}
+          }
+        },
+        "files": {
+          "type": "object",
+          "description": "What the host lets a client do with files in a session folder (spec 4.1). Absent: nothing; clients show no file viewer. Additive within v1.",
+          "required": ["read"],
+          "properties": {
+            "read": {"type": "boolean", "description": "fs/readFile, fs/readDirectory with sessionId and GET /v1/file work."},
+            "write": {"type": "boolean", "description": "Reserved for a later write method; absent means false."}
           }
         }
       }
@@ -80,7 +90,10 @@
     "fs/readDirectory.params": {
       "type": "object",
       "required": ["path"],
-      "properties": {"path": {"type": "string"}}
+      "properties": {
+        "path": {"type": "string", "description": "Absolute or ~ without sessionId; with sessionId relative to the session folder ('' or '.' is the folder itself)."},
+        "sessionId": {"$ref": "common.json#/$defs/Id", "description": "Scopes the listing to the session folder (spec 4.1). Additive within v1."}
+      }
     },
     "fs/readDirectory.result": {
       "type": "object",
@@ -88,6 +101,36 @@
       "properties": {
         "entries": {"type": "array", "items": {"$ref": "common.json#/$defs/DirEntry"}}
       }
+    },
+
+    "fs/readFile.params": {
+      "type": "object",
+      "required": ["sessionId", "path"],
+      "properties": {
+        "sessionId": {"$ref": "common.json#/$defs/Id"},
+        "path": {"type": "string", "minLength": 1, "description": "Relative to the session folder; an absolute path only when it resolves inside it."},
+        "offset": {"type": "integer", "minimum": 0, "description": "Byte offset; the host moves it back to a line start (spec 4.1). Default 0."},
+        "maxBytes": {"type": "integer", "minimum": 1, "description": "Default 262144; the host reads at least 4096 and at most limits.maxFileReadBytes."}
+      }
+    },
+    "fs/readFile.result": {
+      "type": "object",
+      "required": ["path", "size", "mtimeMs", "mediaType", "binary", "encoding", "offset", "length", "truncated"],
+      "properties": {
+        "path": {"type": "string", "description": "The file's path inside the session folder after resolving links, '/'-separated."},
+        "size": {"type": "integer", "minimum": 0},
+        "mtimeMs": {"type": "number", "minimum": 0},
+        "mediaType": {"type": "string", "minLength": 1},
+        "binary": {"type": "boolean"},
+        "encoding": {"enum": ["utf8", "none"]},
+        "content": {"type": "string", "description": "The text of bytes offset to offset+length; absent when binary."},
+        "offset": {"type": "integer", "minimum": 0, "description": "Where content starts (the requested offset, moved back to a line start)."},
+        "length": {"type": "integer", "minimum": 0, "description": "Bytes of the file content covers."},
+        "truncated": {"type": "boolean", "description": "True when the file continues after offset+length."}
+      },
+      "if": {"properties": {"binary": {"const": true}}},
+      "then": {"properties": {"encoding": {"const": "none"}, "length": {"const": 0}}, "not": {"required": ["content"]}},
+      "else": {"required": ["content"], "properties": {"encoding": {"const": "utf8"}}}
     },
 
     "project/list.params": {"type": "object"},

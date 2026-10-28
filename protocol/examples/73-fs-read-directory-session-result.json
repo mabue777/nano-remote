@@ -1,0 +1,8 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/fs~1readDirectory.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 54,
+  "message": {"id": "c-82", "result": {"entries": [{"name": "adapters", "kind": "dir", "path": "src/adapters", "mtimeMs": 1761640000000, "hidden": false}, {"name": ".eslintrc", "kind": "file", "path": "src/.eslintrc", "size": 212, "mtimeMs": 1761000000000, "hidden": true}, {"name": "parser.ts", "kind": "file", "path": "src/parser.ts", "size": 41, "mtimeMs": 1761650000123.5, "hidden": false}]}}
+}

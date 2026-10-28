@@ -1,0 +1,8 @@
+{
+  "$expect": {"schema": "methods.json#/$defs/fs~1readFile.result", "at": "result"},
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 51,
+  "message": {"id": "c-80", "result": {"path": "src/parser.ts", "size": 41, "mtimeMs": 1761650000123.5, "mediaType": "text/x-typescript", "binary": false, "encoding": "utf8", "content": "export function parse() {\n  return 42;\n}\n", "offset": 0, "length": 41, "truncated": false}}
+}

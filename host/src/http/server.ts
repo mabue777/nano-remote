@@ -18,6 +18,7 @@ import type { AttachmentStore } from '../attachments/store.js';
 import { PRIVATE_FILE_MODE } from '../config/private-files.js';
 import { registerDeviceMethods } from '../devices/methods.js';
 import type { DeviceStore } from '../devices/store.js';
+import { FILE_PATH, handleFile } from '../files/endpoint.js';
 import { defaultJournalPath } from '../journal/journal.js';
 import { PairingCodes, type IssuedCode } from '../pairing/codes.js';
 import { registerPushMethods } from '../push/methods.js';
@@ -76,6 +77,11 @@ export interface HostServerOptions {
    * them `/v1/blob` answers 404 like any unknown endpoint.
    */
   attachments?: { store: AttachmentStore; sessionExists: (sessionId: string) => boolean };
+  /**
+   * Session files (spec 4.1): the folder of a session that exists and is not deleted, else undefined.
+   * Without it `/v1/file` answers 404 like any unknown endpoint.
+   */
+  files?: { sessionFolder: (sessionId: string) => string | undefined };
   /** Passed to the StreamServer. */
   stream?: Pick<StreamServerOptions, 'presence' | 'status' | 'pingTimeoutMs'>;
   log?: (message: string, error?: unknown) => void;
@@ -211,6 +217,15 @@ export class HostServer {
       if (attachments !== undefined && isBlobPath(urlPath)) {
         return await handleBlob(request, response, {
           ...attachments,
+          authenticate: (token) => this.options.devices.authenticate(token),
+          origin: () => this.origin,
+          log: this.log,
+        });
+      }
+      const files = this.options.files;
+      if (files !== undefined && urlPath === FILE_PATH) {
+        return await handleFile(request, response, {
+          ...files,
           authenticate: (token) => this.options.devices.authenticate(token),
           origin: () => this.origin,
           log: this.log,

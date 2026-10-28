@@ -17,6 +17,7 @@ export interface MethodMap {
   'agent/list': { params: m.AgentListParams; result: m.AgentListResult };
   'model/list': { params: m.ModelListParams; result: m.ModelListResult };
   'fs/readDirectory': { params: m.FsReadDirectoryParams; result: m.FsReadDirectoryResult };
+  'fs/readFile': { params: m.FsReadFileParams; result: m.FsReadFileResult };
   'project/list': { params: m.ProjectListParams; result: m.ProjectListResult };
   'session/list': { params: m.SessionListParams; result: m.SessionListResult };
   'session/start': { params: m.SessionStartParams; result: m.SessionStartResult };

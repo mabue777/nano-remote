@@ -20,7 +20,8 @@
         {"id": "kimi", "name": "Kimi", "status": "unavailable", "reason": "CLI not found"}
       ],
       "push": {"vapidPublicKey": "BOrExampleVapidPublicKeyForDocumentation", "subscribed": true},
-      "limits": {"maxMessageBytes": 16777216, "snapshotTurns": 5, "maxAttachmentBytes": 20971520}
+      "limits": {"maxMessageBytes": 16777216, "snapshotTurns": 5, "maxAttachmentBytes": 20971520, "maxFileReadBytes": 1048576},
+      "files": {"read": true}
     }
   }
 }

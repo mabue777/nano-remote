@@ -137,7 +137,7 @@ The `message` field holds one of three shapes, identical to the Codex engine's J
 
 | Direction | Requests | Notifications |
 |---|---|---|
-| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `push/*`, `device/*`, `host/status`, `host/settings/update`, `provider/*` (section 15) | `initialized` |
+| Client to host | `initialize`, `session/*`, `turn/*`, `events/since`, `approval/resolve`, `input/answer`, `agent/list`, `model/list`, `fs/readDirectory`, `fs/readFile`, `push/*`, `device/*`, `host/status`, `host/settings/update`, `provider/*` (section 15) | `initialized` |
 | Host to client | none in v1 (see 5.3 for why) | every Journal event (section 5), `session/updated`, `host/status/changed`, `provider/delta`, `provider/usage`, `provider/done` (section 15) |
 
 Departure: the Codex engine sends approvals as host-to-client requests that must be answered on the same
@@ -167,7 +167,8 @@ Result:
              "capabilities":{"steer":false,"diff":true,"approvalModes":["default","acceptEdits","plan","never"]}},
             {"id":"kimi","name":"Kimi","status":"unavailable","reason":"CLI not found"}],
   "push":{"vapidPublicKey":"BOr…","subscribed":true},
-  "limits":{"maxMessageBytes":16777216,"snapshotTurns":5,"maxAttachmentBytes":20971520}
+  "limits":{"maxMessageBytes":16777216,"snapshotTurns":5,"maxAttachmentBytes":20971520,"maxFileReadBytes":1048576},
+  "files":{"read":true}
 }}
 ```
 - `optOutNotifications` is the Codex relay's `optOutNotificationMethods` idea (capture item 12): the client
@@ -175,6 +176,11 @@ Result:
   journaled and still returned by `events/since` when asked with `includeOptedOut: true`.
 - `limits.maxAttachmentBytes` (additive within v1) is the largest attachment `POST /v1/blob` accepts
   (section 8.1); a host without it takes no attachments, and clients show no attach button.
+- `files {read, write?}` and `limits.maxFileReadBytes` (additive within v1) say what a client may do with
+  the files of a session folder (section 4.1): `read` true when `fs/readFile`, `fs/readDirectory` with a
+  `sessionId` and `GET /v1/file` work; `maxFileReadBytes` is the most one `fs/readFile` answer carries
+  (1 MiB, 1 048 576 bytes). `write` is reserved for a later write method; absent means false. A host
+  without `files`, or with `read` false, offers none of this: clients show no file viewer and no Files page.
 - Until `initialize` succeeds the host answers every other request with `not_initialized`.
 - The client then sends the `initialized` notification (mirrors Codex; the host uses it to start sending
   unsolicited notifications such as `session/updated`).
@@ -241,8 +247,74 @@ agent. Values per agent:
   no `efforts`. `defaultEffort` is pi's current level fitted to the model the way pi fits it on a model
   switch.
 
-### `fs/readDirectory {path}` → `{entries:[{name, kind:"dir"|"file", path}]}`; `project/list` →
+### `fs/readDirectory {path, sessionId?}` → `{entries:[{name, kind:"dir"|"file", path, size?, mtimeMs?, hidden?}]}`; `project/list` →
 `{projects:[{path, name, lastUsedAt, sessions}]}` (recent working folders, for the folder picker; capture P3).
+Without `sessionId`, `path` is absolute or starts with `~`, and entries carry absolute paths: the folder
+picker of a new session. With `sessionId` (additive within v1) the listing is scoped to that session's
+folder; see section 4.1.
+
+### 4.1 Session files (additive within v1)
+
+A client can read the files of a session's folder (the session's `cwd`): text through the stream, any file
+through plain HTTPS. There is no write method. Every paired device can already see every session and ask
+its agent to print any file, so this adds no reach; the rules below keep it inside the session folder.
+
+**Scope.** A path is relative to the session folder; `''` and `.` name the folder itself. An absolute path
+is accepted only when it resolves inside the folder. The host resolves the path with `realpath` and
+requires the result to be the `realpath` of the session folder or below it. `..` that leaves the folder, an
+absolute path elsewhere, a symlink (or a chain of them) pointing out of the folder, a symlink loop, a
+missing file and an unreadable one all answer the same `not_found` (`data.path` is the path as sent), with
+nothing that says whether or what exists outside. A symlink that stays inside is followed. An unknown or
+deleted session is `not_found`; a deleted session's folder is never readable through the host. Archived
+sessions stay readable. Hidden files such as `.env` are readable (the agent can read them too); clients
+hide dot-files in listings by default. A path naming a folder, or anything but a regular file (a FIFO, a
+socket), is `invalid_params` for a read.
+
+**`fs/readFile {sessionId, path, offset?, maxBytes?}`** → `{path, size, mtimeMs, mediaType, binary,
+encoding:"utf8"|"none", content?, offset, length, truncated}`.
+- `path` in the answer is the file's path inside the folder after resolving links, `/`-separated. `size`
+  is in bytes, `mtimeMs` the last modification in Unix milliseconds.
+- **Binary.** A NUL byte or invalid UTF-8 in the first 8 KiB (a character cut by the 8 KiB mark does not
+  count) makes the file binary: `binary` true, `encoding` `none`, no `content`, `offset` 0, `length` 0,
+  `truncated` false. A client shows such a file through `GET /v1/file`.
+- **`mediaType`** comes from the first bytes for PNG, JPEG, GIF, WebP and PDF, otherwise from the
+  extension (`text/markdown`, `application/json`, `text/x-typescript`, …), otherwise `text/plain` for text
+  and `application/octet-stream` for binary.
+- **Ranges.** A text answer carries bytes `[offset, offset + length)` of the file as `content`. `maxBytes`
+  defaults to 262 144 (256 KiB); the host reads at least 4 096 and at most `limits.maxFileReadBytes`.
+  `offset` (default 0, bytes) moves back to the start of its line when that start is at most 1 024 bytes
+  earlier, otherwise back to the start of its UTF-8 character; the answer's `offset` is where `content`
+  really starts. An answer that stops before the end of the file ends right after its last newline when it
+  holds one, otherwise at a character boundary, so it never splits a line it could keep whole or a UTF-8
+  character. `truncated` is true when the file goes on; the next part is `offset = offset + length` of the
+  previous answer, and each answer makes progress. An `offset` past the end is `invalid_params`
+  (`data.path` `params.offset`). Invalid UTF-8 after the first 8 KiB arrives as U+FFFD.
+
+**`fs/readDirectory {path, sessionId}`**: `path` relative to the session folder under the scope rule;
+entries carry paths relative to the folder (`src/parser.ts`), `size` (files only), `mtimeMs` and `hidden`
+(the name starts with a dot). Folders first, then files, by name. A symlink is listed as what it points to,
+and only when that is inside the folder; links out of it, broken links and sockets are left out.
+
+**`GET /v1/file?sessionId=<id>&path=<path>`** (and `HEAD`) returns a file's bytes, for images, PDFs and
+other files that should not travel over the stream as base64.
+- Authenticated exactly like `/v1/blob` (section 8.1): the `nano_device` cookie, or a bearer token from a
+  client that sends no `Origin`; a request from another origin is refused.
+- The same headers as `/v1/blob`: `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+  default-src 'none'; sandbox`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+  `Cross-Origin-Resource-Policy: same-origin`, and `Content-Disposition: attachment` for anything but
+  raster images (JPEG, PNG, GIF, WebP, HEIC, HEIF, AVIF), which are `inline`. `Content-Type` is the
+  `mediaType` above, with `; charset=utf-8` for text.
+- Because session files change: `ETag` (a strong validator from size and modification time),
+  `Last-Modified`, `Cache-Control: private, no-cache`; a request whose `If-None-Match` names the current
+  `ETag` answers 304. `Accept-Ranges: bytes`: one `Range: bytes=a-b`, `a-` or `-n` answers 206 with
+  `Content-Range`; a range that starts past the end answers 416 (`Content-Range: bytes */<size>`); a
+  malformed range or several ranges get the whole file (200); `If-Range` with another `ETag` gets the whole
+  file.
+- Limit: files up to 20 MiB (20 971 520 bytes, as attachments).
+- Failures answer `{error:{code, message, data?}}`: 401 `unauthorized` (no token, unknown or revoked), 403
+  `unauthorized` (foreign origin), 400 `invalid_params` (`data.path` `sessionId`, `path`), 404 `not_found`
+  (unknown or deleted session; a path outside the folder or missing), 405 (another method), 413
+  `invalid_params` (`data.maxBytes`), 416 `invalid_params` (`data.path` `range`).
 
 ## 5. Sessions, turns, items (the vocabulary adapters normalize to)
 
@@ -649,6 +721,7 @@ Data-URL image parts keep working as before and are never stored.
 | `cursor_expired` | Journal no longer holds the cursor | re-open in snapshot mode |
 | `agent_unavailable` | adapter down (`data.agentId`, `data.reason`) | show agent state |
 | `not_supported` | adapter lacks the operation (steer, diff, a `session/settings/update` key) | hide the control |
+| `conflict` | reserved for a later file write method: the file changed since it was read; not sent by any v1 method yet, and not in the schema's code list until that method exists | reload the file |
 | `not_a_repository` | `turn/diff`: the session folder is not inside a git work tree (`data.cwd`; additive within v1) | show the turn's `fileChange` diffs (section 7), else say the folder is not a git repository |
 | `rate_limited` | too many requests (`data.retryAfterMs`) | back off |
 | `provider_unavailable` | a relayed provider failed (`data.reason`, `data.status?`, `data.retryAfterMs?`; section 15) | show the reason's sentence |

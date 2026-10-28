@@ -1333,7 +1333,22 @@
           ]
         },
         "path": {
-          "type": "string"
+          "type": "string",
+          "description": "Absolute without sessionId; with sessionId (spec 4, additive within v1) relative to the session folder, '/'-separated."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes, for files. Additive within v1."
+        },
+        "mtimeMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Last modification, Unix milliseconds. Additive within v1."
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "True when the name starts with a dot. Additive within v1."
         }
       }
     },

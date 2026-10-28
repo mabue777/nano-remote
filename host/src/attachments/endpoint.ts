@@ -20,10 +20,10 @@ import { tokenFrom } from '../stream/server.js';
 import { AttachmentTooLarge, BLOB_ID, BLOB_PATH, blobUrl, type AttachmentStore } from './store.js';
 
 /** Media types a browser may show inline from `/v1/blob` (raster images only, never SVG or HTML). */
-const INLINE_TYPES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
+export const INLINE_TYPES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
 
 /** Headers of every blob response: never sniffed, never scripted, never framed. */
-const BLOB_HEADERS: Readonly<Record<string, string>> = {
+export const BLOB_HEADERS: Readonly<Record<string, string>> = {
   'x-content-type-options': 'nosniff',
   'content-security-policy': "default-src 'none'; sandbox",
   'x-frame-options': 'DENY',
@@ -51,7 +51,7 @@ export interface BlobUploadResult {
   size: number;
 }
 
-function sendJson(response: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+export function sendJson(response: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const text = JSON.stringify(body);
   response.writeHead(status, {
     ...BLOB_HEADERS,
@@ -63,7 +63,7 @@ function sendJson(response: http.ServerResponse, status: number, body: unknown, 
   response.end(text);
 }
 
-function fail(
+export function fail(
   response: http.ServerResponse,
   status: number,
   code: string,
@@ -79,8 +79,12 @@ export function isBlobPath(urlPath: string): boolean {
   return urlPath === BLOB_PATH || urlPath.startsWith(`${BLOB_PATH}/`);
 }
 
-/** The authenticated clientId, or null after answering 401 or 403. */
-function authenticate(request: http.IncomingMessage, response: http.ServerResponse, options: BlobEndpointOptions): string | null {
+/** The authenticated clientId, or null after answering 401 or 403. Shared with `/v1/file` (spec 4.1). */
+export function authenticate(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  options: Pick<BlobEndpointOptions, 'authenticate' | 'origin' | 'log'>,
+): string | null {
   const origin = request.headers.origin;
   if (origin !== undefined && origin !== new URL(options.origin()).origin) {
     fail(response, 403, 'unauthorized', 'origin not allowed');

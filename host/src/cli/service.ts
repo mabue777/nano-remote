@@ -21,6 +21,7 @@ import { describeAgent, type AgentProvider } from '../core/adapter.js';
 import { HostCore } from '../core/host-core.js';
 import { SessionStore } from '../core/store.js';
 import { DeviceStore, MAX_DISPLAY_NAME_LENGTH } from '../devices/store.js';
+import { MAX_FILE_READ_BYTES } from '../files/read.js';
 import type { Host } from '../generated/common.js';
 import { isLoopback, resolveTailnet, type TailnetSelf } from '../http/bind.js';
 import { HostServer } from '../http/server.js';
@@ -218,7 +219,14 @@ export class HostService {
         agents: agents.map(describeAgent),
         // The key exists from the first start; `subscribed` says whether this device has a stored subscription (spec 9).
         push: { vapidPublicKey: vapid.publicKey, subscribed: devices.push.isSubscribed(context.clientId) },
-        limits: { maxMessageBytes: MAX_MESSAGE_BYTES, snapshotTurns: DEFAULT_SNAPSHOT_TURNS, maxAttachmentBytes: attachments.maxBytes },
+        limits: {
+          maxMessageBytes: MAX_MESSAGE_BYTES,
+          snapshotTurns: DEFAULT_SNAPSHOT_TURNS,
+          maxAttachmentBytes: attachments.maxBytes,
+          maxFileReadBytes: MAX_FILE_READ_BYTES,
+        },
+        // Reading the session folder (spec 4.1); no write method exists.
+        files: { read: true },
       })),
     );
 
@@ -252,6 +260,7 @@ export class HostService {
         devices,
         pushSender,
         attachments: { store: attachments, sessionExists: (sessionId) => hostCore.sessions.exists(sessionId) },
+        files: { sessionFolder: (sessionId) => (hostCore.sessions.exists(sessionId) ? hostCore.sessionFolder(sessionId) : undefined) },
         host: () => ({ hostId: host.hostId, name: host.name }),
         port: config.port,
         resolve: listenPlan(config, insecureDev, options.resolve ?? (() => resolveTailnet())),

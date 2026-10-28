@@ -19,6 +19,7 @@ import { CursorExpired } from '../journal/errors.js';
 import { DEFAULT_SNAPSHOT_TURNS, MAX_SINCE_LIMIT, type Journal } from '../journal/journal.js';
 import type { JournalEvent, Subscription } from '../journal/types.js';
 import { RpcError } from '../errors.js';
+import { readSessionDirectory, readSessionFile } from '../files/read.js';
 import type { MethodMap, MethodRegistry, RequestContext } from '../stream/router.js';
 import type { StreamServer } from '../stream/server.js';
 import { describeAgent, type AgentProvider } from './adapter.js';
@@ -213,7 +214,18 @@ export class HostCore {
           });
         }
       })
-      .register('fs/readDirectory', async (params) => ({ entries: await readDirectory(p.str(params, 'path')) }))
+      .register('fs/readDirectory', async (params) => {
+        const sessionId = p.optStr(params, 'sessionId');
+        if (sessionId === undefined) return { entries: await readDirectory(p.str(params, 'path')) };
+        if (typeof params.path !== 'string') throw RpcError.invalidParams('params.path', 'path must be a string');
+        return { entries: await readSessionDirectory(this.sessionFolder(sessionId), params.path) };
+      })
+      .register('fs/readFile', async (params) =>
+        readSessionFile(this.sessionFolder(p.str(params, 'sessionId')), p.str(params, 'path'), {
+          offset: p.optInt(params, 'offset'),
+          maxBytes: p.optInt(params, 'maxBytes', 1),
+        }),
+      )
       .register('project/list', () => ({ projects: this.projects() }))
       .register('session/list', (params) => {
         const options: { agentId?: string; cursor?: string; limit?: number; archived?: boolean } = {};
@@ -357,6 +369,14 @@ export class HostCore {
     const after = result.cursor;
     context.afterResponse(() => this.subscribe(context, sessionId, after));
     return result;
+  }
+
+  /**
+   * The folder file reads are scoped to (spec 4.1): the session's `cwd`. `not_found` for an unknown or
+   * deleted session, so a deleted session's folder is never readable through the host.
+   */
+  sessionFolder(sessionId: string): string {
+    return this.sessions.session(sessionId).cwd;
   }
 
   /** `project/list` (spec 4): working folders of visible sessions, most recently used first. */
