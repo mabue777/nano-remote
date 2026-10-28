@@ -76,6 +76,20 @@ describe('useDrag', () => {
     expect(pinch.move).not.toHaveBeenCalled();
   });
 
+  it('cancels a drag when a second finger lands', () => {
+    const el = new EventTarget();
+    const h = handlers();
+    renderHook(() => useDrag({ current: el }, true, h));
+    el.dispatchEvent(touchEvent('touchstart', [{ x: 0, y: 0 }]));
+    el.dispatchEvent(touchEvent('touchmove', [{ x: 30, y: 0 }]));
+    el.dispatchEvent(touchEvent('touchstart', [{ x: 30, y: 0 }, { x: 90, y: 90 }]));
+    expect(h.end).toHaveBeenCalledWith(true);
+    el.dispatchEvent(touchEvent('touchmove', [{ x: 60, y: 0 }]));
+    el.dispatchEvent(touchEvent('touchend', []));
+    expect(h.move).toHaveBeenCalledTimes(1);
+    expect(h.end).toHaveBeenCalledTimes(1);
+  });
+
   it('listens only while enabled and an element is there, and stops listening on unmount', () => {
     const el = new EventTarget();
     const off = handlers();

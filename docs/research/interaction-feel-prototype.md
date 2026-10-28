@@ -170,6 +170,25 @@ look step 6.
   Status words cross-fade (`ui/CrossFade.tsx`). `useFlip` moved to `ui/motion/use-flip.ts` and marks what it
   played (`data-flip-anim="move"` or `"enter"`). With Reduce Motion rows change at once.
 
+Part 3c (2026-10-28): page push and the edge back swipe (2) run in the app shell, the last motion part.
+
+- **Push and pop.** `Router` tells each change's direction from the pages' depth (Home 0, a session or chat 1,
+  Settings 2), so the browser's back and forward buttons get it too; `router.back` steps back through history
+  when the entry before is the page Back goes to, instead of adding an entry. `routes/PageStack.tsx` hears the
+  change before the app renders it: with View Transitions each page is captured in its own group (the root is
+  not captured, so only transform and opacity animate and a scrolled Home keeps its place); without them the
+  page left stays on screen in a fixed layer while the Web Animations API slides the two. Replace navigations
+  (Home's tabs, redirects) and Reduce Motion change at once.
+- **Edge back swipe.** On a pushed page, a drag from within 24 px of the left edge follows the finger; Home
+  shows beneath, shifted and dimmed, at its saved scroll position, and becomes the page without remounting
+  when the swipe completes (rules in `ui/motion/page-motion.ts`). A vertical drag stays a scroll, no swipe starts
+  while a sheet is open or in a code block scrolled sideways, and a second finger cancels the drag.
+- **Safari's own swipe.** In a Safari tab on iOS the left edge is left to Safari, and a pop Safari already
+  animated (`hasUAVisualTransition`, or for older Safaris a pop during or right after a touch) does not slide
+  again. In the installed app, and in other browsers, the edge swipe is the app's.
+- **Scroll.** The app takes over scroll restoration: the page left keeps its window scroll, a pop puts it back,
+  a push opens at the top (a session still lands at its own bottom).
+
 ## New look prototype
 
 The lab now has a **Look: Now / New** switch at the top of its panel. New shows the redesign from the visual-gap

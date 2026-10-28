@@ -6,13 +6,16 @@
 // `unauthorized` (revoked, or the host lost the cookie) forgets the device and goes back to pairing.
 // Settings opens without a host too: a cloud provider needs no Mac (ADR 0006). With a host it also shows
 // Notifications (Web Push) and the host section (keep this Mac awake while plugged in).
-import { useEffect, useMemo, useState } from 'preact/hooks';
+// Pages slide (routes/PageStack.tsx): a session, a chat or Settings is pushed over Home and slides back out on
+// Back or on a swipe from the left edge; PageMotion hears each route change before the app renders it.
+import { useEffect, useLayoutEffect, useMemo, useState } from 'preact/hooks';
 
 import { LabRoute } from './lab/LabRoute';
 import { watchBadge } from './pwa/badge';
 import { PushModel, type PushEnvironment } from './pwa/push';
 import { Replica } from './replica/replica';
 import { defaultStorage, type StorageLike } from './replica/storage';
+import { browserOwnsEdge, PageMotion, PageStack } from './routes/PageStack';
 import { Router, type Route } from './routes/router';
 import { ChatScreen } from './screens/chat/ChatScreen';
 import { ChatsHome } from './screens/chat/ChatsHome';
@@ -45,7 +48,11 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
   const [route, setRoute] = useState<Route>(router.route);
   const [device, setDevice] = useState<PairedDevice | null>(() => loadDevice(storage));
   const chat = useMemo(() => createChatServices({ storage }), [storage]);
-  useEffect(() => router.subscribe(setRoute), [router]);
+  const motion = useMemo(() => new PageMotion(), []);
+  const ownsEdge = useMemo(browserOwnsEdge, []);
+  useEffect(() => router.subscribe((next, navigation) => motion.change(navigation, () => setRoute(next))), [router, motion]);
+  // After the pages' own layout effects (scroll put back): the slide may capture the new page.
+  useLayoutEffect(() => motion.rendered(), [route, motion]);
 
   // Without a host, local chat still works: home, /chats and chat pages stay when this phone has any.
   const localOnly =
@@ -58,11 +65,23 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
   // The hidden interaction lab: fake data, no host, no pairing needed.
   if (route.name === 'lab') return <LabRoute />;
   if (localOnly) {
-    if (route.name === 'settings') return <SettingsScreen services={chat} backLabel={homeTitle(false)} onBack={() => router.navigate('/')} />;
-    if (route.name === 'chat') {
-      return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/')} onSettings={settings} />;
-    }
-    return <ChatsHome services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />;
+    const page = (shown: Route) => {
+      if (shown.name === 'settings') return <SettingsScreen services={chat} backLabel={homeTitle(false)} onBack={() => router.back('/')} />;
+      if (shown.name === 'chat') {
+        return <ChatScreen key={shown.chatId} chatId={shown.chatId} services={chat} backLabel="Chats" onBack={() => router.back('/')} onSettings={settings} />;
+      }
+      return <ChatsHome services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />;
+    };
+    return (
+      <PageStack
+        route={route}
+        motion={motion}
+        render={page}
+        parentOf={(shown) => (shown.name === 'chat' || shown.name === 'settings' ? { name: 'home' } : null)}
+        onSwipeBack={(to) => router.back(to, { animate: false })}
+        ownsEdge={ownsEdge}
+      />
+    );
   }
   if (route.name === 'pair' || device === null) {
     return (
@@ -87,6 +106,8 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
       storage={storage}
       push={push}
       chat={chat}
+      motion={motion}
+      ownsEdge={ownsEdge}
       onUnpaired={() => {
         forgetDevice(storage);
         setDevice(null);
@@ -102,10 +123,25 @@ interface ConnectedProps {
   storage: StorageLike | null;
   push: PushEnvironment | null;
   chat: ChatServices;
+  motion: PageMotion;
+  ownsEdge: boolean;
   onUnpaired: () => void;
 }
 
-function Connected({ device, route, router, storage, push, chat, onUnpaired }: ConnectedProps) {
+/** The page Back goes to: Home from a session or Settings, the Chats tab from a chat. */
+function connectedParent(route: Route): Route | null {
+  switch (route.name) {
+    case 'session':
+    case 'settings':
+      return { name: 'home' };
+    case 'chat':
+      return { name: 'chats' };
+    default:
+      return null;
+  }
+}
+
+function Connected({ device, route, router, storage, push, chat, motion, ownsEdge, onUnpaired }: ConnectedProps) {
   const services = useMemo(() => {
     const client = new StreamClient({ clientId: device.clientId, optOutNotifications: ['item/reasoning/delta'] });
     const replica = new Replica({ client, storage });
@@ -156,77 +192,93 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
   }, [services, chat]);
 
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
-  switch (route.name) {
-    case 'home':
-    case 'chats':
-      return (
-        <HomeScreen
-          client={services.client}
-          replica={services.replica}
-          away={services.away}
-          onOpenSession={open}
-          actions={services.actions}
-          tab={route.name === 'chats' ? 'chats' : 'sessions'}
-          onTab={(tab) => router.navigate(tab === 'chats' ? '/chats' : '/', { replace: true })}
-          onSettings={() => router.navigate('/settings')}
-          chats={<ChatsPanel services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />}
-        />
-      );
-    case 'chat':
-      return (
-        <ChatScreen
-          key={route.chatId}
-          chatId={route.chatId}
-          services={chat}
-          backLabel="Chats"
-          onBack={() => router.navigate('/chats')}
-          onSettings={() => router.navigate('/settings')}
-        />
-      );
-    case 'settings':
-      return (
-        <SettingsScreen
-          services={chat}
-          hostLink={services.client}
-          host={services.client}
-          {...(services.notifications !== undefined ? { notifications: services.notifications } : {})}
-          backLabel={homeTitle(true)}
-          onBack={() => router.navigate('/')}
-        />
-      );
-    case 'session':
-      return (
-        <SessionScreen
-          sessionId={route.sessionId}
-          replica={services.replica}
-          clientId={device.clientId}
-          deviceName={services.deviceName}
-          onOpened={services.opened}
-          agents={services.agents}
-          attachments={services.attachments}
-          actions={services.actions}
-          link={services.client}
-          onBack={() => router.navigate('/')}
-        />
-      );
-    case 'notFound':
-      return (
-        <main class="screen">
-          <h1>Not found</h1>
-          <p class="muted">
-            Nothing lives at <code>{route.path}</code>.
-          </p>
-          <a
-            href="/"
-            onClick={(event) => {
-              event.preventDefault();
-              router.navigate('/');
-            }}
-          >
-            Go to sessions
-          </a>
-        </main>
-      );
+  return (
+    <PageStack
+      route={route}
+      motion={motion}
+      render={renderConnected}
+      parentOf={connectedParent}
+      onSwipeBack={(to) => router.back(to, { animate: false })}
+      ownsEdge={ownsEdge}
+    />
+  );
+
+  /** One page; during a slide or a swipe the page stack renders two. */
+  function renderConnected(route: Route) {
+    switch (route.name) {
+      case 'home':
+      case 'chats':
+        return (
+          <HomeScreen
+            client={services.client}
+            replica={services.replica}
+            away={services.away}
+            onOpenSession={open}
+            actions={services.actions}
+            tab={route.name === 'chats' ? 'chats' : 'sessions'}
+            onTab={(tab) => router.navigate(tab === 'chats' ? '/chats' : '/', { replace: true })}
+            onSettings={() => router.navigate('/settings')}
+            chats={<ChatsPanel services={chat} onOpenChat={(chatId) => router.navigate({ name: 'chat', chatId })} onNavigate={(path) => router.navigate(path)} />}
+          />
+        );
+      case 'chat':
+        return (
+          <ChatScreen
+            key={route.chatId}
+            chatId={route.chatId}
+            services={chat}
+            backLabel="Chats"
+            onBack={() => router.back('/chats')}
+            onSettings={() => router.navigate('/settings')}
+          />
+        );
+      case 'settings':
+        return (
+          <SettingsScreen
+            services={chat}
+            hostLink={services.client}
+            host={services.client}
+            {...(services.notifications !== undefined ? { notifications: services.notifications } : {})}
+            backLabel={homeTitle(true)}
+            onBack={() => router.back('/')}
+          />
+        );
+      case 'session':
+        return (
+          <SessionScreen
+            sessionId={route.sessionId}
+            replica={services.replica}
+            clientId={device.clientId}
+            deviceName={services.deviceName}
+            onOpened={services.opened}
+            agents={services.agents}
+            attachments={services.attachments}
+            actions={services.actions}
+            link={services.client}
+            onBack={() => router.back('/')}
+          />
+        );
+      case 'notFound':
+        return (
+          <main class="screen">
+            <h1>Not found</h1>
+            <p class="muted">
+              Nothing lives at <code>{route.path}</code>.
+            </p>
+            <a
+              href="/"
+              onClick={(event) => {
+                event.preventDefault();
+                router.navigate('/');
+              }}
+            >
+              Go to sessions
+            </a>
+          </main>
+        );
+      default:
+        return <></>; // pair and lab never reach Connected
+    }
   }
 }
 

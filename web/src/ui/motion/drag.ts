@@ -23,6 +23,12 @@ export function useDrag(element: RefObject<EventTarget>, enabled: boolean, handl
     let active = false;
     const onStart = (event: Event) => {
       const touches = (event as TouchEvent).touches;
+      // A second finger lands during a drag (a pinch): the drag ends as cancelled, so nothing stays half-moved.
+      if (active) {
+        active = false;
+        current.current.end(true);
+        return;
+      }
       const touch = touches[0];
       active = touches.length === 1 && touch !== undefined && current.current.start(touch.clientX, touch.clientY, event.target, event.timeStamp);
     };

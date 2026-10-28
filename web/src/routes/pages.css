@@ -1,0 +1,115 @@
+/* Page push and back swipe (routes/PageStack.tsx; the lab's data-lab-nav rules in lab/lab.css). Transform and
+   opacity only; with Reduce Motion the app does not start any of it (ui/motion/page-motion.ts navMotion). */
+
+/* The current page stays in the normal flow (Home and Settings scroll the window). While a second page is on
+   screen it sits above the fixed layer and hides it with its own background. */
+.pages.stacked > .page[data-page-role='top'] {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+}
+
+/* The page beneath a pushed page, or the page sliding away above the current one: fixed to the viewport,
+   scrolled by the app to where it was left, not touchable. */
+.page[data-page-role='under'],
+.page[data-page-role='over'] {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+  pointer-events: none;
+}
+
+.page[data-page-role='under'] {
+  z-index: 0;
+}
+
+.page[data-page-role='over'] {
+  z-index: 2;
+}
+
+/* The edge of a pushed page that slides over the one beneath. Off screen to the left while the page rests.
+   Its own background, so the snapshot a View Transition takes of it is not see-through. */
+.page-pushed {
+  background: var(--bg);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.12); /* one-off: the lab's page edge */
+}
+
+/* While a finger drags the page, nothing in it reacts to the touch. */
+.page[data-swipe] {
+  will-change: transform;
+}
+
+/* ---------- View Transitions (Safari 18+, Chromium) ---------- */
+/* Only the two pages are captured, each in its own group so the page left keeps its place on screen (Home can
+   be scrolled); the root is not captured, so the browser's default root animation never runs. */
+html[data-nav] {
+  view-transition-name: none;
+}
+
+html[data-nav] .page[data-page-role='top'] {
+  view-transition-name: page-new;
+}
+
+html[data-nav] .page[data-vt-old] {
+  view-transition-name: page-old;
+}
+
+html[data-nav]::view-transition-group(page-old),
+html[data-nav]::view-transition-group(page-new) {
+  animation: none;
+}
+
+html[data-nav]::view-transition-old(page-old),
+html[data-nav]::view-transition-new(page-new) {
+  mix-blend-mode: normal;
+  animation-duration: var(--duration-relaxed);
+  animation-timing-function: var(--ease-enter);
+  animation-fill-mode: both;
+}
+
+html[data-nav='push']::view-transition-old(page-old) {
+  animation-name: page-to-under;
+}
+
+html[data-nav='push']::view-transition-new(page-new) {
+  animation-name: page-from-right;
+}
+
+html[data-nav='pop']::view-transition-group(page-old) {
+  z-index: 1;
+}
+
+html[data-nav='pop']::view-transition-old(page-old) {
+  animation-name: page-to-right;
+}
+
+html[data-nav='pop']::view-transition-new(page-new) {
+  animation-name: page-from-under;
+}
+
+@keyframes page-from-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes page-to-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes page-to-under {
+  to {
+    transform: translateX(-30%);
+    opacity: 0.85;
+  }
+}
+
+@keyframes page-from-under {
+  from {
+    transform: translateX(-30%);
+    opacity: 0.85;
+  }
+}

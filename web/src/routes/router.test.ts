@@ -1,24 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseRoute, routePath, Router, type WindowLike } from './router';
+import { depthOf, directionOf, parseRoute, routePath, Router, type PopEvent, type Route, type WindowLike } from './router';
 
 /** A fake window whose history moves location the way a browser does. */
 class FakeWindow implements WindowLike {
   location = { pathname: '/', hash: '', search: '' };
   readonly entries: string[] = [];
+  readonly states: unknown[] = [];
   private index = -1;
-  private readonly pop = new Set<() => void>();
-  readonly history = {
-    pushState: (_d: unknown, _u: string, url?: string) => {
+  private readonly pop = new Set<(event: PopEvent) => void>();
+  /** Set by `history.back()`: the step waits for `flush()`, like the browser's asynchronous popstate. */
+  queued = false;
+  readonly history: WindowLike['history'] & { state: unknown } = {
+    state: null,
+    scrollRestoration: 'auto',
+    pushState: (data: unknown, _u: string, url?: string) => {
       this.entries.splice(this.index + 1);
+      this.states.splice(this.index + 1);
       this.entries.push(url!);
+      this.states.push(data);
       this.index = this.entries.length - 1;
       this.go(url!);
     },
-    replaceState: (_d: unknown, _u: string, url?: string) => {
+    replaceState: (data: unknown, _u: string, url?: string) => {
       this.entries[Math.max(this.index, 0)] = url!;
+      this.states[Math.max(this.index, 0)] = data;
       this.index = Math.max(this.index, 0);
       this.go(url!);
+    },
+    back: () => {
+      this.queued = true;
     },
   };
 
@@ -28,17 +39,25 @@ class FakeWindow implements WindowLike {
     this.go(start);
   }
 
-  back(): void {
+  /** The browser's back button (or a back swipe, with `event`). */
+  back(event: PopEvent = {}): void {
     this.index -= 1;
     this.go(this.entries[this.index]!);
-    for (const fn of this.pop) fn();
+    for (const fn of this.pop) fn(event);
   }
 
-  addEventListener(_type: 'popstate', listener: () => void): void {
+  /** Delivers the popstate a `history.back()` asked for. */
+  flush(): void {
+    if (!this.queued) return;
+    this.queued = false;
+    this.back();
+  }
+
+  addEventListener(_type: 'popstate', listener: (event: PopEvent) => void): void {
     this.pop.add(listener);
   }
 
-  removeEventListener(_type: 'popstate', listener: () => void): void {
+  removeEventListener(_type: 'popstate', listener: (event: PopEvent) => void): void {
     this.pop.delete(listener);
   }
 
@@ -47,6 +66,7 @@ class FakeWindow implements WindowLike {
   }
 
   private go(url: string): void {
+    this.history.state = this.states[this.index] ?? null;
     const parsed = new URL(url, 'https://host.example');
     this.location = { pathname: parsed.pathname, hash: parsed.hash, search: parsed.search };
   }
@@ -125,7 +145,7 @@ describe('Router', () => {
     router.subscribe(seen);
     router.navigate({ name: 'session', sessionId: 'ses_1' });
     expect(win.location.pathname).toBe('/s/ses_1');
-    expect(seen).toHaveBeenLastCalledWith({ name: 'session', sessionId: 'ses_1' });
+    expect(seen).toHaveBeenLastCalledWith({ name: 'session', sessionId: 'ses_1' }, expect.objectContaining({ direction: 'push' }));
     router.navigate('/s/ses_1'); // same place: nothing
     expect(win.entries).toEqual(['/', '/s/ses_1']);
     expect(seen).toHaveBeenCalledTimes(1);
@@ -189,5 +209,129 @@ describe('Router', () => {
       expect(event.preventDefault).not.toHaveBeenCalled();
     }
     expect(router.route).toEqual({ name: 'session', sessionId: 'ses_2' });
+  });
+
+  it('tells listeners where a change comes from, which way it goes and whether to animate it', () => {
+    const win = new FakeWindow('/');
+    const router = new Router(win);
+    const seen = vi.fn();
+    router.subscribe(seen);
+    router.navigate('/s/ses_1');
+    expect(seen).toHaveBeenLastCalledWith(
+      { name: 'session', sessionId: 'ses_1' },
+      { from: { name: 'home' }, to: { name: 'session', sessionId: 'ses_1' }, direction: 'push', animate: true },
+    );
+    win.back();
+    expect(seen).toHaveBeenLastCalledWith({ name: 'home' }, { from: { name: 'session', sessionId: 'ses_1' }, to: { name: 'home' }, direction: 'pop', animate: true });
+    router.navigate('/chats', { replace: true });
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'none', animate: false });
+    router.navigate('/c/chat_1', { replace: true, animate: true });
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'push', animate: true });
+    router.navigate('/chats', { replace: true });
+    router.navigate('/settings', { animate: false });
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'push', animate: false });
+  });
+
+  it('a popstate the browser already animated (Safari\'s own back swipe) does not animate again', () => {
+    const win = new FakeWindow('/');
+    const router = new Router(win);
+    const seen = vi.fn();
+    router.subscribe(seen);
+    router.navigate('/s/ses_1');
+    win.back({ hasUAVisualTransition: true });
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'pop', animate: false });
+  });
+
+  it('asks an injected guess whether the browser animated a popstate', () => {
+    const win = new FakeWindow('/');
+    const browserAnimated = vi.fn(() => true);
+    const router = new Router(win, { browserAnimated });
+    const seen = vi.fn();
+    router.subscribe(seen);
+    router.navigate('/c/chat_1');
+    win.back();
+    expect(browserAnimated).toHaveBeenCalledWith({});
+    expect(seen.mock.lastCall![1]).toMatchObject({ animate: false });
+  });
+
+  it('takes over scroll restoration where the browser offers it', () => {
+    const win = new FakeWindow('/');
+    new Router(win);
+    expect(win.history.scrollRestoration).toBe('manual');
+  });
+
+  it('back steps back through history when the entry before is the target, keeping its animate choice', () => {
+    const win = new FakeWindow('/');
+    const router = new Router(win);
+    const seen = vi.fn();
+    router.subscribe(seen);
+    router.navigate('/chats', { replace: true });
+    router.navigate('/c/chat_1');
+    expect(win.history.state).toEqual({ back: '/chats' });
+    router.back('/chats', { animate: false });
+    expect(win.queued).toBe(true);
+    expect(router.route).toEqual({ name: 'chat', chatId: 'chat_1' }); // the popstate is still on its way
+    win.flush();
+    expect(router.route).toEqual({ name: 'chats' });
+    expect(win.entries).toEqual(['/chats', '/c/chat_1']);
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'pop', animate: false });
+    // The next popstate (the browser's back button) decides for itself again.
+    router.navigate('/c/chat_2');
+    win.back();
+    expect(seen.mock.lastCall![1]).toMatchObject({ animate: true });
+  });
+
+  it('back navigates when the entry before is another page or the page was opened directly', () => {
+    const win = new FakeWindow('/s/ses_1');
+    const router = new Router(win);
+    const seen = vi.fn();
+    router.subscribe(seen);
+    router.back({ name: 'home' });
+    expect(win.queued).toBe(false);
+    expect(win.entries).toEqual(['/s/ses_1', '/']);
+    expect(seen.mock.lastCall![1]).toMatchObject({ direction: 'pop', animate: true });
+    router.navigate('/c/chat_1');
+    router.back('/chats', { animate: false }); // pushed from '/', not '/chats'
+    expect(router.route).toEqual({ name: 'chats' });
+    expect(seen.mock.lastCall![1]).toMatchObject({ animate: false });
+  });
+
+  it('back without history.back (a minimal window) navigates', () => {
+    const win = new FakeWindow('/');
+    const { back: _drop, ...rest } = win.history;
+    void _drop;
+    const bare: WindowLike = { location: win.location, history: rest, addEventListener: () => {}, removeEventListener: () => {} };
+    const router = new Router(bare);
+    router.navigate('/s/ses_1');
+    router.back('/');
+    expect(router.route).toEqual({ name: 'home' });
+  });
+});
+
+describe('depthOf and directionOf', () => {
+  const home: Route = { name: 'home' };
+  const chats: Route = { name: 'chats' };
+  const session: Route = { name: 'session', sessionId: 's' };
+  const chat: Route = { name: 'chat', chatId: 'c' };
+  const settings: Route = { name: 'settings' };
+
+  it('Home and its tabs are the top, sessions and chats one level down, Settings two', () => {
+    expect([home, chats, { name: 'pair' } as Route, { name: 'lab' } as Route, { name: 'notFound', path: '/x' } as Route].map(depthOf)).toEqual([0, 0, 0, 0, 0]);
+    expect([session, chat].map(depthOf)).toEqual([1, 1]);
+    expect(depthOf(settings)).toBe(2);
+  });
+
+  it.each([
+    [home, session, 'push'],
+    [home, settings, 'push'],
+    [chats, chat, 'push'],
+    [chat, settings, 'push'],
+    [session, home, 'pop'],
+    [settings, home, 'pop'],
+    [chat, chats, 'pop'],
+    [home, chats, 'none'],
+    [session, { name: 'session', sessionId: 't' } as Route, 'none'],
+  ] as const)('%o to %o is %s', (from, to, direction) => {
+    expect(directionOf(from, to)).toBe(direction);
   });
 });
