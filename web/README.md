@@ -71,8 +71,8 @@ pnpm -C web dev          # dev server with HMR
 pnpm -C web typecheck    # tsc --noEmit
 pnpm -C web test         # vitest run
 pnpm -C web build        # vite build -> host/public
-pnpm -C web smoke        # playwright test (needs a build and the chromium browser)
-pnpm -C web verify       # generate + typecheck + test + build + smoke; the gate
+pnpm -C web smoke        # playwright test (needs a build and chromium; 4 workers, E2E_WORKERS to change)
+pnpm -C web verify       # generate + typecheck + test + build + smoke (scripts/verify.sh runs these)
 ```
 
 Playwright needs its chromium once: `pnpm -C web exec playwright install chromium`

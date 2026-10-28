@@ -1,4 +1,4 @@
-import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { expect, test, type CDPSession, type Page } from './worker-host';
 
 // Smoothness check for the lab's Smooth techniques (docs/research/interaction-feel-prototype.md). Not part
 // of the gate: run it on purpose with

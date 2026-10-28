@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // The session view against the fake host (test/e2e-server.ts), whose scripted turns are paced so deltas
 // arrive one by one: watch a turn stream in, stop at its approval and complete; send a message and see the

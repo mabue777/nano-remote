@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Phone smoke against the fake host (test/e2e-server.ts): pair with a code from the link, land on home,
 // see the host, the agents and the scripted sessions (the third only through cursor paging), and start

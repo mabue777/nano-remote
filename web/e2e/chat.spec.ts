@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 import { longPress, swipeLeft } from './gestures';
 
 // Local chat at 390 x 844 against the fake provider (test/fake-provider.ts): an OpenAI-compatible cloud

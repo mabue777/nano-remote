@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './worker-host';
 
 // The "new version" prompt against the built app, with builds deployed in turn on one origin
 // (POST /test/new-build serves sw.js under another version). Reload must land on the newest build

@@ -21,10 +21,15 @@ No iOS project: the first client is a web app (ADR 0004).
 
 ```
 scripts/bootstrap.sh   # once per clone: pnpm install (writes the lockfile) + playwright chromium
-scripts/verify.sh      # the gate: protocol check, pnpm -C host verify, pnpm -C web verify
+scripts/verify.sh      # the gate: protocol check, then the host and web checks (see the script)
 ```
 
 `scripts/verify.sh` sets its own PATH (Homebrew first), runs in a bare environment, and installs
 only when `node_modules` is missing (frozen lockfile). Protocol types in `host/src/generated` and
 `web/src/generated` are regenerated from `protocol/schema` on every verify by
 `host/scripts/generate-types.mjs`; they are not committed and never hand-written.
+The gate runs the same checks as `pnpm -C host verify` and `pnpm -C web verify`: the type checks and
+build side by side, then the host unit tests alone (their agent processes have short start-up
+timeouts), the web unit tests, and the Playwright smoke with 4 workers, each against its own fake host
+(`web/e2e/ports.ts`; `E2E_WORKERS=1` runs it on one, as before). Each gate reserves its own block of
+e2e ports, so gates in two checkouts can run at the same time.

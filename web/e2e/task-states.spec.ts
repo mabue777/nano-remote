@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Task states (roadmap Phase 3) against the fake host (test/e2e-server.ts): the home list puts sessions
 // waiting for this user first whatever their age, the app icon badge counts pending requests (a stubbed

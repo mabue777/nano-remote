@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Approvals and questions (spec 5.3) against the fake host (test/e2e-server.ts): cards render from
 // session/open's pending on open and after a reload, request/resolved from another device leaves the

@@ -40,7 +40,8 @@
 // /test/provider-chats` answers {chats} (the chat request bodies it received, newest last). The fake host
 // keeps one provider in its "config.json" (provider/list) and its scan finds an Ollama on 127.0.0.1:11434
 // (provider/discover, provider/models).
-// Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite).
+// Started by playwright.config.ts through e2e-host.mjs (which loads this file with Vite), once per Playwright
+// worker, each on its own port pair (e2e/ports.ts).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import http from 'node:http';

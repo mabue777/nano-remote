@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './worker-host';
 
 test.beforeEach(async ({ request }) => {
   await request.post('/test/reset'); // also serves the built sw.js again

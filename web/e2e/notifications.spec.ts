@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Web Push on the phone (spec 9) against the built app: the Notifications section, first on the Settings
 // screen. An init script stands in for Notification and PushManager (headless Chromium has no push
@@ -89,6 +89,9 @@ test('the switch goes off -> on and the host receives push/subscribe with the su
   // the switch shows off rather than promising pushes; turning it on subscribes again.
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  // Wait for the reconnect (This Mac shows its line once the host answered): a tap before it is refused
+  // ("Not connected to the host yet"), which a loaded machine hits (seen once in the 4-worker gate).
+  await expect(page.getByRole('region', { name: 'This Mac' }).getByText('Active', { exact: true })).toBeVisible();
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 

@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from './worker-host';
 
 // The transcript in the new look with its motion (docs/research/new-look-prototype.md, adoption step 2):
 // flat tool rows that open under themselves, "Thinking" before the first words, the paced answer, the

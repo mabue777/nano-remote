@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Attachments from the phone (spec 8.1) against the fake host at 390 x 844: pick a large photo and a file,
 // see them in the tray (the photo downscaled to 2048 px on the long edge, PNG kept), remove one, send,

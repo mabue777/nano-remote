@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Settings > Providers at 390 x 844 (provider-connection.md sections 3 and 7). The fake provider
 // (test/fake-provider.ts) answers as an OpenAI-compatible cloud API; the browser maps the OpenAI preset's

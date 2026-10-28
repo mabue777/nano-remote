@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // No zoom anywhere (operator decision 2026-10-24), at 390 x 844 against the fake host:
 // - pinch and double-tap: touch-action pan-x pan-y on html and body (styles/base.css) and Safari's gesture

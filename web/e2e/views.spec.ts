@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // The review views against the fake host (test/e2e-server.ts): the item detail sheet opened from the turn
 // list, with the output of a command (streamed, ANSI stripped, wrapped, followed, copyable) and the Changes

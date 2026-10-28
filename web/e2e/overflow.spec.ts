@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Long unbroken text never runs past a card at phone width (field check 2026-10-21, defect 2: a thinking
 // block with ["touch","/Users/..."] ran past its right border). Every transcript item kind and both request

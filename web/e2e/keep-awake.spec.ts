@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // Settings, host section at 390 x 844: "Keep this Mac awake while plugged in" (protocol-v1.md section 4).
 // The fake host reports `keepAwake` in host/status, applies host/settings/update and broadcasts

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './worker-host';
 
 // The interaction lab (/lab, src/lab): it opens without pairing, the Lab panel flips every technique between
 // Now and Smooth and keeps the choice over a reload, and the mini app's path (session list -> session ->

@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from './worker-host';
 
 import { sheetsSettled } from './sheets';
 

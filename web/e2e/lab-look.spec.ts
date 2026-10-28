@@ -1,10 +1,14 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './worker-host';
 
 // The lab's Look switch (src/lab/look.ts, NewLook.tsx, new-look.css): Now is today's design, New the redesign.
 // The switch flips and is remembered, the motion buttons (All Now / All Smooth) leave it alone, and the New
 // look's path (list -> session -> sheets, approve, answer a question, send, stop, back) works in light and
 // dark with every motion switch. Screenshots go to /tmp/look-shots/ (not the repo) for the operator and the
 // doc. The fake stream runs 8x faster (?speed=8).
+
+// Every test opens the lab on its own page against its own in-browser fake stream (no fake host state,
+// distinct screenshot names), so they spread over the workers; one worker alone took about 170 s.
+test.describe.configure({ mode: 'parallel' });
 
 const SHOTS = '/tmp/look-shots';
 const TECHNIQUES = ['Press feedback', 'Page push and back swipe', 'Sheets', 'Streaming text', 'Auto-scroll', 'Sending', 'Keyboard', 'List changes', 'Expand and collapse', 'Haptic tick'];

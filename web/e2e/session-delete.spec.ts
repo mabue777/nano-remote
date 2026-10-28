@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 import { longPress, swipeLeft } from './gestures';
 import { sheetsSettled } from './sheets';
