@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AlreadyResolved,
   CursorExpired,
+  EVENT_BYTE_BUDGET,
   InvalidParams,
   Journal,
   JournalError,
   MAX_ITEMS_PER_TURN,
+  SNAPSHOT_BYTE_BUDGET,
   defaultJournalPath,
   replay,
 } from './index.js';
@@ -27,6 +29,10 @@ import {
   turnCompleted,
   turnStarted,
 } from './testing/fixtures.js';
+
+function responseBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
 
 let clock = 1000;
 const now = () => clock;
@@ -206,6 +212,22 @@ describe('since', () => {
     expect(() => journal.since('ses_a', 1.5)).toThrow(InvalidParams);
     expect(() => journal.since('ses_a', 0, 0)).toThrow(InvalidParams);
     expect(() => journal.compactForTesting('ses_a', -1)).toThrow(InvalidParams);
+  });
+
+  it('pages by serialized bytes, returning at least one event even if it alone exceeds the budget', () => {
+    const big = 'x'.repeat(5 * 1024 * 1024);
+    for (let i = 0; i < 4; i++) {
+      journal.append('ses_big', itemCompleted(agentMessage(`itm_${i}`, 'trn_1', big, 'completed')));
+    }
+    const first = journal.since('ses_big', 0);
+    expect(first.events.length).toBe(2);
+    expect(responseBytes(first)).toBeLessThanOrEqual(EVENT_BYTE_BUDGET);
+    expect(first.complete).toBe(false);
+
+    const second = journal.since('ses_big', first.cursor);
+    expect(second.events.length).toBe(2);
+    expect(responseBytes(second)).toBeLessThanOrEqual(EVENT_BYTE_BUDGET);
+    expect(second.complete).toBe(true);
   });
 });
 
@@ -443,6 +465,50 @@ describe('snapshot and history', () => {
     appendTurn('ses_a', 'trn_1', 3);
     journal.compactForTesting('ses_a', journal.head('ses_a'));
     expect(journal.snapshot('ses_a').turns[0]!.items).toHaveLength(3);
+  });
+
+  it('truncates oversized fields so a single huge turn still fits the snapshot budget', () => {
+    const imageData = 'A'.repeat(15 * 1024 * 1024);
+    journal.append('ses_a', turnStarted('trn_big'));
+    journal.append(
+      'ses_a',
+      itemCompleted({
+        itemId: 'itm_1',
+        type: 'toolCall',
+        turnId: 'trn_big',
+        status: 'completed',
+        tool: 'read_image',
+        arguments: {},
+        result: { type: 'image', data: imageData },
+      } as unknown as Item),
+    );
+    journal.append('ses_a', turnCompleted('trn_big'));
+
+    const snap = journal.snapshot('ses_a', 1);
+    expect(snap.turns).toHaveLength(1);
+    expect(responseBytes(snap)).toBeLessThanOrEqual(SNAPSHOT_BYTE_BUDGET);
+    const item = snap.turns[0]!.items[0] as { result: { data: string } };
+    expect(item.result.data).toMatch(/\[truncated — \d+ bytes\]/);
+    expect(snap.turns[0]!.turnTruncated).toBe(true);
+  });
+
+  it('truncates oversized fields in history and keeps the response under budget', () => {
+    journal.append('ses_a', turnStarted('trn_old'));
+    journal.append('ses_a', itemCompleted(agentMessage('itm_old', 'trn_old', 'small', 'completed')));
+    journal.append('ses_a', turnCompleted('trn_old'));
+
+    const bigText = 'y'.repeat(15 * 1024 * 1024);
+    journal.append('ses_a', turnStarted('trn_new'));
+    journal.append('ses_a', itemCompleted(agentMessage('itm_new', 'trn_new', bigText, 'completed')));
+    journal.append('ses_a', turnCompleted('trn_new'));
+
+    const hist = journal.history('ses_a', 'turn:3', 5);
+    expect(hist.turns.length).toBeGreaterThanOrEqual(1);
+    expect(responseBytes(hist)).toBeLessThanOrEqual(SNAPSHOT_BYTE_BUDGET);
+    const newTurn = hist.turns.find((t) => t.turnId === 'trn_new');
+    expect(newTurn).toBeDefined();
+    expect(newTurn!.turnTruncated).toBe(true);
+    expect((newTurn!.items[0] as { text: string }).text).toMatch(/\[truncated — \d+ bytes\]/);
   });
 });
 

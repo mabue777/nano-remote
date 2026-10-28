@@ -67,6 +67,9 @@ export const DEFAULT_HISTORY_LIMIT = 5;
 export const MAX_HISTORY_LIMIT = 50;
 export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 200;
+export const EVENT_BYTE_BUDGET = 12 * 1024 * 1024;
+export const SNAPSHOT_BYTE_BUDGET = 12 * 1024 * 1024;
+const MAX_SNAPSHOT_FIELD_BYTES = 1024;
 const SCHEMA_VERSION = 1;
 
 /** `~/Library/Application Support/NanoHost/journal.sqlite`, the host's default Journal file. */
@@ -224,6 +227,32 @@ function parseListCursor(cursor: string): [number, string] {
     // fall through
   }
   throw new InvalidParams(`invalid session list cursor ${JSON.stringify(cursor)}`);
+}
+
+function serializedBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
+function truncateOversizedFields<T>(value: T, threshold = MAX_SNAPSHOT_FIELD_BYTES): { value: T; truncated: boolean } {
+  let truncated = false;
+  function walk(v: unknown): unknown {
+    if (typeof v === 'string') {
+      const bytes = Buffer.byteLength(v, 'utf8');
+      if (bytes > threshold) {
+        truncated = true;
+        return `[truncated — ${bytes} bytes]`;
+      }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v !== null && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(v)) out[key] = walk(val);
+      return out;
+    }
+    return v;
+  }
+  return { value: walk(value) as T, truncated };
 }
 
 export class Journal {
@@ -488,8 +517,17 @@ export class Journal {
     const floor = row ? int(row.floor) : 0;
     if (cursor < floor || cursor > head) throw new CursorExpired(sessionId, cursor, floor, head);
     const events = this.sql.eventsAfter!.all(sessionId, cursor, head, max).map((r) => this.toEvent(sessionId, r));
-    const last = events.length > 0 ? events[events.length - 1]!.params.seq : cursor;
-    return { events, cursor: last, complete: last === head };
+    const selected: JournalEvent[] = [];
+    let used = 0;
+    let last = cursor;
+    for (const event of events) {
+      const size = serializedBytes(event);
+      if (selected.length > 0 && used + size > EVENT_BYTE_BUDGET) break;
+      selected.push(event);
+      used += size;
+      last = event.params.seq;
+    }
+    return { events: selected, cursor: last, complete: last === head };
   }
 
   /** The newest event of `method` the Journal still holds for the session, if any. */
@@ -516,16 +554,43 @@ export class Journal {
   snapshot(sessionId: string, turns: number = DEFAULT_SNAPSHOT_TURNS): SnapshotResult {
     const count = checkCount('turns', turns, DEFAULT_SNAPSHOT_TURNS, MAX_SNAPSHOT_TURNS);
     return this.read(() => {
-      const rows = this.sql.newestTurns!.all(sessionId, count).reverse();
-      let olderOrdinal = rows.length > 0 ? int(rows[0]!.ordinal) : 0;
-      const out: TurnWithItems[] = rows.map((row) => {
-        const turn = this.inline(sessionId, row, MAX_ITEMS_PER_TURN);
-        if (turn.itemsTruncated) olderOrdinal = int(row.ordinal) + 1;
-        return turn;
-      });
-      const result: SnapshotResult = { turns: out, cursor: this.head(sessionId), pending: this.pending(sessionId) };
-      if (olderOrdinal > 0 && this.sql.hasTurnBefore!.get(sessionId, olderOrdinal)) {
-        result.olderCursor = turnCursor(olderOrdinal);
+      const rows = this.sql.newestTurns!.all(sessionId, count); // newest first
+      const cursor = this.head(sessionId);
+      const pending = this.pending(sessionId);
+      const selected: TurnWithItems[] = [];
+      for (const row of rows) {
+        const full = this.inline(sessionId, row, MAX_ITEMS_PER_TURN);
+        if (serializedBytes({ turns: [...selected, full], cursor, pending }) <= SNAPSHOT_BYTE_BUDGET) {
+          selected.push(full);
+          continue;
+        }
+        const { value: truncated, truncated: wasTruncated } = truncateOversizedFields(full);
+        if (
+          wasTruncated &&
+          serializedBytes({ turns: [...selected, truncated], cursor, pending }) <= SNAPSHOT_BYTE_BUDGET
+        ) {
+          (truncated as TurnWithItems).turnTruncated = true;
+          selected.push(truncated as TurnWithItems);
+          continue;
+        }
+        if (selected.length === 0) {
+          if (wasTruncated) (truncated as TurnWithItems).turnTruncated = true;
+          selected.push(truncated as TurnWithItems);
+        }
+        break;
+      }
+      const out = selected.reverse();
+      const result: SnapshotResult = { turns: out, cursor, pending };
+      if (selected.length > 0) {
+        let olderOrdinal = int(rows[selected.length - 1]!.ordinal);
+        for (let i = 0; i < selected.length; i++) {
+          if (selected[i]!.itemsTruncated) {
+            olderOrdinal = Math.max(olderOrdinal, int(rows[i]!.ordinal) + 1);
+          }
+        }
+        if (this.sql.hasTurnBefore!.get(sessionId, olderOrdinal)) {
+          result.olderCursor = turnCursor(olderOrdinal);
+        }
       }
       return result;
     });
@@ -542,10 +607,41 @@ export class Journal {
     const ordinal = parseTurnCursor(before);
     const max = checkCount('limit', limit, DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT);
     return this.read(() => {
-      const rows = this.sql.turnsBefore!.all(sessionId, ordinal, max);
-      const result: HistoryResult = { turns: rows.map((row) => this.inline(sessionId, row)) };
-      const oldest = rows.length > 0 ? int(rows[rows.length - 1]!.ordinal) : 0;
-      if (oldest > 0 && this.sql.hasTurnBefore!.get(sessionId, oldest)) result.olderCursor = turnCursor(oldest);
+      const rows = this.sql.turnsBefore!.all(sessionId, ordinal, max); // newest first
+      const selected: TurnWithItems[] = [];
+      for (const row of rows) {
+        const full = this.inline(sessionId, row);
+        if (serializedBytes({ turns: [...selected, full] }) <= SNAPSHOT_BYTE_BUDGET) {
+          selected.push(full);
+          continue;
+        }
+        const { value: truncated, truncated: wasTruncated } = truncateOversizedFields(full);
+        if (
+          wasTruncated &&
+          serializedBytes({ turns: [...selected, truncated] }) <= SNAPSHOT_BYTE_BUDGET
+        ) {
+          (truncated as TurnWithItems).turnTruncated = true;
+          selected.push(truncated as TurnWithItems);
+          continue;
+        }
+        if (selected.length === 0) {
+          if (wasTruncated) (truncated as TurnWithItems).turnTruncated = true;
+          selected.push(truncated as TurnWithItems);
+        }
+        break;
+      }
+      const result: HistoryResult = { turns: selected };
+      if (selected.length > 0) {
+        let olderOrdinal = int(rows[selected.length - 1]!.ordinal);
+        for (let i = 0; i < selected.length; i++) {
+          if (selected[i]!.itemsTruncated) {
+            olderOrdinal = Math.max(olderOrdinal, int(rows[i]!.ordinal) + 1);
+          }
+        }
+        if (this.sql.hasTurnBefore!.get(sessionId, olderOrdinal)) {
+          result.olderCursor = turnCursor(olderOrdinal);
+        }
+      }
       return result;
     });
   }

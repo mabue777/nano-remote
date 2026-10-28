@@ -329,6 +329,10 @@
               "items": {
                 "$ref": "#/$defs/Item"
               }
+            },
+            "turnTruncated": {
+              "type": "boolean",
+              "description": "Snapshot or history truncated oversized text/binary fields of this turn to keep the response under the wire cap."
             }
           }
         }

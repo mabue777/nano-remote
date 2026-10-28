@@ -4,11 +4,13 @@ export {
   DEFAULT_LIST_LIMIT,
   DEFAULT_SINCE_LIMIT,
   DEFAULT_SNAPSHOT_TURNS,
+  EVENT_BYTE_BUDGET,
   Journal,
   MAX_HISTORY_LIMIT,
   MAX_LIST_LIMIT,
   MAX_SINCE_LIMIT,
   MAX_SNAPSHOT_TURNS,
+  SNAPSHOT_BYTE_BUDGET,
   defaultJournalPath,
 } from './journal.js';
 export type { JournalOptions, ListOptions, SubscribeOptions } from './journal.js';
