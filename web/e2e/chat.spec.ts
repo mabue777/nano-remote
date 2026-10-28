@@ -161,13 +161,17 @@ test('delete a chat by long-press and by swipe', async ({ page }) => {
   const list = page.getByRole('list', { name: 'Chats' });
   await expect(list.getByRole('link')).toHaveText([/Second question/, /First question/]);
 
-  const deleteFirst = page.getByRole('button', { name: 'Delete First question' });
-  await longPress(list.getByRole('link', { name: /First question/ }), deleteFirst);
-  await deleteFirst.click();
-  await expect(list.getByRole('link')).toHaveText([/Second question/]);
+  // The top row goes by long-press: it fades out and the row under it slides up (list changes, FLIP).
+  const deleteSecond = page.getByRole('button', { name: 'Delete Second question' });
+  await longPress(list.getByRole('link', { name: /Second question/ }), deleteSecond);
+  await deleteSecond.click();
+  await expect(list.locator('li.list-leaving')).toHaveCount(0);
+  await expect(list.getByRole('link')).toHaveText([/First question/]);
+  await expect(list.locator('li[data-flip-key="chat_a"]')).toHaveAttribute('data-flip-anim', 'move');
 
-  await swipeLeft(list.getByRole('link', { name: /Second question/ }));
-  await page.getByRole('button', { name: 'Delete Second question' }).click();
+  // The swipe still reaches the row (its horizontal touches are not taken by the list's motion).
+  await swipeLeft(list.getByRole('link', { name: /First question/ }));
+  await page.getByRole('button', { name: 'Delete First question' }).click();
   await expect(page.getByText('No chats yet. Start one with New chat.')).toBeVisible();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('nano-remote/chats/v1')!).chats.length);
   expect(stored).toBe(0);

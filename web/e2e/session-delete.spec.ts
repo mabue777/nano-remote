@@ -44,7 +44,7 @@ test('swipe to archive: the row moves to Archived without asking, and Undo bring
   await page.getByRole('button', { name: `Archive ${FINISHED}` }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0); // no confirmation
   await expect(row(page, FINISHED)).toHaveCount(0);
-  await expect(toggle(page)).toHaveText(/Archived\s*1/);
+  await expect(toggle(page)).toHaveText('Archived (1)');
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
   const toast = page.locator('.undo-toast');
   await expect(toast).toContainText(`Archived ${FINISHED}`);
@@ -62,7 +62,7 @@ test('swipe to archive: the row moves to Archived without asking, and Undo bring
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCount(0, { timeout: 8000 });
   await page.reload();
-  await expect(toggle(page)).toHaveText(/Archived\s*1/);
+  await expect(toggle(page)).toHaveText('Archived (1)');
   await toggle(page).click();
   await expect(archived(page).getByRole('link')).toHaveText([new RegExp(FRESH)]);
 });
@@ -131,7 +131,7 @@ test('a working session: Archive asks first too, and "Stop and archive" moves it
   await expect(page.locator('.undo-toast')).toContainText(`Archived ${WAITING}`);
   expect(await lastParams(request, 'session/archive')).toEqual({ sessionId: 'ses_fake_2' });
   await expect(sessions(page).getByRole('link')).toHaveText([new RegExp(FINISHED), new RegExp(FRESH)]);
-  await expect(toggle(page)).toHaveText(/Archived\s*1/);
+  await expect(toggle(page)).toHaveText('Archived (1)');
 });
 
 test('Delete all archived states the count and empties the section', async ({ page, request }) => {
@@ -141,7 +141,7 @@ test('Delete all archived states the count and empties the section', async ({ pa
     await page.getByRole('button', { name: `Archive ${title}` }).click();
     await expect(row(page, title)).toHaveCount(0);
   }
-  await expect(toggle(page)).toHaveText(/Archived\s*2/);
+  await expect(toggle(page)).toHaveText('Archived (2)');
   await toggle(page).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
   await expect(archived(page).getByRole('link')).toHaveCount(2);
@@ -166,7 +166,7 @@ test('the session view: Archive and Delete in the header ⋯ sheet', async ({ pa
   // Back on Home, with the Undo toast and the session under Archived.
   await expect(page).toHaveURL(/\/$/);
   await expect(page.locator('.undo-toast')).toContainText(`Archived ${FINISHED}`);
-  await expect(toggle(page)).toHaveText(/Archived\s*1/);
+  await expect(toggle(page)).toHaveText('Archived (1)');
 
   await row(page, FRESH).click();
   await expect(page.getByRole('heading', { name: FRESH })).toBeVisible();

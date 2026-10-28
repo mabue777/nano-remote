@@ -2,11 +2,16 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../replica/replica';
+import { defaultStorage } from '../replica/storage';
 import type { StreamClient } from '../stream/client';
 import { Icon } from '../ui/Icon';
+import { useListMotion } from '../ui/motion/use-flip';
 import { PullIndicator, usePullToRefresh } from '../ui/PullToRefresh';
 import { usePress } from './chat/hooks';
-import { backgroundTasksText, HomeModel, type AwayTracker, type Connection, type HostView, type SessionRow } from './home-model';
+import { backgroundTasksText, HomeModel, type AwayTracker, type Connection, type SessionRow } from './home-model';
+import { RowSign } from './RowSign';
+import { reducedMotion } from './session/motion-hooks';
+import { emptyFilterText, STATUS_FILTERS, type StatusFilter } from './session-list';
 import { NewSessionSheet } from './NewSessionSheet';
 import { SessionActions } from './session-actions';
 import { ActionsSheet, DeleteConfirmSheet, UndoToast } from './SessionActionsSheets';
@@ -32,7 +37,9 @@ export interface HomeScreenProps {
 export type HomeTab = 'sessions' | 'chats';
 
 export function HomeScreen({ client, replica, away, onOpenSession, tab = 'sessions', onTab, chats, onSettings, actions: shared }: HomeScreenProps) {
-  const model = useModel(useMemo(() => new HomeModel({ client, replica, ...(away !== undefined ? { away } : {}) }), [client, replica, away]));
+  const model = useModel(
+    useMemo(() => new HomeModel({ client, replica, storage: defaultStorage(), ...(away !== undefined ? { away } : {}) }), [client, replica, away]),
+  );
   useEffect(() => () => model.dispose(), [model]);
   const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
   useEffect(() => () => own?.dispose(), [own]);
@@ -44,64 +51,46 @@ export function HomeScreen({ client, replica, away, onOpenSession, tab = 'sessio
     () => void model.refresh(),
   );
   const sentinel = useInfiniteScroll(() => void model.loadMore(), model.hasMore);
-  const sessions = model.sessions;
+  const smooth = !reducedMotion();
 
   return (
     <main class={`screen home${actions.undo !== undefined ? ' with-toast' : ''}`} {...(tab === 'sessions' ? pull.handlers : {})}>
-      <header class="topbar">
-        <h1>Nano Remote</h1>
-        <div class="topbar-end">
-          <ConnectionBadge connection={model.connection} onRetry={() => model.retryNow()} />
-          {onSettings !== undefined && <SettingsGear onClick={onSettings} />}
-        </div>
+      <header class="topbar home-bar">
+        {chats !== undefined ? <HomeTabs tab={tab} onTab={onTab} /> : <span />}
+        {onSettings !== undefined && <SettingsGear onClick={onSettings} />}
       </header>
-      {chats !== undefined && <HomeTabs tab={tab} onTab={onTab} />}
       {tab === 'chats' ? (
         chats
       ) : (
         <>
+          <div class="titlebar">
+            <h1 class="large-title">Sessions</h1>
+            <button type="button" class="round-button ink" aria-label="New session" onClick={() => setCreating(true)}>
+              <Icon name="plus" />
+            </button>
+          </div>
+          <FilterChips filter={model.filter} onFilter={(filter) => model.setFilter(filter)} />
+          <ConnectionLine connection={model.connection} onRetry={() => model.retryNow()} />
           <PullIndicator distance={pull.distance} pullLabel="Pull to refresh" releaseLabel="Release to refresh" />
-          <HostCard host={model.host} />
-          <section class="sessions" aria-labelledby="sessions-title">
-            <div class="section-head">
-              <h2 id="sessions-title">Sessions</h2>
-              <div class="actions">
-                <button type="button" class="ghost" onClick={() => void model.refresh()} disabled={model.refreshing} aria-label="Refresh sessions">
-                  {model.refreshing ? 'Refreshing…' : 'Refresh'}
-                </button>
-                <button type="button" class="primary small" onClick={() => setCreating(true)}>
-                  New session
-                </button>
-              </div>
+          {model.error !== undefined && (
+            <p class="error" role="alert">
+              {model.error}
+            </p>
+          )}
+          {actions.error !== undefined && (
+            <p class="error" role="alert">
+              {actions.error}
+            </p>
+          )}
+          <SessionList model={model} actions={actions} smooth={smooth} onOpen={onOpenSession} />
+          {model.hasMore && (
+            <div ref={sentinel} class="more">
+              <button type="button" class="ghost" onClick={() => void model.loadMore()} disabled={model.loadingMore}>
+                {model.loadingMore ? 'Loading…' : 'Load more'}
+              </button>
             </div>
-            {model.error !== undefined && (
-              <p class="error" role="alert">
-                {model.error}
-              </p>
-            )}
-            {actions.error !== undefined && (
-              <p class="error" role="alert">
-                {actions.error}
-              </p>
-            )}
-            {sessions.length === 0 ? (
-              <p class="empty muted">{model.connection.kind === 'connected' ? 'No sessions yet. Start one to drive an agent from here.' : 'Sessions appear once the host is connected.'}</p>
-            ) : (
-              <ul class="session-list" aria-label="Sessions">
-                {sessions.map((row) => (
-                  <SessionItem key={row.sessionId} row={row} model={model} actions={actions} archived={false} onOpen={onOpenSession} />
-                ))}
-              </ul>
-            )}
-            {model.hasMore && (
-              <div ref={sentinel} class="more">
-                <button type="button" class="ghost" onClick={() => void model.loadMore()} disabled={model.loadingMore}>
-                  {model.loadingMore ? 'Loading…' : 'Load more'}
-                </button>
-              </div>
-            )}
-          </section>
-          {model.archivedCount > 0 && <ArchivedSection model={model} actions={actions} onOpen={onOpenSession} />}
+          )}
+          {model.archivedCount > 0 && <ArchivedSection model={model} actions={actions} smooth={smooth} onOpen={onOpenSession} />}
         </>
       )}
       {menu !== undefined && (
@@ -140,7 +129,45 @@ export function HomeScreen({ client, replica, away, onOpenSession, tab = 'sessio
   );
 }
 
-/** The segmented "Sessions | Chats" switch at the top of Home. */
+const rowKey = (row: SessionRow) => row.sessionId;
+
+/**
+ * The flat list under the chips (list changes, technique 8): rows that move slide to their new place, new
+ * ones fade and grow in, removed ones fade out and the rest close the gap. The empty lines: no sessions at
+ * all, or none under the chosen chip.
+ */
+function SessionList({ model, actions, smooth, onOpen }: { model: HomeModel; actions: SessionActions; smooth: boolean; onOpen: (sessionId: string) => void }) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const list = useListMotion(model.rows, rowKey, listRef, smooth);
+  if (model.sessions.length === 0 && list.shown.length === 0) {
+    return <p class="empty muted">{model.connection.kind === 'connected' ? 'No sessions yet. Start one to drive an agent from here.' : 'Sessions appear once the host is connected.'}</p>;
+  }
+  return (
+    <>
+      <ul class="session-list" aria-label="Sessions" ref={listRef}>
+        {list.shown.map(({ item, leaving }) => (
+          <SessionItem key={item.sessionId} row={item} model={model} actions={actions} archived={false} leaving={leaving} smooth={smooth} onOpen={onOpen} onDropped={list.dropped} />
+        ))}
+      </ul>
+      {model.filter !== 'all' && model.rows.length === 0 && <p class="empty muted">{emptyFilterText(model.filter)}</p>}
+    </>
+  );
+}
+
+/** All · Running · Needs you · Finished: grey chips, the chosen one ink; no counts (a status is a dot and a word). */
+function FilterChips({ filter, onFilter }: { filter: StatusFilter; onFilter: (filter: StatusFilter) => void }) {
+  return (
+    <div class="chips" role="group" aria-label="Show">
+      {STATUS_FILTERS.map(({ value, label }) => (
+        <button key={value} type="button" class="chip" aria-pressed={filter === value} onClick={() => onFilter(value)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The "Sessions | Chats" switch at the top of Home. */
 function HomeTabs({ tab, onTab }: { tab: HomeTab; onTab: ((tab: HomeTab) => void) | undefined }) {
   const options: [HomeTab, string][] = [
     ['sessions', 'Sessions'],
@@ -157,9 +184,14 @@ function HomeTabs({ tab, onTab }: { tab: HomeTab; onTab: ((tab: HomeTab) => void
   );
 }
 
-function ConnectionBadge({ connection, onRetry }: { connection: Connection; onRetry: () => void }) {
+/**
+ * The connection, at the top of the list: a line with the dot, the word and "Retry now" while the Mac is not
+ * reachable; read out only while connected (nothing to see when all is well).
+ */
+function ConnectionLine({ connection, onRetry }: { connection: Connection; onRetry: () => void }) {
+  const quiet = connection.kind === 'connected';
   return (
-    <div class={`connection ${connection.kind}`} role="status" aria-live="polite" data-state={connection.kind}>
+    <div class={`connection ${connection.kind}${quiet ? ' visually-hidden' : ''}`} role="status" aria-live="polite" data-state={connection.kind}>
       <span class="dot" aria-hidden="true" />
       <span class="label">{connection.label}</span>
       {connection.kind === 'offline' && (
@@ -171,63 +203,38 @@ function ConnectionBadge({ connection, onRetry }: { connection: Connection; onRe
   );
 }
 
-function HostCard({ host }: { host: HostView | undefined }) {
-  if (host === undefined) {
-    return (
-      <section class="card host" aria-label="Host">
-        <p class="muted">Waiting for the host…</p>
-      </section>
-    );
-  }
-  return (
-    <section class="card host" aria-label="Host">
-      <div class="host-line">
-        <h2 class="host-name">{host.name}</h2>
-        <span class="muted small">
-          {host.uptime !== undefined ? `up ${host.uptime}` : `v${host.version}`}
-          {host.sessionsActive !== undefined && host.sessionsActive > 0 ? ` · ${host.sessionsActive} active` : ''}
-        </span>
-      </div>
-      <ul class="agents" aria-label="Agents">
-        {host.agents.map((agent) => (
-          <li key={agent.id} class={`agent ${agent.tone}`} title={agent.detail}>
-            <span class="dot" aria-hidden="true" />
-            <span class="agent-name">{agent.name}</span>
-            <span class="agent-status muted small">{agent.status === 'ready' ? 'ready' : agent.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** "Archived (3)": collapsed at first; open, its rows and "Delete all archived". */
-function ArchivedSection({ model, actions, onOpen }: { model: HomeModel; actions: SessionActions; onOpen: (sessionId: string) => void }) {
+/** "Archived (3)": a plain row, collapsed at first; open, its rows and "Delete all archived". */
+function ArchivedSection({ model, actions, smooth, onOpen }: { model: HomeModel; actions: SessionActions; smooth: boolean; onOpen: (sessionId: string) => void }) {
   const open = model.archivedOpen;
   return (
     <section class="archived" aria-labelledby="archived-title">
       <h2 id="archived-title" class="archived-head">
         <button type="button" class="archived-toggle" aria-expanded={open} aria-controls="archived-list" onClick={() => model.toggleArchived()}>
-          <span>Archived</span>
-          <span class="count muted">{model.archivedCount}</span>
+          <span>Archived ({model.archivedCount})</span>
           <Icon name="chevron-right" size={18} class={open ? 'chevron open' : 'chevron'} />
         </button>
       </h2>
-      {open && (
-        <div id="archived-list">
-          <ul class="session-list" aria-label="Archived sessions">
-            {model.archived.map((row) => (
-              <SessionItem key={row.sessionId} row={row} model={model} actions={actions} archived={true} onOpen={onOpen} />
-            ))}
-          </ul>
-          <div class="archived-foot">
-            <button type="button" class="small danger" onClick={() => actions.askDeleteArchived()}>
-              Delete all archived
-            </button>
-          </div>
-        </div>
-      )}
+      {open && <ArchivedList model={model} actions={actions} smooth={smooth} onOpen={onOpen} />}
     </section>
+  );
+}
+
+function ArchivedList({ model, actions, smooth, onOpen }: { model: HomeModel; actions: SessionActions; smooth: boolean; onOpen: (sessionId: string) => void }) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const list = useListMotion(model.archived, rowKey, listRef, smooth);
+  return (
+    <div id="archived-list">
+      <ul class="session-list" aria-label="Archived sessions" ref={listRef}>
+        {list.shown.map(({ item, leaving }) => (
+          <SessionItem key={item.sessionId} row={item} model={model} actions={actions} archived={true} leaving={leaving} smooth={smooth} onOpen={onOpen} onDropped={list.dropped} />
+        ))}
+      </ul>
+      <div class="archived-foot">
+        <button type="button" class="small danger" onClick={() => actions.askDeleteArchived()}>
+          Delete all archived
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -236,24 +243,39 @@ interface SessionItemProps {
   model: HomeModel;
   actions: SessionActions;
   archived: boolean;
+  /** It left the list and fades out at its old place (not interactive). */
+  leaving: boolean;
+  smooth: boolean;
   onOpen: (sessionId: string) => void;
+  onDropped: (sessionId: string) => void;
 }
 
-/** A session row; a swipe to the left shows Archive and Delete under it, a long-press opens the actions sheet. */
-function SessionItem({ row, model, actions, archived, onOpen }: SessionItemProps) {
+/**
+ * A flat row: the title on one line, one grey meta line (agent · folder · time, "Finished while away", the
+ * background-task mark, and the model once the phone knows it from an opened session) and one sign at the end. A swipe to the left shows Archive and Delete under it, a
+ * long-press opens the actions sheet.
+ */
+function SessionItem({ row, model, actions, archived, leaving, smooth, onOpen, onDropped }: SessionItemProps) {
   const { consumed, ...handlers } = usePress({ onLongPress: () => model.openMenu(row.sessionId), onSwipeLeft: () => model.reveal(row.sessionId) });
-  const revealed = model.revealedId === row.sessionId;
+  const revealed = !leaving && model.revealedId === row.sessionId;
   return (
-    <li class={`swipe-row${revealed ? ' revealed' : ''}`} data-session-id={row.sessionId}>
+    <li
+      class={`swipe-row${revealed ? ' revealed' : ''}${leaving ? ' list-leaving' : ''}`}
+      data-session-id={row.sessionId}
+      data-flip-key={leaving ? undefined : row.sessionId}
+      aria-hidden={leaving ? 'true' : undefined}
+      onAnimationEnd={(event) => leaving && event.target === event.currentTarget && onDropped(row.sessionId)}
+    >
       <a
         class={`session${row.finishedWhileAway ? ' away' : ''}`}
         data-tone={row.tone}
         href={`/s/${encodeURIComponent(row.sessionId)}`}
-        {...handlers}
+        tabIndex={leaving ? -1 : undefined}
+        {...(leaving ? {} : handlers)}
         onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
-          if (consumed()) return;
+          if (leaving || consumed()) return;
           if (revealed) {
             model.conceal();
             return;
@@ -261,32 +283,27 @@ function SessionItem({ row, model, actions, archived, onOpen }: SessionItemProps
           onOpen(row.sessionId);
         }}
       >
-        <div class="session-top">
+        <span class="session-text">
           <span class="session-title">{row.title}</span>
-        </div>
-        <div class="session-meta small">
-          {/* A status is a dot and a word; requests waiting for you turn the dot orange. */}
-          <span class={`status-word small status ${row.pending > 0 ? 'attention' : row.tone}`}>
-            {row.pending > 0 ? <span class="dot" role="img" aria-label={`${row.pending} waiting for you`} /> : <span class="dot" aria-hidden="true" />}
-            {row.statusLabel}
-          </span>
-          {row.finishedWhileAway && <span class="away-mark">Finished while away</span>}
-          {row.backgroundTasks > 0 && (
-            <span class="status-word small busy tasks-mark" data-count={row.backgroundTasks}>
-              <span class="dot" aria-hidden="true" />
-              {backgroundTasksText(row.backgroundTasks)}
+          <span class="session-meta">
+            {row.finishedWhileAway && <span class="away-mark">Finished while away · </span>}
+            {row.backgroundTasks > 0 && (
+              <span class="tasks-mark" data-count={row.backgroundTasks}>
+                {backgroundTasksText(row.backgroundTasks)} ·{' '}
+              </span>
+            )}
+            <span class="meta">
+              {row.agentName} ·{' '}
+              {row.model !== undefined && (
+                <>
+                  <span aria-label="Model">{row.model}</span> ·{' '}
+                </>
+              )}
+              {row.folder} · {row.updated}
             </span>
-          )}
-          <span class="meta">
-            {row.agentName} · {row.folder} · {row.updated}
           </span>
-        </div>
-        {row.model !== undefined && (
-          <p class="small session-model" aria-label="Model">
-            {row.model}
-          </p>
-        )}
-        {row.preview !== '' && <p class="preview muted small">{row.preview}</p>}
+        </span>
+        <RowSign sign={row.sign} smooth={smooth} />
       </a>
       {revealed && (
         <div class="row-actions">

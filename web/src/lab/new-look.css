@@ -238,43 +238,7 @@
   text-overflow: ellipsis;
 }
 
-.lab-nl-pill {
-  display: inline-block;
-  padding: var(--space-2) var(--space-5);
-  border-radius: var(--radius-pill);
-  background: var(--warn-bg);
-  color: var(--warn-text);
-  font: var(--type-caption);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.lab-nl-indicator.busy {
-  color: var(--accent);
-}
-
-.lab-nl-indicator.attention {
-  color: var(--warn-text);
-}
-
-.lab-nl-indicator.error {
-  color: var(--error);
-}
-
-.lab-nl-indicator-none {
-  display: block;
-  width: 20px;
-}
-
-.lab-nl-spin {
-  animation: lab-nl-spin 0.9s linear infinite;
-}
-
-@keyframes lab-nl-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* The row's sign is the app's (.row-sign in screens/HomeScreen.css, look step 6). */
 
 /* ---------- Session header (item 8) ---------- */
 /* The centred session header is the app's (.nav in styles/components.css). */

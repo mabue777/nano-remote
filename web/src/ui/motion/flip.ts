@@ -71,7 +71,7 @@ export function drop<T>(shown: readonly Shown<T>[], key: string, keyOf: (item: T
 // The DOM side, kept to the few calls it needs so tests can pass plain objects.
 
 export interface FlipElement {
-  dataset: { flipKey?: string };
+  dataset: { flipKey?: string; flipAnim?: string };
   getBoundingClientRect(): Box;
   animate(keyframes: Keyframe[], options: KeyframeAnimationOptions): unknown;
 }
@@ -131,4 +131,21 @@ export function play(container: FlipContainer, before: ReadonlyMap<string, Box>,
     }
   }
   return plan;
+}
+
+/**
+ * Marks what the last FLIP played: `data-flip-anim="move"` on rows that slid, `"enter"` on rows that faded
+ * in; marks from an earlier change are cleared. The e2e smoke reads it (a list change ran through FLIP).
+ */
+export function markPlayed(container: FlipContainer, plan: FlipPlan): void {
+  const moved = new Set(plan.moved.map((m) => m.key));
+  const entered = new Set(plan.entered);
+  const list = container.querySelectorAll('[data-flip-key]');
+  for (let i = 0; i < list.length; i++) {
+    const element = list[i]!;
+    const key = element.dataset.flipKey!;
+    if (moved.has(key)) element.dataset.flipAnim = 'move';
+    else if (entered.has(key)) element.dataset.flipAnim = 'enter';
+    else delete element.dataset.flipAnim;
+  }
 }

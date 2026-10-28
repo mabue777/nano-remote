@@ -160,6 +160,16 @@ Part 3a (2026-10-25): sending (6) runs in the session view and local chat with t
   scrolling, and a list that gets shorter (a finished turn folding) while the view glides no longer stops it
   following.
 
+Part 3b (2026-10-28): list changes (8) run on Home's session list and the chat list, with the flat list of
+look step 6.
+
+- **List changes.** `useListMotion` (`ui/motion/use-flip.ts`, rules in `ui/motion/list-motion.ts`) measures the
+  rows during the render that changes them, so a change that arrives from the model (a status, a new session,
+  an archive, a filter chip) animates like one made by a tap. Moved rows slide, new rows fade and grow in, a
+  removed row fades out at its old place (`.list-leaving`) and the rows under it close the gap when it goes.
+  Status words cross-fade (`ui/CrossFade.tsx`). `useFlip` moved to `ui/motion/use-flip.ts` and marks what it
+  played (`data-flip-anim="move"` or `"enter"`). With Reduce Motion rows change at once.
+
 ## New look prototype
 
 The lab now has a **Look: Now / New** switch at the top of its panel. New shows the redesign from the visual-gap

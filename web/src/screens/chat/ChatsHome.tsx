@@ -13,23 +13,29 @@ export interface ChatsHomeProps {
 export function ChatsHome({ services, onOpenChat, onNavigate }: ChatsHomeProps) {
   return (
     <main class="screen home">
-      <header class="topbar">
-        <h1>Nano Remote</h1>
+      <header class="topbar home-bar">
+        <span />
         <SettingsGear onClick={() => onNavigate('/settings')} />
       </header>
-      <p class="pair-hint muted small">
-        Sessions with your coding agents need your Mac.{' '}
-        <a
-          href="/pair"
-          onClick={(event) => {
-            event.preventDefault();
-            onNavigate('/pair');
-          }}
-        >
-          Pair your Mac
-        </a>
-      </p>
-      <ChatsPanel services={services} onOpenChat={onOpenChat} onNavigate={onNavigate} />
+      <ChatsPanel
+        services={services}
+        onOpenChat={onOpenChat}
+        onNavigate={onNavigate}
+        note={
+          <p class="pair-hint muted small">
+            Sessions with your coding agents need your Mac.{' '}
+            <a
+              href="/pair"
+              onClick={(event) => {
+                event.preventDefault();
+                onNavigate('/pair');
+              }}
+            >
+              Pair your Mac
+            </a>
+          </p>
+        }
+      />
     </main>
   );
 }

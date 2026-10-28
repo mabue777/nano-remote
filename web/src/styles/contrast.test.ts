@@ -33,7 +33,9 @@ const TEXT_PAIRS: [text: string, surface: string][] = [
   ['--diff-del', '--bg'],
   ['--diff-del', '--surface'],
   ['--diff-del', '--fill'],
-  ['--warn-text', '--warn-bg'], // the lab's "Awaiting approval" pill
+  ['--warn-text', '--warn-bg'], // a warn word on its tint
+  ['--warn-text', '--bg'], // "Needs approval" / "Needs your answer" at the end of a Home row (look step 6)
+  ['--warn-text', '--surface'], // the same on a row whose swipe actions show (a raised band)
 ];
 
 const { light, dark } = palettes(tokensCss);

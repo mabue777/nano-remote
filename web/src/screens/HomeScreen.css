@@ -1,13 +1,24 @@
-/* Home (HomeScreen.tsx): top bar end, connection badge, host and notifications cards, the
-   Sessions | Chats switch, and the session rows (also used by the chat list, chat/ChatsPanel.tsx). */
+/* Home (HomeScreen.tsx, look step 6): the top bar (Sessions | Chats switch and the gear), the large title
+   with the round ink +, the status filter chips, the connection line, and the flat session rows (also the
+   chat list's, chat/ChatsPanel.tsx). The host card (Settings > This Mac) shares .agents and .agent. */
 
+/* Offline, connecting, update needed: one line at the top of the list. While connected it is read out only. */
 .connection {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
+  margin-top: var(--space-6);
   font: var(--type-footnote);
   color: var(--muted);
-  text-align: right;
+}
+
+.connection button.link {
+  min-height: 0;
+  padding: 0;
+  color: var(--text);
+  font: var(--type-footnote);
+  font-weight: 500;
 }
 
 .connection.connected .dot,
@@ -42,11 +53,15 @@
   }
 }
 
-/* Home's cards (host, session rows) have no border or ring: white on the warm page in light,
-   #212121 on #0d0d0d in dark, set apart by their fill and the air between them (look polish). */
+/* The host card (Settings): no border or ring, set apart by its fill (look polish). */
 .host {
   border: 0;
-  margin-bottom: var(--space-10);
+}
+
+.host-name {
+  margin: 0;
+  font: var(--type-headline);
+  letter-spacing: var(--tracking-title);
 }
 
 .host-line {
@@ -76,62 +91,154 @@
   text-align: right;
 }
 
+/* ---------- Large title, + and chips (the lab's .lab-nl-titlebar and .lab-nl-chip*) ---------- */
+.home-bar {
+  margin-bottom: var(--space-2);
+}
+
+.home-bar .segmented {
+  flex: 0 1 220px; /* one-off: a compact switch beside the gear */
+  margin-bottom: 0;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  min-height: 52px; /* one-off: the large title's bar */
+}
+
+.large-title {
+  margin: 0;
+  font: var(--type-large-title);
+  letter-spacing: var(--tracking-title);
+}
+
+/* The screen's main action: a round ink button (black on light, white on dark). */
+.round-button.ink {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+/* One row of chips that scrolls sideways when it does not fit; grey, the chosen one ink. No counts. */
+.chips {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  margin: var(--space-6) calc(-1 * var(--page-x)) 0;
+  padding: 0 var(--page-x);
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--space-7);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text);
+  font: var(--type-callout);
+  font-weight: 500;
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+/* ---------- The flat rows: straight on the page, a hairline between them, no cards or rings ---------- */
 .session-list {
   list-style: none;
-  margin: 0;
+  margin: var(--space-6) 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
 }
 
 .session {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: var(--space-6) var(--space-7);
-}
-
-/* Pressed (base.css press feedback): the row keeps its colour, dims with the rest and shrinks a little less
-   than a button, as a card. */
-a.session:active {
-  background: var(--surface);
-  transform: scale(0.98);
-}
-
-.session-top {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 60px; /* one-off: a two-line row */
+  padding: var(--space-5) 0;
+  border-bottom: 0.5px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* Pressed (base.css press feedback): a full-width row only dims, it does not shrink. */
+a.session:active {
+  transform: none;
+}
+
+.session-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .session-title {
-  font-weight: 600;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.session-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  margin-top: var(--space-2);
-}
-
-/* "agent · folder · 5 min ago" and the model line: proportional footnote in tertiary grey. */
-.session-meta .meta,
-.session .session-model {
-  color: var(--text-tertiary);
-}
-
-.preview {
-  margin: var(--space-3) 0 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  font: var(--type-body);
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* "Finished while away · Codex · nano-remote · 5 min ago": one grey footnote line. */
+.session-meta {
+  font: var(--type-footnote);
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The one sign at the end of a row (RowSign.tsx). */
+.row-sign {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 20px;
+}
+
+.row-sign-icon {
+  display: inline-flex;
+}
+
+.row-sign-icon.busy {
+  color: var(--accent);
+}
+
+.row-sign-icon.error {
+  color: var(--error);
+}
+
+.row-sign-word {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font: var(--type-footnote);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.row-sign-word.attention {
+  color: var(--warn-text);
+}
+
+.row-sign-word .dot {
+  width: 7px;
+  height: 7px;
+  background: var(--warn);
 }
 
 .more {
@@ -140,17 +247,18 @@ a.session:active {
   padding: var(--space-6) 0;
 }
 
-/* A home row whose turn ended while the app was hidden or offline, until it is opened: one ink word, like
-   an unread mark (no pill, no coloured bar). */
+/* A home row whose turn ended while the app was hidden or offline, until it is opened: ink words at the
+   start of the meta line, like an unread mark (no pill, no coloured bar). */
 .away-mark {
   font-weight: 600;
   color: var(--text);
 }
 
-/* "2 background tasks": the session's agent still runs helpers (spec 5.1 backgroundTasks); a .status-word
-   with the running dot. */
+/* "2 background tasks · ": the session's agent still runs helpers (spec 5.1 backgroundTasks); the row is
+   under Running and shows the spinner. */
 
-/* The "Sessions | Chats" switch on Home: a grey track, the selected half a raised white pill. */
+/* The "Sessions | Chats" switch: a grey track, the selected half a raised white pill. On Home it sits in the
+   top bar, beside the gear. */
 .segmented {
   display: flex;
   padding: 3px; /* one-off: the segmented control's inner inset */
@@ -191,31 +299,37 @@ a.session:active {
   text-decoration: none;
 }
 
-/* Archive and delete (SessionActionsSheets.tsx): the "Archived" section, the actions sheet, the delete
+/* Archive and delete (SessionActionsSheets.tsx): the "Archived (N)" row, the actions sheet, the delete
    confirmation and the Undo toast. The swipe rows themselves are .swipe-row in chat/ChatsPanel.css. */
 .archived {
-  margin-top: var(--space-12);
+  margin-top: var(--space-8);
 }
 
 .archived-head {
-  margin: 0 0 var(--space-5);
-  font-size: var(--font-base);
+  margin: 0;
+  font: inherit;
 }
 
+/* A plain row like the sessions above it: grey words and a chevron that turns when it opens. */
 .archived-toggle {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   width: 100%;
+  min-height: var(--touch);
   border: 0;
+  border-radius: 0;
   background: none;
   padding: 0;
-  font-weight: 600;
+  color: var(--muted);
+  font: var(--type-callout);
+  font-weight: 500;
   text-align: left;
 }
 
-.archived-toggle .count {
-  font-weight: 400;
+/* Full width: it only dims when pressed. */
+.archived-toggle:active {
+  transform: none;
 }
 
 .archived-toggle .chevron {
@@ -228,8 +342,8 @@ a.session:active {
   transform: rotate(90deg);
 }
 
-.archived .session {
-  opacity: 0.8;
+.archived .session-title {
+  color: var(--muted);
 }
 
 .archived-foot {

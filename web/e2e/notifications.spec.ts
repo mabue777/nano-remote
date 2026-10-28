@@ -139,7 +139,7 @@ async function backToSessions(page: Page): Promise<void> {
   await page.locator('a.back').click(); // Back (to Sessions: Home's title with a host)
   await page.getByRole('tab', { name: 'Sessions' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('region', { name: 'Host' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sessions', level: 1 })).toBeVisible();
 }
 
 test('Home has no Notifications card and no notifications line, whether notifications are off or on', async ({ page, request }) => {

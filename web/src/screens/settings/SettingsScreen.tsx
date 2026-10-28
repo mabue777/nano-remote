@@ -1,5 +1,6 @@
 // Settings, /settings (and its old address /settings/providers). Sections in order: Notifications (Web
-// Push, with a host), This Mac (keep awake, with a host), Providers. Provider rules and state live in
+// Push, with a host), This Mac (keep awake, with a host) followed by the host card (name, uptime, agents;
+// it left Home in look step 6), Providers. Provider rules and state live in
 // ProviderSettingsModel; this file renders them, focuses the key field after a preset tap, and hands the
 // export file to the share sheet (or a download where the browser has none) and the import file picker's
 // file to the model. While the add/edit form is open it replaces every section.
@@ -13,6 +14,8 @@ import { BackHeader } from '../../ui/BackHeader';
 import { Sheet } from '../../ui/Sheet';
 import type { ChatServices } from '../chat/services';
 import { useModel } from '../use-model';
+import type { HostStatusClient } from '../host-status-model';
+import { HostCard } from './host/HostCard';
 import { KeepAwakeSection } from './host/KeepAwakeSection';
 import type { KeepAwakeLink } from './host/keep-awake-model';
 import { NotificationsSection } from './notifications/NotificationsSection';
@@ -29,9 +32,11 @@ export interface SettingsScreenProps {
   hostLink?: KeepAwakeLink;
   /** Web Push: the Notifications section. Absent without a host or a service worker (the dev server). */
   notifications?: PushModel;
+  /** The paired host's stream: shows the host card (name, uptime, agents). Absent without a host. */
+  host?: HostStatusClient;
 }
 
-export function SettingsScreen({ services, onBack, backLabel, hostLink, notifications }: SettingsScreenProps) {
+export function SettingsScreen({ services, onBack, backLabel, hostLink, notifications, host }: SettingsScreenProps) {
   const model = useModel(
     useMemo(
       () =>
@@ -63,6 +68,7 @@ export function SettingsScreen({ services, onBack, backLabel, hostLink, notifica
       )}
       {form === null && notifications !== undefined && <NotificationsSection push={notifications} />}
       {form === null && hostLink !== undefined && <KeepAwakeSection link={hostLink} />}
+      {form === null && host !== undefined && <HostCard client={host} />}
       {form !== null ? <ProviderForm model={model} form={form} /> : <Overview model={model} />}
       {model.confirm !== null && <ConfirmSheet model={model} />}
     </main>

@@ -218,8 +218,9 @@ test('press feedback: a pressed button dims and shrinks, a full-width bar only d
   await page.mouse.up();
   await expect.poll(() => look(button)).toEqual({ transform: 'none', opacity: '1' });
 
-  // A session row, a card, shrinks a little less and keeps its colour. Held with the mouse, the row's own
-  // long-press would open its actions sheet, so the pressed state is forced through DevTools instead.
+  // A session row, a full-width row on the page (look step 6), only dims and keeps its colour. Held with the
+  // mouse, the row's own long-press would open its actions sheet, so the pressed state is forced through
+  // DevTools instead.
   const cdp = await page.context().newCDPSession(page);
   const row = page.getByRole('list', { name: 'Sessions' }).getByRole('link').first();
   const colour = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -228,7 +229,7 @@ test('press feedback: a pressed button dims and shrinks, a full-width bar only d
   const { root } = await cdp.send('DOM.getDocument');
   const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: 'a.session' });
   await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['active'] });
-  await expect.poll(() => look(row)).toEqual({ transform: 'matrix(0.98, 0, 0, 0.98, 0, 0)', opacity: '0.7' });
+  await expect.poll(() => look(row)).toEqual({ transform: 'none', opacity: '0.7' });
   expect(await row.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(colour);
   await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
 

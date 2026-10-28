@@ -68,7 +68,7 @@ test('the Look switch flips between Now and New, is remembered, and the motion b
   await expect(page.getByRole('group', { name: 'Hosts' }).getByRole('button')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'New session' })).toBeVisible();
   await expect(page.locator('.lab-nl-row')).toHaveCount(5);
-  await expect(page.locator('.lab-nl-row .lab-nl-pill')).toHaveText(['Awaiting approval']);
+  await expect(page.locator('.lab-nl-row .row-sign[data-sign="needs"]')).toHaveText(['Needs approval', 'Needs your answer']);
 
   await page.reload();
   await expect(lab).toHaveAttribute('data-look', 'new'); // kept in localStorage

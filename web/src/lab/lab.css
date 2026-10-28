@@ -321,39 +321,7 @@ html[data-lab-nav='pop']::view-transition-new(lab-page) {
 }
 
 /* ---------- 8. List changes ---------- */
-.lab-leaving {
-  pointer-events: none;
-  animation: lab-leave var(--duration-moderate) var(--ease-exit) both;
-}
-
-@keyframes lab-leave {
-  to {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-}
-
-.lab-xfade {
-  display: inline-grid;
-}
-
-.lab-xfade > * {
-  grid-area: 1 / 1;
-}
-
-.lab-xfade-out {
-  animation: lab-fade-out var(--duration-moderate) var(--ease-standard) both;
-}
-
-.lab-xfade-in {
-  animation: lab-fade-in var(--duration-moderate) var(--ease-standard) both;
-}
-
-@keyframes lab-fade-out {
-  to {
-    opacity: 0;
-  }
-}
+/* The leaving row and the cross-fading word are the app's (.list-leaving, .xfade* in styles/components.css). */
 
 /* ---------- 9. Expand and collapse: a box's background scales, the content fades ---------- */
 .lab-shelled {

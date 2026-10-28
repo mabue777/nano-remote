@@ -1,16 +1,15 @@
 // The DOM side of the transcript's motion (docs/research/interaction-feel-prototype.md, techniques 4, 5 and 9),
-// built in the lab (/lab) and shared by the session view, local chat and the lab: FLIP for expand and collapse,
-// paced streaming text, and the auto-scroll follower. The rules live in tested modules (ui/motion/flip.ts,
+// built in the lab (/lab) and shared by the session view, local chat and the lab: FLIP for expand and collapse
+// (the hook itself is ui/motion/use-flip.ts), paced streaming text, and the auto-scroll follower. The rules live in tested modules (ui/motion/flip.ts,
 // pacer.ts, autoscroll.ts); these hooks only wire them to elements and frames. Covered by the Playwright smoke.
 // Only transform and opacity animate; with Reduce Motion nothing is paced or eased.
 import type { RefObject } from 'preact';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { BOTTOM_SLACK, distanceFromBottom, Follower } from '../../ui/motion/autoscroll';
-import { measure, play, type Box } from '../../ui/motion/flip';
 import { motionOf, prefersReducedMotion } from '../../ui/motion/motion';
 import { FrameLoop, TextReveal, type RevealView } from '../../ui/motion/pacer';
-import { riseEntered } from '../../ui/motion/sending';
+import type { Flip } from '../../ui/motion/use-flip';
 
 export function reducedMotion(): boolean {
   return typeof window !== 'undefined' && prefersReducedMotion(window);
@@ -21,70 +20,8 @@ const caf = (handle: number) => window.cancelAnimationFrame(handle);
 
 // ---- FLIP ------------------------------------------------------------------------------------------
 
-export interface FlipRequest {
-  /** Whether new rows get FLIP's own fade and scale (false: they have a CSS entrance). */
-  enter?: boolean;
-  /** Runs after the change rendered and before the rows animate (e.g. pin the transcript to the bottom). */
-  beforePlay?: () => void;
-  /** New rows matching this selector rise out of the composer (Sending, ui/motion/sending.ts). */
-  rise?: string;
-}
-
-export interface Flip {
-  /** Measures the rows, runs `update`, and animates the rows from their old places after the render. */
-  (update: () => void, request?: FlipRequest): void;
-  /** Measures now; the next render of the owner animates from here (for changes that arrive from a model). */
-  prepare(request?: FlipRequest): void;
-}
-
-/**
- * FLIP for one container: measures the rows (`[data-flip-key]`) and the shelled boxes (`[data-shell-key]`),
- * lets the change render, then animates rows from their old places and shells from their old heights. With
- * `enabled` false (Reduce Motion) it only runs the update.
- */
-export function useFlip(container: RefObject<HTMLElement>, enabled: boolean): Flip {
-  const pending = useRef<{ before: Map<string, Box>; heights: Map<string, number>; request: FlipRequest } | null>(null);
-  useLayoutEffect(() => {
-    const job = pending.current;
-    const element = container.current;
-    if (job === null || element === null) return;
-    pending.current = null;
-    job.request.beforePlay?.();
-    const m = motionOf(element);
-    const plan = play(element, job.before, { duration: m.relaxed, easing: m.standard }, job.request.enter ?? true);
-    if (job.request.rise !== undefined) riseEntered(element, plan.entered, job.request.rise, { duration: m.moderate, easing: m.enter });
-    growShells(element, job.heights, { duration: m.relaxed, easing: m.standard });
-  });
-  return useMemo(() => {
-    const prepare = (request: FlipRequest = {}) => {
-      const element = container.current;
-      if (enabled && element !== null && pending.current === null) pending.current = { before: measure(element), heights: shellHeights(element), request };
-    };
-    const flip = ((update: () => void, request: FlipRequest = {}) => {
-      prepare(request);
-      update();
-    }) as Flip;
-    flip.prepare = prepare;
-    return flip;
-  }, [container, enabled]);
-}
-
-function shellHeights(container: HTMLElement): Map<string, number> {
-  const heights = new Map<string, number>();
-  container.querySelectorAll<HTMLElement>('[data-shell-key]').forEach((el) => heights.set(el.dataset.shellKey!, el.offsetHeight));
-  return heights;
-}
-
-/** A shelled box changed height: its background (`.shell`) scales from the old height to the new one. */
-function growShells(container: HTMLElement, before: Map<string, number>, timing: { duration: number; easing: string }): void {
-  container.querySelectorAll<HTMLElement>('[data-shell-key]').forEach((el) => {
-    const from = before.get(el.dataset.shellKey!);
-    const to = el.offsetHeight;
-    const shell = el.querySelector<HTMLElement>(':scope > .lab-shell, :scope > .shell');
-    if (from === undefined || to === 0 || from === to || shell === null) return;
-    shell.animate([{ transform: `scaleY(${from / to})` }, { transform: 'scaleY(1)' }], timing);
-  });
-}
+// The FLIP hook moved to ui/motion/use-flip.ts when Home's list adopted it (look step 6).
+export { useFlip, type Flip, type FlipRequest } from '../../ui/motion/use-flip';
 
 /**
  * Collapses an open part (`[data-body="key"]`): its content fades out, then `remove` runs inside a FLIP so

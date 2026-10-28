@@ -1,15 +1,15 @@
-// The home screen: the connection indicator (with the reconnect countdown), the host's status (name,
-// agents and their state, uptime) and the session list.
-//
-// Host status starts from the `initialize` result of the current stream (host and agents, spec 4), then
-// `host/status` on every new stream adds uptime and the active count, and `host/status/changed` replaces
-// it whenever an agent's state changes. The session list is the Replica's (it lists on every new stream
-// and folds `session/updated` in); this model adds pull-to-refresh and paging by cursor on top.
-import type { Agent, HostStatus, InitializeResult } from '../generated/methods';
+// The home screen: the connection indicator (with the reconnect countdown), the session list with its
+// status filter chips, and the host's status (host-status-model.ts; its card is in Settings since look
+// step 6, the agent names label the rows). The session list is the Replica's (it lists on every new stream
+// and folds `session/updated` in); this model adds pull-to-refresh, paging by cursor and the filter on top.
+import type { InitializeResult } from '../generated/methods';
 import type { SessionSummary } from '../replica/types';
 import type { ClientState } from '../stream/client';
+import type { StorageLike } from '../replica/storage';
+import { HostStatusModel, type HostView } from './host-status-model';
 import { errorText, Model } from './model';
 import { modelLabel } from './new-session-model';
+import { filterRows, loadFilter, phaseOf, runningTasks, saveFilter, signOf, type Phase, type RowSign, type StatusFilter } from './session-list';
 
 /** What the home screen needs from the stream client; StreamClient fits. */
 export interface HomeClient {
@@ -37,6 +37,8 @@ export interface HomeReplica {
   session?(sessionId: string): { session: { settings?: { model?: string } } | null } | undefined;
 }
 
+export { agentRow, formatUptime, type AgentRow, type HostView } from './host-status-model';
+
 export type ConnectionKind = 'connecting' | 'connected' | 'offline' | 'update_required' | 'unpaired';
 
 export interface Connection {
@@ -44,24 +46,6 @@ export interface Connection {
   /** While offline and a retry is scheduled: whole seconds until it starts. */
   retryInSeconds?: number;
   label: string;
-}
-
-export interface AgentRow {
-  id: string;
-  name: string;
-  status: string;
-  /** ready, degraded or unavailable, for the dot's color. */
-  tone: 'ok' | 'warn' | 'off';
-  detail: string;
-}
-
-export interface HostView {
-  name: string;
-  version: string;
-  agents: AgentRow[];
-  /** Absent until `host/status` answered. */
-  uptime?: string;
-  sessionsActive?: number;
 }
 
 export interface SessionRow {
@@ -84,6 +68,10 @@ export interface SessionRow {
   finishedWhileAway: boolean;
   /** Background tasks of its agent still running (Session.backgroundTasks, spec 5.1). */
   backgroundTasks: number;
+  /** For the status filter chips: needs you, running (background tasks included), or finished. */
+  phase: Phase;
+  /** The one sign at the end of the row (session-list.ts). */
+  sign: RowSign;
 }
 
 /** Home's own title, which a back control into Home names: "Sessions" while a host is paired, else "Chats" (local chat only). */
@@ -126,18 +114,6 @@ export function connectionOf(state: ClientState, reconnectAt: number | undefined
   }
 }
 
-/** "3 d 4 h", "2 h 5 min", "7 min", "40 s". */
-export function formatUptime(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const days = Math.floor(s / 86_400);
-  const hours = Math.floor((s % 86_400) / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  if (days > 0) return `${days} d ${hours} h`;
-  if (hours > 0) return `${hours} h ${minutes} min`;
-  if (minutes > 0) return `${minutes} min`;
-  return `${s} s`;
-}
-
 /** "just now", "5 min ago", "3 h ago", "2 d ago" from Unix seconds. */
 export function formatAgo(unixSeconds: number, nowMs: number): string {
   const seconds = Math.floor(nowMs / 1000) - unixSeconds;
@@ -145,12 +121,6 @@ export function formatAgo(unixSeconds: number, nowMs: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`;
   return `${Math.floor(seconds / 86_400)} d ago`;
-}
-
-export function agentRow(agent: Agent): AgentRow {
-  const tone = agent.status === 'ready' ? 'ok' : agent.status === 'unavailable' ? 'off' : 'warn';
-  const detail = [agent.status, agent.version, agent.reason].filter((part) => typeof part === 'string' && part !== '').join(' · ');
-  return { id: agent.id, name: agent.name, status: agent.status, tone, detail };
 }
 
 export function statusOf(summary: Pick<SessionSummary, 'status' | 'lastTurnStatus'>): { label: string; tone: SessionRow['tone'] } {
@@ -201,7 +171,9 @@ export function sessionRow(summary: SessionSummary, agentNames: ReadonlyMap<stri
     updated: formatAgo(summary.updatedAt, nowMs),
     finishedWhileAway: false,
     // Running ones only; none while the agent is stopped (they cannot still run).
-    backgroundTasks: summary.status === 'error' ? 0 : (summary.backgroundTasks ?? []).filter((task) => task.status === 'running').length,
+    backgroundTasks: runningTasks(summary),
+    phase: phaseOf(summary),
+    sign: signOf(summary),
   };
   if (modelId !== undefined && modelId !== '') row.model = modelLabel(modelId);
   return row;
@@ -436,6 +408,8 @@ export interface HomeModelOptions {
   /** Marks rows that finished while the app was away; absent means no markers. */
   away?: Pick<AwayTracker, 'isMarked' | 'subscribe'>;
   now?: () => number;
+  /** Where the chosen status filter chip is kept (localStorage); absent or null: All, kept for the page only. */
+  storage?: Pick<StorageLike, 'getItem' | 'setItem'> | null;
 }
 
 export class HomeModel extends Model {
@@ -449,7 +423,10 @@ export class HomeModel extends Model {
   menuId: string | undefined;
   /** The last failed refresh or page, shown above the list. */
   error: string | undefined;
-  private status: { value: HostStatus; receivedAt: number } | undefined;
+  /** The status filter chip (All · Running · Needs you · Finished), kept across reloads. */
+  filter: StatusFilter;
+  private readonly hostStatus: HostStatusModel;
+  private readonly storage: HomeModelOptions['storage'];
   private readonly client: HomeClient;
   private readonly replica: HomeReplica;
   private readonly away: HomeModelOptions['away'];
@@ -463,31 +440,26 @@ export class HomeModel extends Model {
     this.replica = options.replica;
     this.away = options.away;
     this.now = options.now ?? Date.now;
+    this.storage = options.storage;
+    this.filter = loadFilter(this.storage ?? null);
+    this.hostStatus = new HostStatusModel({ client: this.client, now: this.now });
     this.unsubscribe.push(
       this.client.on('state', () => {
         this.updateTicker();
         this.changed();
       }),
-      this.client.on('ready', () => {
-        void this.fetchStatus();
-        this.fetchArchived();
-      }),
-      this.client.onNotification('host/status/changed', (params) => {
-        this.status = { value: params as unknown as HostStatus, receivedAt: this.now() };
-        this.changed();
-      }),
+      this.client.on('ready', () => this.fetchArchived()),
+      this.hostStatus.subscribe(() => this.changed()),
       this.replica.subscribe(() => this.changed()),
     );
     if (this.away !== undefined) this.unsubscribe.push(this.away.subscribe(() => this.changed()));
-    if (this.client.state === 'ready') {
-      void this.fetchStatus();
-      this.fetchArchived();
-    }
+    if (this.client.state === 'ready') this.fetchArchived();
     this.updateTicker();
   }
 
   dispose(): void {
     for (const fn of this.unsubscribe.splice(0)) fn();
+    this.hostStatus.dispose();
     this.stopTicker();
   }
 
@@ -495,20 +467,12 @@ export class HomeModel extends Model {
     return connectionOf(this.client.state, this.client.reconnectAt, this.now());
   }
 
+  /** The host's name, agents and uptime (shown in Settings since look step 6; the agent names label the rows). */
   get host(): HostView | undefined {
-    const init = this.client.host;
-    if (this.status === undefined && init === undefined) return undefined;
-    const host = this.status?.value.host ?? init!.host;
-    const agents = this.status?.value.agents ?? init!.agents;
-    const view: HostView = { name: host.name, version: host.version, agents: agents.map(agentRow) };
-    if (this.status !== undefined) {
-      const elapsed = (this.now() - this.status.receivedAt) / 1000;
-      view.uptime = formatUptime(this.status.value.uptimeSeconds + elapsed);
-      view.sessionsActive = this.status.value.sessionsActive;
-    }
-    return view;
+    return this.hostStatus.view;
   }
 
+  /** Every listed session, in the list's order. */
   get sessions(): SessionRow[] {
     const names = this.agentNames();
     const now = this.now();
@@ -517,6 +481,19 @@ export class HomeModel extends Model {
       if (this.away?.isMarked(summary.sessionId) === true && isFinished(summary)) row.finishedWhileAway = true;
       return row;
     });
+  }
+
+  /** The rows under the chosen chip. */
+  get rows(): SessionRow[] {
+    return filterRows(this.sessions, this.filter, (row) => row.phase);
+  }
+
+  /** A chip tap: the list shows that subset, and the choice is kept for the next visit. */
+  setFilter(filter: StatusFilter): void {
+    if (this.filter === filter) return;
+    this.filter = filter;
+    saveFilter(this.storage ?? null, filter);
+    this.changed();
   }
 
   /** The "Archived" section's rows, newest first. */
@@ -579,7 +556,7 @@ export class HomeModel extends Model {
     this.error = undefined;
     this.changed();
     try {
-      await Promise.all([this.replica.refreshSessions(), this.fetchStatus(), this.replica.refreshArchived()]);
+      await Promise.all([this.replica.refreshSessions(), this.hostStatus.refresh(), this.replica.refreshArchived()]);
     } catch (error) {
       this.error = `Could not refresh: ${errorText(error)}`;
     } finally {
@@ -609,24 +586,12 @@ export class HomeModel extends Model {
   }
 
   private agentNames(): Map<string, string> {
-    const names = new Map<string, string>();
-    for (const agent of this.status?.value.agents ?? this.client.host?.agents ?? []) names.set(agent.id, agent.name);
-    return names;
+    return this.hostStatus.agentNames();
   }
 
   /** The archived list for the "Archived" section; a failure leaves what the phone had. */
   private fetchArchived(): void {
     this.replica.refreshArchived().catch(() => undefined);
-  }
-
-  private async fetchStatus(): Promise<void> {
-    try {
-      const value = await this.client.request<HostStatus>('host/status');
-      this.status = { value, receivedAt: this.now() };
-      this.changed();
-    } catch {
-      // keep what initialize said; the next stream asks again
-    }
   }
 
   /**

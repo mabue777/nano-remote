@@ -11,7 +11,6 @@ import { useState } from 'preact/hooks';
 import { GroupList, type GroupRow } from '../ui/GroupList';
 import { NavHeader } from '../ui/NavHeader';
 import { SheetHeader } from '../ui/Sheet';
-import { CrossFade } from './dom';
 import { APPROVAL, QUESTION, type LabSession as Session, type ToolRow } from './fixtures';
 import type { Shown } from '../ui/motion/flip';
 import { Icon } from '../ui/Icon';
@@ -33,7 +32,8 @@ import {
 } from '../screens/session/approvals/questions';
 import { AnsweredLine, ApprovalCard, QuestionCard } from '../screens/session/approvals/RequestCards';
 import { detailRows } from '../screens/session/session-details';
-import { indicatorOf, previousMessages, type Indicator } from './look';
+import { RowSign } from '../screens/RowSign';
+import { indicatorOf, previousMessages } from './look';
 
 export interface NewListProps {
   sessions: Shown<Session>[];
@@ -48,7 +48,7 @@ export interface NewListProps {
   onDropped: (id: string) => void;
 }
 
-/** Item 6: a flat list on the page, host chips under the large title, one trailing indicator per row. */
+/** Item 6: a flat list on the page, host chips under the large title, one trailing sign per row (the app's RowSign). */
 export function NewList({ sessions, hosts, host, listRef, smooth, onHost, onOpen, onNew, onSimulate, onDropped }: NewListProps) {
   return (
     <main class="screen lab-nl-home">
@@ -74,11 +74,10 @@ export function NewList({ sessions, hosts, host, listRef, smooth, onHost, onOpen
       </div>
       <ul class="lab-nl-list" aria-label="Sessions" ref={listRef}>
         {sessions.map(({ item, leaving }) => {
-          const indicator = indicatorOf(item);
           return (
             <li
               key={item.id}
-              class={leaving ? 'lab-leaving' : undefined}
+              class={leaving ? 'list-leaving' : undefined}
               data-flip-key={leaving ? undefined : item.id}
               aria-hidden={leaving ? 'true' : undefined}
               onAnimationEnd={(event) => leaving && event.target === event.currentTarget && onDropped(item.id)}
@@ -97,7 +96,7 @@ export function NewList({ sessions, hosts, host, listRef, smooth, onHost, onOpen
                     {item.host} · {item.folder} · {item.updated}
                   </span>
                 </span>
-                <CrossFade value={`${indicator.kind}|${indicator.label}`} smooth={smooth} render={(v) => <RowIndicator value={v} />} />
+                <RowSign sign={indicatorOf(item)} smooth={smooth} />
               </a>
             </li>
           );
@@ -105,15 +104,6 @@ export function NewList({ sessions, hosts, host, listRef, smooth, onHost, onOpen
       </ul>
     </main>
   );
-}
-
-function RowIndicator({ value }: { value: string }) {
-  const [kind, label] = value.split('|') as [Indicator['kind'], string];
-  if (kind === 'pill') return <span class="lab-nl-pill">{label}</span>;
-  if (kind === 'spinner') return <Icon name="spinner" class="lab-nl-spin lab-nl-indicator busy" />;
-  if (kind === 'question') return <Icon name="question" class="lab-nl-indicator attention" />;
-  if (kind === 'alert') return <Icon name="alert" class="lab-nl-indicator error" />;
-  return <span class="lab-nl-indicator-none" />;
 }
 
 /** Item 8: the app's centred bar (ui/NavHeader.tsx): round back button, centred 17 px title with a grey line, round more button. */

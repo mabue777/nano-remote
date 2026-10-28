@@ -64,10 +64,10 @@ describe('new look wording', () => {
 
 describe('session row indicator', () => {
   it('shows one indicator per state', () => {
-    expect(indicatorOf({ tone: 'busy', status: 'Working' })).toEqual({ kind: 'spinner', label: 'Running' });
-    expect(indicatorOf({ tone: 'attention', status: 'Needs approval' })).toEqual({ kind: 'pill', label: 'Awaiting approval' });
-    expect(indicatorOf({ tone: 'attention', status: 'Needs your input' })).toEqual({ kind: 'question', label: 'Needs your input' });
-    expect(indicatorOf({ tone: 'error', status: 'Failed' }).kind).toBe('alert');
+    expect(indicatorOf({ tone: 'busy', status: 'Working' })).toEqual({ kind: 'spinner', label: 'Working' });
+    expect(indicatorOf({ tone: 'attention', status: 'Needs approval' })).toEqual({ kind: 'needs', label: 'Needs approval' });
+    expect(indicatorOf({ tone: 'attention', status: 'Needs your input' })).toEqual({ kind: 'needs', label: 'Needs your answer' });
+    expect(indicatorOf({ tone: 'error', status: 'Failed' }).kind).toBe('failed');
     expect(indicatorOf({ tone: 'ok', status: 'Finished' }).kind).toBe('none');
     expect(indicatorOf({ tone: 'muted', status: 'Idle' })).toEqual({ kind: 'none', label: 'Idle' });
   });

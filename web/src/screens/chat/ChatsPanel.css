@@ -2,7 +2,7 @@
    Home's session list share: a swipe or long-press shows the row's actions under it. */
 
 .pair-hint {
-  margin: 0 0 var(--space-7);
+  margin: var(--space-3) 0 0;
 }
 
 /* Links inside a sentence: ink at 500 weight, underlined so they read as links without the accent. */
@@ -17,7 +17,6 @@
 .swipe-row {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
 }
 
 /* Rows take vertical pans; a horizontal move reaches the swipe gesture. */
@@ -28,13 +27,19 @@
 }
 
 .swipe-row.revealed .session {
-  box-shadow: 0 0 0 1px var(--error); /* the row the actions below act on (rows have no border) */
+  background: var(--surface); /* the row the actions below act on: a raised band (no rings) */
+  box-shadow: var(--shadow-sm);
+  margin: 0 calc(-1 * var(--space-4));
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+  border-radius: var(--radius-inner);
 }
 
 .row-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-5);
 }
 
 /* The chevron in "Settings > Providers" (SettingsPath) sits in the line of text. */

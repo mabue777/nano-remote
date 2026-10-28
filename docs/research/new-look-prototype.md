@@ -136,6 +136,26 @@ with them so each file is rewritten once:
    The elapsed time trusts the Mac's clock: if the phone's clock is off, the count is off by as much.
 6. **Session list with motion part 3 (item 6, techniques 8 and 2).** M + M + L. The flat list and the list
    changes rewrite the same rows; the page push and back swipe come last, as the motion study recommended.
+   **First half done 2026-10-28 (the flat list and list changes, technique 8):** Home with a paired Mac is a
+   large "Sessions" title with the round ink + and the gear above it, beside the Sessions | Chats switch. Under
+   the title one row of status filter chips replaces the lab's host chips (the app pairs with one Mac): All ·
+   Running · Needs you · Finished, grey, the chosen one ink, no counts, kept in localStorage
+   (`nano-remote/home/filter/v1`). The rules are `screens/session-list.ts` (phase, filter, the one sign per row);
+   the sign is `screens/RowSign.tsx`, which the lab's New look renders too. Rows lie straight on the page with a
+   hairline under each: the title at body size on one line, one grey line "agent · folder · 5 min ago" (with
+   "Finished while away", "N background tasks" and, once known, the model in front of the folder), and one sign:
+   the accent spinner while it runs (background tasks alone count as running), the warn dot with "Needs
+   approval" or "Needs your answer", the alert in the error tone when the agent stopped or the turn failed,
+   nothing when finished (its word is read out only). The connection line sits above the list and only shows
+   when the Mac is not connected; "Archived (N)" is a plain grey row that opens; the host card moved to Settings
+   under This Mac (it was still on Home). List changes run through `useListMotion` in `ui/motion/use-flip.ts`
+   (the FLIP hook moved there from the session view): a row that moves slides, a new one fades and grows in, a
+   removed one fades out where it was and the rest close up; filter switches the same; the status word
+   cross-fades (`ui/CrossFade.tsx`, moved from the lab). The chat list does the same, and its swipe rows keep
+   their horizontal touches. The hook marks what it played (`data-flip-anim`). The lab's sign changed with it:
+   the orange pill and "?" became the dot and word. Choices the lab left open: a failed session shows "Error"
+   (the agent stopped) or "Failed" (the last turn); "Needs you" wins over Running; the revealed swipe row is a
+   raised band instead of a red ring. The page push and back swipe (technique 2) are the second half.
 
 ## What the prototype is made of
 

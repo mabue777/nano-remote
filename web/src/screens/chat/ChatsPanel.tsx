@@ -1,8 +1,13 @@
-// The Chats tab: the list of local chats, "New chat", and the empty states. Rendered by Home (paired, on
-// its Chats tab) and by ChatsHome (no host paired). Rules live in ChatsListModel.
-import { useEffect, useMemo } from 'preact/hooks';
+// The Chats tab: the large "Chats" title with the round ink + (New chat), the flat list of local chats, and
+// the empty states. Rendered by Home (paired, on its Chats tab) and by ChatsHome (no host paired). Rules live
+// in ChatsListModel. List changes (a new chat, a delete, a reorder) move through FLIP like Home's sessions
+// (ui/motion/use-flip.ts useListMotion); the rows' swipes are horizontal touches, FLIP only animates after.
+import type { ComponentChildren } from 'preact';
+import { useEffect, useMemo, useRef } from 'preact/hooks';
 
 import { Icon } from '../../ui/Icon';
+import { useListMotion } from '../../ui/motion/use-flip';
+import { reducedMotion } from '../session/motion-hooks';
 
 import { ChatsListModel, PROVIDER_SETTINGS_PATH, type ChatRow } from './chats-list-model';
 import { useModel } from '../use-model';
@@ -14,13 +19,20 @@ export interface ChatsPanelProps {
   onOpenChat: (chatId: string) => void;
   /** In-app navigation to a path (the Settings > Providers link). */
   onNavigate: (path: string) => void;
+  /** A line under the title (ChatsHome: "Pair your Mac"). */
+  note?: ComponentChildren;
 }
 
-export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps) {
+const chatKey = (row: ChatRow) => row.chatId;
+
+export function ChatsPanel({ services, onOpenChat, onNavigate, note }: ChatsPanelProps) {
   const model = useModel(useMemo(() => new ChatsListModel({ chats: services.chats, providers: services.providers }), [services]));
   useEffect(() => () => model.dispose(), [model]);
   const rows = model.rows;
   const empty = model.empty;
+  const smooth = !reducedMotion();
+  const listRef = useRef<HTMLUListElement>(null);
+  const list = useListMotion(rows, chatKey, listRef, smooth);
   const create = () => {
     const chatId = model.newChat();
     if (chatId !== null) onOpenChat(chatId);
@@ -28,14 +40,15 @@ export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps
 
   return (
     <section class="chats" aria-labelledby="chats-title">
-      <div class="section-head">
-        <h2 id="chats-title">Chats</h2>
-        <div class="actions">
-          <button type="button" class="primary small" onClick={create} disabled={!model.canCreate}>
-            New chat
-          </button>
-        </div>
+      <div class="titlebar">
+        <h1 id="chats-title" class="large-title">
+          Chats
+        </h1>
+        <button type="button" class="round-button ink" aria-label="New chat" onClick={create} disabled={!model.canCreate}>
+          <Icon name="plus" />
+        </button>
       </div>
+      {note}
       {empty === 'no-providers' && (
         <p class="empty muted">
           Add a model provider to start chatting.{' '}
@@ -52,10 +65,10 @@ export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps
         </p>
       )}
       {empty === 'no-chats' && <p class="empty muted">No chats yet. Start one with New chat.</p>}
-      {rows.length > 0 && (
-        <ul class="session-list chat-list" aria-label="Chats">
-          {rows.map((row) => (
-            <ChatItem key={row.chatId} row={row} model={model} onOpen={onOpenChat} />
+      {list.shown.length > 0 && (
+        <ul class="session-list chat-list" aria-label="Chats" ref={listRef}>
+          {list.shown.map(({ item, leaving }) => (
+            <ChatItem key={item.chatId} row={item} model={model} leaving={leaving} onOpen={onOpenChat} onDropped={list.dropped} />
           ))}
         </ul>
       )}
@@ -63,19 +76,36 @@ export function ChatsPanel({ services, onOpenChat, onNavigate }: ChatsPanelProps
   );
 }
 
-function ChatItem({ row, model, onOpen }: { row: ChatRow; model: ChatsListModel; onOpen: (chatId: string) => void }) {
+interface ChatItemProps {
+  row: ChatRow;
+  model: ChatsListModel;
+  /** It left the list and fades out at its old place (not interactive). */
+  leaving: boolean;
+  onOpen: (chatId: string) => void;
+  onDropped: (chatId: string) => void;
+}
+
+function ChatItem({ row, model, leaving, onOpen, onDropped }: ChatItemProps) {
   const press = usePress({ onLongPress: () => model.reveal(row.chatId), onSwipeLeft: () => model.reveal(row.chatId) });
   const { consumed, ...handlers } = press;
+  const revealed = !leaving && row.revealed;
   return (
-    <li class={`swipe-row chat-row${row.revealed ? ' revealed' : ''}`} data-chat-id={row.chatId}>
+    <li
+      class={`swipe-row chat-row${revealed ? ' revealed' : ''}${leaving ? ' list-leaving' : ''}`}
+      data-chat-id={row.chatId}
+      data-flip-key={leaving ? undefined : row.chatId}
+      aria-hidden={leaving ? 'true' : undefined}
+      onAnimationEnd={(event) => leaving && event.target === event.currentTarget && onDropped(row.chatId)}
+    >
       <a
         class="session chat"
         href={`/c/${encodeURIComponent(row.chatId)}`}
-        {...handlers}
+        tabIndex={leaving ? -1 : undefined}
+        {...(leaving ? {} : handlers)}
         onClick={(event) => {
           event.preventDefault();
-          if (consumed()) return;
-          if (row.revealed) {
+          if (leaving || consumed()) return;
+          if (revealed) {
             model.conceal();
             return;
           }
@@ -83,16 +113,14 @@ function ChatItem({ row, model, onOpen }: { row: ChatRow; model: ChatsListModel;
           onOpen(row.chatId);
         }}
       >
-        <div class="session-top">
+        <span class="session-text">
           <span class="session-title">{row.title}</span>
-        </div>
-        <div class="session-meta small">
-          <span class="meta">
+          <span class="session-meta">
             {row.model} · {row.provider} · {row.updated}
           </span>
-        </div>
+        </span>
       </a>
-      {row.revealed && (
+      {revealed && (
         <div class="row-actions">
           <button type="button" class="small danger" onClick={() => model.remove(row.chatId)} aria-label={`Delete ${row.title}`}>
             Delete

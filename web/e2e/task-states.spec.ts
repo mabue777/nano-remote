@@ -39,7 +39,7 @@ test('the session waiting for an approval comes first even when another one is n
   await expect(sessions.getByRole('link')).toHaveText([new RegExp(TITLES[1]!), new RegExp(TITLES[0]!), new RegExp(TITLES[2]!)]);
   const waiting = sessions.getByRole('link', { name: new RegExp(TITLES[1]!) });
   await expect(waiting).toContainText('Needs approval');
-  await expect(waiting.getByLabel('1 waiting for you')).toBeVisible();
+  await expect(waiting.locator('.row-sign')).toHaveAttribute('data-sign', 'needs'); // the one sign: the warn dot and word
   await expect(waiting).toHaveAttribute('data-tone', 'attention');
   const finished = sessions.getByRole('link', { name: new RegExp(TITLES[0]!) });
   await expect(finished).toContainText('Finished');

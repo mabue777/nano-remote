@@ -5,8 +5,8 @@
 //
 // then `renderHook(() => useSomething(...))` calls the hook once; a state setter re-renders synchronously, and
 // `host.value` is the latest return value. Effects run after each render whose deps changed; a cleanup runs
-// before its effect runs again and on `unmount()`. Only useState, useRef, useEffect and useLayoutEffect (run
-// like useEffect: there is no paint to come before) are provided.
+// before its effect runs again and on `unmount()`. Only useState, useRef, useMemo, useEffect and
+// useLayoutEffect (run like useEffect: there is no paint to come before) are provided.
 
 interface Effect {
   deps: readonly unknown[] | undefined;
@@ -79,6 +79,15 @@ export const hooks = {
   useRef<R>(initial: R): { current: R } {
     const host = owner();
     return host.slots[host.next(() => ({ current: initial }))] as { current: R };
+  },
+  useMemo<V>(factory: () => V, deps: readonly unknown[]): V {
+    const host = owner();
+    const index = host.next(() => undefined);
+    const previous = host.slots[index] as { deps: readonly unknown[]; value: V } | undefined;
+    if (previous !== undefined && deps.length === previous.deps.length && deps.every((dep, i) => Object.is(dep, previous.deps[i]))) return previous.value;
+    const value = factory();
+    host.slots[index] = { deps, value };
+    return value;
   },
   useEffect(effect: () => (() => void) | void, deps?: readonly unknown[]): void {
     const host = owner();

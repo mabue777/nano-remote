@@ -234,6 +234,9 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/push-test-error':
               host.pushTestError = body.code === undefined ? undefined : { code: body.code, message: body.message ?? body.code, data: body.data };
               return json(200, { ok: true });
+            case '/test/delete-all':
+              host.reset(); // a host with no sessions (Home's empty state)
+              return json(200, { ok: true });
             case '/test/touch':
               host.session(body.sessionId).summary.updatedAt = Math.floor(Date.now() / 1000) - Number(body.agoSeconds ?? 0);
               return json(200, { ok: true });

@@ -366,7 +366,7 @@ function LabList({ sessions, listRef, smooth, onOpen, onNew, onSimulate, onDropp
           {sessions.map(({ item, leaving }) => (
             <li
               key={item.id}
-              class={`swipe-row${leaving ? ' lab-leaving' : ''}`}
+              class={`swipe-row${leaving ? ' list-leaving' : ''}`}
               data-flip-key={leaving ? undefined : item.id}
               aria-hidden={leaving ? 'true' : undefined}
               onAnimationEnd={(event) => leaving && event.target === event.currentTarget && onDropped(item.id)}

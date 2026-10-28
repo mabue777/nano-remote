@@ -381,3 +381,48 @@
   background: var(--fill);
   color: var(--muted);
 }
+
+/* List changes (ui/motion/use-flip.ts useListMotion, technique 8): a row that left the list stays at its old
+   place while it fades out and shrinks a little; its animationend drops it and the rows under it close the
+   gap through FLIP. With Reduce Motion no row is kept, so this never plays. */
+.list-leaving {
+  pointer-events: none;
+  animation: list-leave var(--duration-moderate) var(--ease-exit) both;
+}
+
+@keyframes list-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* A status word that cross-fades (ui/CrossFade.tsx): the old and the new word share one grid cell. */
+.xfade {
+  display: inline-grid;
+  justify-items: end;
+}
+
+.xfade > * {
+  grid-area: 1 / 1;
+}
+
+.xfade-out {
+  animation: xfade-out var(--duration-moderate) var(--ease-standard) both;
+}
+
+.xfade-in {
+  animation: xfade-in var(--duration-moderate) var(--ease-standard) both;
+}
+
+@keyframes xfade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes xfade-in {
+  from {
+    opacity: 0;
+  }
+}

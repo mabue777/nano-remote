@@ -134,6 +134,18 @@ describe('home formatting', () => {
     expect(formatAgo(now / 1000 - 2 * 86_400, now)).toBe('2 d ago');
   });
 
+  it('formatAgo at its edges: a clock ahead of the phone, and each unit boundary', () => {
+    const now = 1_000_000_000;
+    expect(formatAgo(now / 1000 + 90, now)).toBe('just now'); // the Mac's clock runs ahead
+    expect(formatAgo(now / 1000 - 59, now)).toBe('just now');
+    expect(formatAgo(now / 1000 - 60, now)).toBe('1 min ago');
+    expect(formatAgo(now / 1000 - 3599, now)).toBe('59 min ago');
+    expect(formatAgo(now / 1000 - 3600, now)).toBe('1 h ago');
+    expect(formatAgo(now / 1000 - 86_399, now)).toBe('23 h ago');
+    expect(formatAgo(now / 1000 - 86_400, now)).toBe('1 d ago');
+    expect(formatAgo(now / 1000 - 40 * 86_400, now)).toBe('40 d ago');
+  });
+
   it('agentRow tones and details', () => {
     expect(agentRow({ id: 'codex', name: 'Codex', status: 'ready', version: '0.163.0' })).toEqual({
       id: 'codex',
@@ -180,6 +192,85 @@ describe('home formatting', () => {
     expect(backgroundTasksText(2)).toBe('2 background tasks');
     expect(folderOf('/')).toBe('/');
     expect(folderOf('/a/b/')).toBe('b');
+  });
+
+  it('sessionRow: the phase for the chips and the one sign at the end', () => {
+    expect(sessionRow(summary({ status: 'running' }), new Map(), NOW)).toMatchObject({ phase: 'running', sign: { kind: 'spinner' } });
+    expect(sessionRow(summary({ status: 'waiting_input', pending: { approvals: 0, inputs: 1 } }), new Map(), NOW)).toMatchObject({
+      phase: 'needs',
+      sign: { kind: 'needs', label: 'Needs your answer' },
+    });
+    expect(sessionRow(summary({ lastTurnStatus: 'failed' }), new Map(), NOW)).toMatchObject({ phase: 'finished', sign: { kind: 'failed' } });
+    expect(sessionRow(summary({ lastTurnStatus: 'completed' }), new Map(), NOW)).toMatchObject({ phase: 'finished', sign: { kind: 'none', label: 'Finished' } });
+  });
+});
+
+describe('HomeModel status filter', () => {
+  class MemoryStorage {
+    data = new Map<string, string>();
+    getItem(key: string): string | null {
+      return this.data.get(key) ?? null;
+    }
+    setItem(key: string, value: string): void {
+      this.data.set(key, value);
+    }
+  }
+
+  function filtered(storage: MemoryStorage | null | undefined) {
+    const client = new HomeTransport();
+    const replica = {
+      sessions: [
+        summary({ sessionId: 'ses_done', lastTurnStatus: 'completed', updatedAt: 3 }),
+        summary({ sessionId: 'ses_run', status: 'running', updatedAt: 2 }),
+        summary({ sessionId: 'ses_ask', status: 'waiting_approval', pending: { approvals: 1, inputs: 0 }, updatedAt: 1 }),
+        summary({ sessionId: 'ses_bg', lastTurnStatus: 'completed', backgroundTasks: [{ id: 't', title: 't', status: 'running', startedAt: 1 }], updatedAt: 4 }),
+      ],
+      archivedSessions: [],
+      sessionsNextCursor: undefined,
+      refreshSessions: async () => undefined,
+      refreshArchived: async () => undefined,
+      loadMoreSessions: async () => false,
+      subscribe: () => () => undefined,
+    };
+    const model = new HomeModel({ client, replica, ...(storage !== undefined ? { storage } : {}) });
+    const changes = vi.fn();
+    model.subscribe(changes);
+    return { model, changes };
+  }
+  const ids = (model: HomeModel) => model.rows.map((row) => row.sessionId);
+
+  it('All by default: every row in the list order (needs you, running, the rest)', () => {
+    const { model } = filtered(undefined);
+    expect(model.filter).toBe('all');
+    expect(ids(model)).toEqual(['ses_ask', 'ses_run', 'ses_bg', 'ses_done']);
+    expect(ids(model)).toEqual(model.sessions.map((row) => row.sessionId));
+    model.dispose();
+  });
+
+  it('each chip shows its subset; Running includes a session whose background tasks still run', () => {
+    const { model, changes } = filtered(null);
+    model.setFilter('running');
+    expect(ids(model)).toEqual(['ses_run', 'ses_bg']);
+    model.setFilter('needs');
+    expect(ids(model)).toEqual(['ses_ask']);
+    model.setFilter('finished');
+    expect(ids(model)).toEqual(['ses_done']);
+    expect(changes).toHaveBeenCalledTimes(3);
+    model.setFilter('finished'); // the same chip again: nothing changes
+    expect(changes).toHaveBeenCalledTimes(3);
+    expect(model.sessions).toHaveLength(4); // the full list stays (empty lines, the menu)
+    model.dispose();
+  });
+
+  it('keeps the chosen chip across a reload (a new model on the same storage)', () => {
+    const storage = new MemoryStorage();
+    const first = filtered(storage).model;
+    first.setFilter('needs');
+    first.dispose();
+    const again = filtered(storage).model;
+    expect(again.filter).toBe('needs');
+    expect(ids(again)).toEqual(['ses_ask']);
+    again.dispose();
   });
 });
 

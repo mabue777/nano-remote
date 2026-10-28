@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { drop, flipPlan, measure, play, withLeaving, type Box, type FlipElement, type Shown } from './flip';
+import { drop, flipPlan, markPlayed, measure, play, withLeaving, type Box, type FlipElement, type Shown } from './flip';
 
 const box = (top: number, left = 0): Box => ({ top, left });
 
@@ -113,5 +113,18 @@ describe('measure and play', () => {
     expect(n.animations).toEqual([]);
     play(container([n]), new Map([['x', box(0)]]), { duration: 1, easing: 'linear' }, false);
     expect(n.animations).toEqual([]);
+  });
+});
+
+describe('markPlayed', () => {
+  it('marks the rows that slid and the ones that faded in, and clears marks from an earlier change', () => {
+    const el = (flipKey: string, flipAnim?: string): FlipElement => ({
+      dataset: { flipKey, ...(flipAnim !== undefined ? { flipAnim } : {}) },
+      getBoundingClientRect: () => box(0),
+      animate: () => undefined,
+    });
+    const rows = [el('a'), el('b', 'move'), el('c'), el('d', 'enter')];
+    markPlayed({ querySelectorAll: () => rows }, { moved: [{ key: 'a', dx: 0, dy: 10 }], entered: ['c'], left: ['x'] });
+    expect(rows.map((r) => r.dataset.flipAnim)).toEqual(['move', undefined, 'enter', undefined]);
   });
 });

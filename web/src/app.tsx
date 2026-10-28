@@ -188,6 +188,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
         <SettingsScreen
           services={chat}
           hostLink={services.client}
+          host={services.client}
           {...(services.notifications !== undefined ? { notifications: services.notifications } : {})}
           backLabel={homeTitle(true)}
           onBack={() => router.navigate('/')}

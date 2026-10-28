@@ -30,20 +30,26 @@ test('pair with a code, land on home, see host, agents and the scripted sessions
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('status')).toHaveAttribute('data-state', 'connected');
 
+  // Home is the flat list (look step 6): the host card lives in Settings.
+  await expect(page.getByRole('region', { name: 'Host' })).toHaveCount(0);
+  const sessions = page.getByRole('list', { name: 'Sessions' });
+  await expect(sessions.getByRole('link')).toHaveCount(3); // page two arrives by cursor (infinite scroll)
+  await expect(sessions.getByRole('link')).toHaveText([new RegExp(TITLES[1]!), new RegExp(TITLES[0]!), new RegExp(TITLES[2]!)]);
+  const waiting = sessions.getByRole('link', { name: new RegExp(TITLES[1]!) });
+  await expect(waiting).toContainText('Needs approval');
+  await expect(waiting.locator('.row-sign')).toHaveAttribute('data-sign', 'needs'); // the one sign: the warn dot and word
+  await expect(sessions.getByRole('link', { name: new RegExp(TITLES[0]!) })).toContainText('Finished');
+
+  // Settings shows the host: name, uptime and agents.
+  await page.getByRole('link', { name: 'Settings' }).click();
   const host = page.getByRole('region', { name: 'Host' });
   await expect(host.getByRole('heading', { name: 'mabue-mbp' })).toBeVisible();
   await expect(host).toContainText(/up \d+ d/); // uptime from host/status
   const agents = host.getByRole('list', { name: 'Agents' });
   // host/status (protocol example 44) replaces initialize's agents: Codex degraded, Claude ready.
   await expect(agents.getByRole('listitem')).toHaveText([/Codex.*adapter restarting/, /Claude Code.*ready/]);
-
-  const sessions = page.getByRole('list', { name: 'Sessions' });
-  await expect(sessions.getByRole('link')).toHaveCount(3); // page two arrives by cursor (infinite scroll)
-  await expect(sessions.getByRole('link')).toHaveText([new RegExp(TITLES[1]!), new RegExp(TITLES[0]!), new RegExp(TITLES[2]!)]);
-  const waiting = sessions.getByRole('link', { name: new RegExp(TITLES[1]!) });
-  await expect(waiting).toContainText('Needs approval');
-  await expect(waiting.getByLabel('1 waiting for you')).toBeVisible();
-  await expect(sessions.getByRole('link', { name: new RegExp(TITLES[0]!) })).toContainText('Finished');
+  await page.locator('a.back').click();
+  await expect(page.getByRole('heading', { name: 'Sessions', level: 1 })).toBeVisible();
 
   // The app keeps no secret: the token is only in an HttpOnly cookie.
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
