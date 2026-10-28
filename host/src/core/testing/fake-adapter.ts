@@ -16,6 +16,7 @@ import type {
   AgentCapabilities,
   AgentProvider,
   AgentState,
+  AppliesAt,
 } from '../adapter.js';
 
 /** One step of a scripted turn. */
@@ -54,6 +55,11 @@ export interface FakeAdapterOptions {
   effectiveSettings?: Settings | ((settings: Settings) => Settings);
   /** Methods that reject with this message instead of doing their work. */
   failOn?: Partial<Record<Method, string>>;
+  /**
+   * How `changeSettings` takes an approval mode: `now` applies it to the running engine at once (like
+   * Claude Code's setPermissionMode), `nextTurn` (default) at the next turn start (like Codex).
+   */
+  approvalModeAppliesAt?: AppliesAt;
 }
 
 export interface FakeCall {
@@ -107,9 +113,16 @@ export class FakeAdapter implements Adapter {
     return { ...this.applied };
   }
 
-  changeSettings(settings: Settings): void {
+  changeSettings(settings: Settings): AppliesAt {
     this.record('changeSettings', settings);
+    const failure = this.options.failOn?.changeSettings;
+    if (failure !== undefined) throw new Error(failure);
     this.changed = { ...settings };
+    if (this.options.approvalModeAppliesAt !== 'now' || settings.approvalMode === this.applied.approvalMode) return 'nextTurn';
+    const { approvalMode } = settings;
+    if (approvalMode === undefined) delete this.applied.approvalMode;
+    else this.applied.approvalMode = approvalMode;
+    return 'now';
   }
 
   /** A turn is running (started and not yet completed). */
@@ -331,7 +344,7 @@ export class FakeAgent implements AgentProvider {
       approvalModes: FAKE_APPROVAL_MODES,
       attachments: { images: true, files: true },
       backgroundTasks: false,
-      settingsUpdate: ['model', 'effort'],
+      settingsUpdate: ['model', 'effort', 'approvalMode'],
       ...options.capabilities,
     };
   }

@@ -35,6 +35,15 @@
 // effort needs no new query. Verified live on 2026-10-24 (live-settings.test.ts): a session on haiku
 // switched to opus between turns, and the assistant messages named claude-haiku-5-5, then claude-opus-5-5.
 // A query opened later (first turn, or a resume after the process died) starts with them as options.
+// An approval mode is different: changeSettings sends Query.setPermissionMode(<mapped mode>) to a live,
+// initialized query at once, also during a turn, so the approvals the turn asks for from then on follow
+// it (appliesAt "now"). Claude Code switches into bypassPermissions only in a session launched with bypass
+// available ("Cannot set permission mode to bypassPermissions because the session was not launched with
+// --dangerously-skip-permissions", Claude Code 2.1.308), so every query starts with
+// allowDangerouslySkipPermissions (--allow-dangerously-skip-permissions): it makes the mode available
+// without entering it, and the session runs in the mode its settings name. Without a live query, or when
+// the call fails, the next turn start tries again (appliesAt "nextTurn"); if the engine still refuses,
+// effectiveSettings reports the mode the query runs in.
 //
 // Supervision: the adapter spawns the Claude Code executable itself (spawnClaudeCodeProcess), detached in
 // its own process group. When it dies on its own the adapter emits `status/changed {error}` and
@@ -138,12 +147,13 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import type { BackgroundTask, Decision, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterEvent, AdapterInputPart, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AdapterItem, AdapterListener, AppliesAt } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { claudeConfig, type ClaudeConfig } from '../../config/claude.js';
 import { RpcError } from '../../errors.js';
 import {
   CANCEL_MESSAGE,
+  approvalModeOf,
   childEnv,
   completeToolItem,
   fitEffort,
@@ -156,13 +166,16 @@ import {
   toUsage,
   toUserContent,
   toolItem,
+  type ClaudePermissionMode,
   type PermissionAnswer,
 } from './mapping.js';
 
 type Json = Record<string, unknown>;
 
 /** The part of the SDK's Query the adapter and the provider use. */
-export type ClaudeQuery = AsyncIterable<SDKMessage> & Pick<Query, 'interrupt' | 'close' | 'supportedModels' | 'setModel' | 'applyFlagSettings'>;
+export type ClaudeQuery = AsyncIterable<SDKMessage> &
+  Pick<Query, 'interrupt' | 'close' | 'supportedModels' | 'setModel' | 'applyFlagSettings'> &
+  Partial<Pick<Query, 'setPermissionMode'>>;
 
 /** The SDK's `query()`, or a fake with the same shape. */
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => ClaudeQuery;
@@ -282,8 +295,8 @@ interface Run {
   settled: Set<string>;
   /** Tasks ended because the live set no longer listed them, by task id: a later notification corrects them. */
   reconciled: Map<string, BackgroundTask>;
-  /** The model and effort the query runs with (its options, then setModel and applyFlagSettings). */
-  applied: { model: string; effort: EffortLevel | undefined };
+  /** The model, effort and permission mode the query runs with (its options, then the control requests). */
+  applied: { model: string; effort: EffortLevel | undefined; permissionMode: ClaudePermissionMode };
 }
 
 /** A tool call that may launch a background task, until its result says. */
@@ -487,15 +500,43 @@ export class ClaudeAdapter implements Adapter {
     if (run) await this.end(run, 'killed by the host');
   }
 
-  /** A settings change (spec 6): stored; the next turn start hands it to the query (applySettings). */
-  changeSettings(settings: Settings): void {
+  /**
+   * A settings change (spec 6): stored; the next turn start hands model and effort to the query
+   * (applySettings). A new permission mode goes to a live query at once: `now` when it took it.
+   */
+  async changeSettings(settings: Settings): Promise<AppliesAt> {
     this.settings = settings;
+    const run = this.run;
+    if (!run || this.opening || run.gone !== undefined || !run.initialized || !run.query) return 'nextTurn';
+    return (await this.applyPermissionMode(run)) ? 'now' : 'nextTurn';
   }
 
-  /** Brings the running query to the session's model and effort, for what differs. */
+  /** Brings the query to the session's permission mode; false when the engine did not take it. */
+  private async applyPermissionMode(run: Run): Promise<boolean> {
+    const { permissionMode } = sessionPolicy(this.settings);
+    if (permissionMode === run.applied.permissionMode) return true;
+    const query = run.query;
+    if (!query?.setPermissionMode) {
+      this.log('claude: this Agent SDK cannot change the permission mode of a running query');
+      return false;
+    }
+    try {
+      await query.setPermissionMode(permissionMode);
+    } catch (error) {
+      this.log(`claude: permission mode ${permissionMode} not taken: ${(error as Error).message}`);
+      return false;
+    }
+    run.applied.permissionMode = permissionMode;
+    this.log(`claude: permission mode changed to ${permissionMode}`);
+    return true;
+  }
+
+  /** Brings the running query to the session's model, effort and permission mode, for what differs. */
   private async applySettings(run: Run): Promise<void> {
     const query = run.query;
     if (!query) return;
+    // A refused permission mode is no reason to fail the turn: the session reports the mode in effect.
+    await this.applyPermissionMode(run);
     const model = sessionModel(this.settings, this.config);
     const effort = this.effort();
     try {
@@ -516,7 +557,9 @@ export class ClaudeAdapter implements Adapter {
 
   /** The settings the session runs with: `model` and `approvalMode` as mapped (spec 5.1 Session.settings). */
   effectiveSettings(): Settings {
-    const settings: Settings = { model: sessionModel(this.settings, this.config), approvalMode: sessionPolicy(this.settings).approvalMode };
+    const run = this.run && this.run.gone === undefined ? this.run : undefined;
+    const approvalMode = run ? approvalModeOf(run.applied.permissionMode) : sessionPolicy(this.settings).approvalMode;
+    const settings: Settings = { model: sessionModel(this.settings, this.config), approvalMode };
     const effort = this.effort();
     if (effort !== undefined) settings.effort = effort;
     return settings;
@@ -572,9 +615,9 @@ export class ClaudeAdapter implements Adapter {
       foreground: new Map(),
       settled: new Set(),
       reconciled: new Map(),
-      applied: { model: sessionModel(this.settings, this.config), effort: this.effort() },
+      applied: { model: sessionModel(this.settings, this.config), effort: this.effort(), permissionMode: sessionPolicy(this.settings).permissionMode },
     };
-    const { permissionMode } = sessionPolicy(this.settings);
+    const { permissionMode } = run.applied;
     const canUseTool: CanUseTool = (toolName, input, context) =>
       this.canUseTool(run, toolName, input, context) as Promise<PermissionResult>;
     const options: Options = {
@@ -589,7 +632,8 @@ export class ClaudeAdapter implements Adapter {
       // stdio is piped, so stdin and stdout are never null.
       spawnClaudeCodeProcess: (spawnOptions) => this.spawn(run, spawnOptions) as SpawnedProcess,
     };
-    if (permissionMode === 'bypassPermissions') options.allowDangerouslySkipPermissions = true;
+    // Bypass available, not entered: a later setPermissionMode can switch to it (see the header).
+    options.allowDangerouslySkipPermissions = true;
     if (run.applied.effort !== undefined) options.effort = run.applied.effort;
     const executable = executablePath(this.config);
     if (executable !== undefined) options.pathToClaudeCodeExecutable = executable;

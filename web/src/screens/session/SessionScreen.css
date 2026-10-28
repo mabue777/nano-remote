@@ -412,3 +412,50 @@ button.jump-pill:active {
   min-height: 32px;
   padding: var(--space-2) 0;
 }
+
+/* The Permissions sheet (PermissionsSheet.tsx): one grouped row per approval mode, its words in two lines,
+   a check at the right on the mode in effect. Full access reads red, like the New session sheet's bypass row. */
+.permission-mode {
+  text-align: left;
+  padding-block: var(--space-5);
+}
+
+.permission-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.permission-title {
+  font: var(--type-body);
+}
+
+.permission-detail {
+  color: var(--muted);
+  font: var(--type-footnote);
+}
+
+.permission-mode.current .permission-title {
+  font-weight: 600;
+}
+
+/* Not .danger: that is the red-filled button of base.css. */
+.permission-mode.bypass .permission-title,
+.permission-mode.bypass .permission-check {
+  color: var(--error);
+}
+
+.permission-check {
+  flex: none;
+  color: var(--text);
+}
+
+.permissions-note {
+  margin: var(--space-5) var(--space-2) 0;
+}
+
+.permissions-error {
+  margin: var(--space-5) var(--space-2) 0;
+}

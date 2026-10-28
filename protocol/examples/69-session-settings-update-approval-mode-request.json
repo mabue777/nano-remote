@@ -1,0 +1,20 @@
+{
+  "$expect": {
+    "schema": "methods.json#/$defs/session~1settings~1update.params",
+    "at": "params"
+  },
+  "type": "client_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 15,
+  "message": {
+    "id": "c-76",
+    "method": "session/settings/update",
+    "params": {
+      "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5E",
+      "settings": {
+        "approvalMode": "never"
+      }
+    }
+  }
+}

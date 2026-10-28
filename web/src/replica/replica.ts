@@ -576,12 +576,13 @@ export class Replica {
   }
 
   /**
-   * session/settings/update (spec 6): changes the model or effort of an open session from its next turn.
-   * The view learns the new settings from the session/changed the host journals; this resolves the
-   * session the host answered with. not_supported and invalid_params reject.
+   * session/settings/update (spec 6): changes the model, effort or approval mode of an open session. The
+   * view learns the new settings from the session/changed the host journals; this resolves what the host
+   * answered: the session and when the change applies (`appliesAt`, absent from an older host).
+   * not_supported and invalid_params reject.
    */
-  async updateSettings(sessionId: string, settings: SessionSettingsUpdateParams['settings']): Promise<SessionSettingsUpdateResult['session']> {
-    return (await this.client.request<SessionSettingsUpdateResult>('session/settings/update', { sessionId, settings })).session;
+  async updateSettings(sessionId: string, settings: SessionSettingsUpdateParams['settings']): Promise<SessionSettingsUpdateResult> {
+    return this.client.request<SessionSettingsUpdateResult>('session/settings/update', { sessionId, settings });
   }
 
   /** A fresh clientMessageId (the same source sendMessage uses). */

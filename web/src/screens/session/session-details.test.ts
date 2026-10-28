@@ -100,6 +100,15 @@ describe('detailRows: the ⋯ sheet', () => {
     expect(rows.map((row) => row.key)).toEqual(['status', 'agent', 'model', 'folder', 'permissions', 'unarchive', 'delete']);
   });
 
+  it('the Permissions row names the mode in effect and opens the Permissions sheet when the mode can change', () => {
+    const plain = detailRows({ ...BASE, permissions: 'Accepts edits' }).find((row) => row.key === 'permissions')!;
+    expect(plain).toEqual({ key: 'permissions', icon: 'shield', label: 'Permissions', value: [{ text: 'Accepts edits' }] });
+    const control = detailRows({ ...BASE, canChangePermissions: true }).find((row) => row.key === 'permissions')!;
+    expect(control).toMatchObject({ action: 'permissions', title: 'Change permissions', value: [{ text: ASKS_FIRST }] });
+    // Full access wins over the words, as the header's " · Full access" does.
+    expect(detailRows({ ...BASE, fullAccess: true, permissions: 'Plans only' }).find((row) => row.key === 'permissions')!.value).toEqual([{ text: FULL_ACCESS }]);
+  });
+
   it('a model the agent cannot change is a plain row; nothing known and nothing to change: no Model row', () => {
     const fixed = detailRows({ ...BASE, canChangeSettings: false }).find((row) => row.key === 'model')!;
     expect(fixed.action).toBeUndefined();

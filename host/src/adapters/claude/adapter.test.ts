@@ -92,7 +92,8 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
       includePartialMessages: true,
     });
     expect(options.resume).toBeUndefined();
-    expect(options.allowDangerouslySkipPermissions).toBeUndefined();
+    // Bypass is available (so the mode can change live, spec 6) but not entered.
+    expect(options.allowDangerouslySkipPermissions).toBe(true);
     expect(options.pathToClaudeCodeExecutable).toBe(bundledExecutable());
     expect(options.env).toMatchObject({ CLAUDE_CONFIG_DIR: config.configDir, NANO_EXTRA: '1' });
     expect(Object.keys(options.env!).filter((k) => k.startsWith('CLAUDE_CODE_'))).toEqual([]);
@@ -309,8 +310,88 @@ describe('ClaudeAdapter: start, resume and the query options', () => {
     const settings: Settings = approvalMode === undefined ? {} : { approvalMode };
     await adapter.start(cwd, settings);
     expect(fake.last.options.permissionMode).toBe(permissionMode);
-    expect(fake.last.options.allowDangerouslySkipPermissions).toBeUndefined();
     expect(adapter.effectiveSettings().approvalMode).toBe(permissionMode);
+  });
+
+  describe('approval mode changes (spec 6 session/settings/update)', () => {
+    const bash = { tool: 'Bash', input: { command: 'touch /tmp/x' } } as const;
+
+    it('switches a live query at once, also mid-turn: the next tool call runs unasked, and back asks again', async () => {
+      const { fake, adapter, events, cwd } = rig({ turns: [[{ text: 'one' }], [{ hold: true }, bash, { text: 'done' }], [bash, { text: 'again' }]] });
+      await adapter.start(cwd, { approvalMode: 'default' });
+      await adapter.turnStart(text('a'), 'c1');
+      await turnEnd(events);
+      let from = events.length;
+      await adapter.turnStart(text('b'), 'c2');
+      await until(() => fake.last.holdingNow || undefined, 'turn 2 holds');
+      expect(await adapter.changeSettings({ approvalMode: 'never' })).toBe('now');
+      expect(adapter.effectiveSettings().approvalMode).toBe('never');
+      fake.last.release();
+      expect((await turnEnd(events, from)).params.status).toBe('completed');
+      expect(methods(events.slice(from))).not.toContain('approval/request');
+      // Back to asking: applied at once, so the next tool call asks.
+      expect(await adapter.changeSettings({ approvalMode: 'default' })).toBe('now');
+      from = events.length;
+      await adapter.turnStart(text('c'), 'c3');
+      const request = await find(events, 'approval/request', from);
+      await adapter.resolveApproval(requestOf(request).requestId, 'accept');
+      await turnEnd(events, from);
+      expect(fake.queries).toHaveLength(1);
+      expect(fake.last.timeline).toEqual(['user: a', 'user: b', 'setPermissionMode: bypassPermissions', 'setPermissionMode: default', 'user: c']);
+    });
+
+    it('maps every mode the agent lists, and the same mode again sends nothing', async () => {
+      const { fake, adapter, events, cwd } = rig();
+      await adapter.start(cwd, {});
+      await adapter.turnStart(text('a'), 'c1');
+      await turnEnd(events);
+      expect(await adapter.changeSettings({ approvalMode: 'default' })).toBe('now');
+      for (const mode of ['acceptEdits', 'plan', 'never', 'default']) {
+        expect(await adapter.changeSettings({ approvalMode: mode })).toBe('now');
+      }
+      expect(fake.last.timeline.slice(1)).toEqual([
+        'setPermissionMode: acceptEdits',
+        'setPermissionMode: plan',
+        'setPermissionMode: bypassPermissions',
+        'setPermissionMode: default',
+      ]);
+    });
+
+    it('before the query took its first message, the next turn start applies it', async () => {
+      const { fake, adapter, events, cwd } = rig({ turns: [[bash, { text: 'done' }]] });
+      await adapter.start(cwd, {});
+      expect(await adapter.changeSettings({ approvalMode: 'never' })).toBe('nextTurn');
+      await adapter.turnStart(text('a'), 'c1');
+      expect((await turnEnd(events)).params.status).toBe('completed');
+      expect(methods(events)).not.toContain('approval/request');
+      expect(fake.last.timeline).toEqual(['setPermissionMode: bypassPermissions', 'user: a']);
+    });
+
+    it('without a query the next one starts in the new mode', async () => {
+      const { fake, adapter, cwd } = rig();
+      expect(await adapter.changeSettings({ approvalMode: 'never' })).toBe('nextTurn');
+      await adapter.resume(randomUUID(), cwd, { approvalMode: 'never' });
+      expect(fake.last.options.permissionMode).toBe('bypassPermissions');
+    });
+
+    it.each([
+      ['refuses it', { permissionModeFails: 'bypass_disabled' }, /permission mode bypassPermissions not taken: bypass_disabled/],
+      ['is an older SDK without the call', { noSetPermissionMode: true }, /cannot change the permission mode of a running query/],
+    ] as const)('when the engine %s: next turn, and the session reports the mode in effect', async (_case, options, logged) => {
+      const { adapter, events, logs, cwd } = rig({ ...options, turns: [[{ text: 'one' }], [bash, { text: 'two' }]] });
+      await adapter.start(cwd, {});
+      await adapter.turnStart(text('a'), 'c1');
+      await turnEnd(events);
+      expect(await adapter.changeSettings({ approvalMode: 'never' })).toBe('nextTurn');
+      expect(logs.some((line) => logged.test(line))).toBe(true);
+      const from = events.length;
+      // The turn still runs, in the mode the engine keeps.
+      await adapter.turnStart(text('b'), 'c2');
+      const request = await find(events, 'approval/request', from);
+      await adapter.resolveApproval(requestOf(request).requestId, 'accept');
+      expect((await turnEnd(events, from)).params.status).toBe('completed');
+      expect(adapter.effectiveSettings().approvalMode).toBe('default');
+    });
   });
 
   it('passes a configured executable', async () => {

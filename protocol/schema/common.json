@@ -1067,9 +1067,9 @@
         "settingsUpdate": {
           "type": "array",
           "uniqueItems": true,
-          "description": "The settings session/settings/update can change in an open session. Absent or empty: none. Additive within v1.",
+          "description": "The settings session/settings/update can change in an open session. Absent or empty: none. Additive within v1 (approvalMode added later within v1).",
           "items": {
-            "enum": ["model", "effort"]
+            "enum": ["model", "effort", "approvalMode"]
           }
         }
       }

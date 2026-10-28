@@ -67,7 +67,7 @@ export function statusValue(line: StatusLine, workedFor?: string): string {
   return line.detail === undefined && workedFor !== undefined ? `${line.text} · ${workedFor}` : line.text;
 }
 
-export type DetailAction = 'settings' | 'changes' | 'archive' | 'unarchive' | 'delete';
+export type DetailAction = 'settings' | 'permissions' | 'changes' | 'archive' | 'unarchive' | 'delete';
 
 /** One part of a row's value; `label` names it for assistive tech (and the tests): "Model", "Effort". */
 export interface ValuePart {
@@ -100,6 +100,10 @@ export interface DetailsInput {
   /** The full path of the working folder. */
   folder?: string;
   fullAccess: boolean;
+  /** The Permissions row's words for the mode in effect (permissions-model permissionsValue); default from fullAccess. */
+  permissions?: string;
+  /** The agent lets the approval mode change (SessionModel.canChangePermissions): the row opens the Permissions sheet. */
+  canChangePermissions?: boolean;
   /** The last turn's "N files changed"; no Changes row without it. */
   changes?: string;
   archived: boolean;
@@ -124,7 +128,14 @@ export function detailRows(input: DetailsInput): DetailRow[] {
     });
   }
   if (input.folder !== undefined) rows.push({ key: 'folder', icon: 'folder', label: 'Folder', value: [{ text: input.folder }] });
-  rows.push({ key: 'permissions', icon: 'shield', label: 'Permissions', value: [{ text: input.fullAccess ? FULL_ACCESS : ASKS_FIRST }] });
+  const permissions = input.fullAccess ? FULL_ACCESS : (input.permissions ?? ASKS_FIRST);
+  rows.push({
+    key: 'permissions',
+    icon: 'shield',
+    label: 'Permissions',
+    value: [{ text: permissions }],
+    ...(input.canChangePermissions === true ? { action: 'permissions' as const, title: 'Change permissions' } : {}),
+  });
   if (input.changes !== undefined) rows.push({ key: 'changes', icon: 'file-diff', label: 'Changes', value: [{ text: input.changes }], action: 'changes' });
   rows.push(
     input.archived

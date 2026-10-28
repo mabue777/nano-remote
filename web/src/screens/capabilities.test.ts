@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, settingsKeys } from './capabilities';
+import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys } from './capabilities';
 
 const agent = (capabilities?: { steer: boolean; diff: boolean; approvalModes: string[] }) => ({
   id: 'a',
@@ -30,6 +30,23 @@ describe('agent capabilities', () => {
     expect(settingsKeys(agent({ steer: true, diff: true, approvalModes: [] }))).toEqual([]);
     expect(settingsKeys(agent())).toEqual([]);
     expect(settingsKeys(undefined)).toEqual([]);
+  });
+
+  it('settingsKeys leaves the approval mode to the Permissions sheet; changeableApprovalModes lists the modes only when they can change', () => {
+    type Key = 'model' | 'effort' | 'approvalMode';
+    const withModes = (approvalModes: string[], settingsUpdate?: Key[]) => ({
+      ...agent(),
+      capabilities: { steer: true, diff: true, approvalModes, ...(settingsUpdate ? { settingsUpdate } : {}) },
+    });
+    const codex = withModes(['untrusted', 'on-failure', 'on-request', 'never'], ['model', 'effort', 'approvalMode']);
+    expect(settingsKeys(codex)).toEqual(['model', 'effort']);
+    expect(changeableApprovalModes(codex)).toEqual(['untrusted', 'on-failure', 'on-request', 'never']);
+    // Pi: settings change, approval mode does not.
+    expect(changeableApprovalModes(withModes([], ['model', 'effort']))).toEqual([]);
+    // A host that cannot change the mode of an open session, an older host, no agent.
+    expect(changeableApprovalModes(withModes(['default', 'never'], ['model', 'effort']))).toEqual([]);
+    expect(changeableApprovalModes(agent())).toEqual([]);
+    expect(changeableApprovalModes(undefined)).toEqual([]);
   });
 
   it('findAgent looks the id up in the current list', () => {

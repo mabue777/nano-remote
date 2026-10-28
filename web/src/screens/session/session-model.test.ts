@@ -1158,6 +1158,62 @@ describe('SessionModel: background tasks (spec 5.1 backgroundTasks)', () => {
   });
 });
 
+describe('permissions sheet (spec 6 session/settings/update approvalMode)', () => {
+  // The session fixtures run on agent id codex; the capabilities are what this test is about.
+  const claude = (settingsUpdate: ('model' | 'effort' | 'approvalMode')[] = ['model', 'effort', 'approvalMode'], approvalModes = ['default', 'acceptEdits', 'plan', 'never']): Agent => ({
+    id: 'codex',
+    name: 'Claude Code',
+    status: 'ready',
+    capabilities: { steer: false, diff: true, approvalModes, settingsUpdate },
+  });
+  const permissionsRow = (model: SessionModel) => model.detailRows(false).find((row) => row.key === 'permissions')!;
+
+  it('the Permissions row opens the sheet only when the agent can change its mode; Pi and older hosts get a plain row', async () => {
+    const pi = await setup({ agents: () => [claude(['model', 'effort'], [])] });
+    expect(pi.model.canChangePermissions).toBe(false);
+    expect(permissionsRow(pi.model).action).toBeUndefined();
+    pi.model.openPermissions();
+    expect(pi.model.permissionsOpen).toBe(false);
+    const older = await setup({ agents: () => [{ id: 'codex', name: 'Codex', status: 'ready' }] });
+    expect(older.model.canChangePermissions).toBe(false);
+    const { model, changes } = await setup({ agents: () => [claude()] });
+    expect(model.canChangePermissions).toBe(true);
+    expect(permissionsRow(model)).toMatchObject({ action: 'permissions', value: [{ text: 'Asks before running' }] });
+    changes.mockClear();
+    model.openPermissions();
+    expect(model.permissionsOpen).toBe(true);
+    expect(changes).toHaveBeenCalled();
+    model.closePermissions();
+    expect(model.permissionsOpen).toBe(false);
+  });
+
+  it('the sheet starts from the session\'s mode and saves through the Replica; the row and header follow the session', async () => {
+    const { model, client, live } = await setup({
+      agents: () => [claude()],
+      over: { session: { ...snapshot(0).session, settings: { approvalMode: 'acceptEdits' } } },
+    });
+    expect(model.approvalMode).toBe('acceptEdits');
+    expect(permissionsRow(model).value).toEqual([{ text: 'Accepts edits' }]);
+    const sheet = model.permissionsSheet();
+    expect(sheet.rows.map((row) => [row.mode, row.current])).toEqual([
+      ['default', false],
+      ['acceptEdits', true],
+      ['plan', false],
+      ['never', false],
+    ]);
+    const saved = sheet.choose('plan');
+    await settle();
+    expect(client.last('session/settings/update').params).toEqual({ sessionId: SID, settings: { approvalMode: 'plan' } });
+    const session = { ...snapshot(2).session, settings: { approvalMode: 'never' } };
+    client.last('session/settings/update').resolve({ session: { ...session, settings: { approvalMode: 'plan' } }, appliesAt: 'now' });
+    expect(await saved).toBe(true);
+    // The header and the row follow the session the host journals.
+    live(1, [['session/changed', { session }]]);
+    expect(model.statusLine.fullAccess).toBe(true);
+    expect(permissionsRow(model).value).toEqual([{ text: 'Full access' }]);
+  });
+});
+
 describe('settings sheet (spec 6 session/settings/update)', () => {
   const codex = (settingsUpdate?: ('model' | 'effort')[]): Agent => ({
     id: 'codex',

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdapterEvent } from '../../core/adapter.js';
 import { codexConfig } from '../../config/codex.js';
-import { CodexAdapter, RESUME_TURNS, sessionPolicy } from './adapter.js';
+import { CodexAdapter, RESUME_TURNS, sandboxPolicy, sessionPolicy } from './adapter.js';
 import { attachmentFixture } from '../shared/testing/attachments.js';
 import { fakeCodex, until, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
@@ -212,6 +212,44 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
         ['gpt-fake-luna', undefined],
         ['gpt-fake-astra', 'max'],
       ]);
+    });
+
+    it('a new approval mode goes out with the next turn/start, with its sandbox, once; the running turn keeps its own', async () => {
+      const command = { command: { output: 'done\n' } } as const;
+      const r = rig({ turns: [[{ hold: true }, { reply: 'first' }], [command, { reply: 'second' }], [{ reply: 'third' }], [command, { reply: 'fourth' }]] });
+      await r.adapter.start(cwd(), {});
+      expect(r.fake.sent('thread/start')[0]).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+      await r.adapter.turnStart(text('a'), 'cm-1');
+      expect(r.adapter.changeSettings({ approvalMode: 'never' })).toBe('nextTurn');
+      r.adapter.changeSettings({ approvalMode: 'never' });
+      await r.adapter.steer(text('more'), 'cm-s');
+      await completed(r, 1);
+      expect(r.fake.sent('turn/start')[0]).not.toHaveProperty('approvalPolicy');
+      await r.adapter.turnStart(text('b'), 'cm-2');
+      await completed(r, 2);
+      expect(r.events.map((e) => e.method)).not.toContain('approval/request');
+      await r.adapter.turnStart(text('c'), 'cm-3');
+      await completed(r, 3);
+      const sent = r.fake.sent('turn/start').map((p) => [p.approvalPolicy, p.sandboxPolicy]);
+      expect(sent).toEqual([
+        [undefined, undefined],
+        ['never', { type: 'dangerFullAccess' }],
+        [undefined, undefined],
+      ]);
+      expect(r.adapter.effectiveSettings()).toMatchObject({ approvalMode: 'never', sandbox: 'danger-full-access' });
+      // Back to asking: the configured sandbox again, and the next command asks.
+      r.adapter.changeSettings({ approvalMode: 'on-request' });
+      await r.adapter.turnStart(text('d'), 'cm-4');
+      await r.next('approval/request');
+      expect(r.fake.sent('turn/start').at(-1)).toMatchObject({ approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } });
+    });
+
+    it.each([
+      ['danger-full-access', { type: 'dangerFullAccess' }],
+      ['read-only', { type: 'readOnly' }],
+      ['workspace-write', { type: 'workspaceWrite' }],
+    ] as const)('sandbox %s is turn/start sandboxPolicy %j', (sandbox, policy) => {
+      expect(sandboxPolicy(sandbox)).toEqual(policy);
     });
 
     it('an engine restart and a host restart (resume with the stored settings) keep the change', async () => {

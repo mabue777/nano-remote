@@ -5,7 +5,7 @@
 // its effort (else the model's default; "Auto" only while the session names no level, because a change
 // cannot take a level away). Save sends what differs. The change applies from the next turn: while a turn
 // runs the sheet says "Applies after this turn".
-import type { ModelInfo } from '../../generated/methods';
+import type { ModelInfo, SessionSettingsUpdateParams, SessionSettingsUpdateResult } from '../../generated/methods';
 import type { SettingsKey } from '../capabilities';
 import { errorText, Model } from '../model';
 import { groupModels, modelLabel, pickEffort, SEARCH_FROM, type ModelGroup } from '../new-session-model';
@@ -17,7 +17,7 @@ export const APPLIES_LATER = 'Applies after this turn';
 /** What the sheet needs from the Replica; Replica fits. */
 export interface SettingsReplica {
   models(agentId: string): Promise<ModelInfo[]>;
-  updateSettings(sessionId: string, settings: Partial<Record<SettingsKey, string>>): Promise<unknown>;
+  updateSettings(sessionId: string, settings: SessionSettingsUpdateParams['settings']): Promise<SessionSettingsUpdateResult>;
 }
 
 export interface SessionSettingsOptions {

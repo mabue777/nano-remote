@@ -18,9 +18,10 @@
 //
 // Settings changes (spec 6 `session/settings/update`): the new settings are journaled at once (they are
 // the session record a restart or a resumed engine session starts from) and handed to the live adapter,
-// which gives them to its engine before the next turn it starts; a running turn is never touched. After
-// every turn start the adapter's effective settings are reported again, so a level the new model lacks
-// shows as the engine fitted it.
+// which gives them to its engine before the next turn it starts; a running turn keeps its model and
+// effort. An approval mode may reach a live engine at once (Claude Code), else the next turn start (Codex);
+// the adapter says which and the answer carries it as `appliesAt`. After every turn start the adapter's
+// effective settings are reported again, so a level the new model lacks shows as the engine fitted it.
 import { randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -44,7 +45,7 @@ import type {
   Turn,
 } from '../journal/types.js';
 import { RpcError } from '../errors.js';
-import type { Adapter, AdapterEvent, AdapterInputPart, AgentProvider, FinalTurnStatus, SettingsUpdateKey } from './adapter.js';
+import type { Adapter, AdapterEvent, AdapterInputPart, AgentProvider, AppliesAt, FinalTurnStatus, SettingsUpdateKey } from './adapter.js';
 import { newId } from './ids.js';
 import { SessionStore } from './store.js';
 import { TurnChanges } from './turn-changes.js';
@@ -350,10 +351,11 @@ export class SessionManager {
 
   /**
    * `session/settings/update` (spec 6): `not_supported` for a key the agent cannot change in an open
-   * session, `invalid_params` for a model its model list does not offer. Journals the new settings and
-   * hands them to the live adapter; they apply from the next turn (a running turn keeps its own).
+   * session, `invalid_params` for a model its model list does not offer or an approval mode it does not
+   * honour. Journals the new settings and hands them to the live adapter; model and effort apply from the
+   * next turn (a running turn keeps its own), an approval mode at once where the engine allows it.
    */
-  async updateSettings(sessionId: string, patch: SettingsPatch): Promise<Session> {
+  async updateSettings(sessionId: string, patch: SettingsPatch): Promise<{ session: Session; appliesAt: AppliesAt }> {
     const summary = this.session(sessionId);
     const provider = this.providers.get(summary.agentId);
     const allowed: readonly string[] = provider?.capabilities.settingsUpdate ?? [];
@@ -364,13 +366,29 @@ export class SessionManager {
       }
     }
     if (patch.model !== undefined && provider) await this.requireModel(provider, patch.model);
+    if (patch.approvalMode !== undefined && provider && !provider.capabilities.approvalModes.includes(patch.approvalMode)) {
+      throw RpcError.invalidParams('params.settings.approvalMode', `${provider.name} has no approval mode ${patch.approvalMode}`);
+    }
     const current = this.session(sessionId).settings ?? {};
+    if (Object.entries(patch).every(([key, value]) => current[key] === value)) return { session: this.session(sessionId), appliesAt: 'now' };
     const settings: Settings = { ...current, ...patch };
-    if (Object.entries(patch).every(([key, value]) => current[key] === value)) return this.session(sessionId);
+    // The sandbox the agent reported follows from the old mode: the adapter derives it again (spec 6).
+    if (patch.approvalMode !== undefined && patch.approvalMode !== current.approvalMode) delete settings.sandbox;
     this.changeSession(sessionId, { settings });
     const adapter = this.live.get(sessionId)?.adapter;
-    adapter?.changeSettings?.({ ...settings });
-    return this.session(sessionId);
+    let appliesAt: AppliesAt = 'nextTurn';
+    if (adapter?.changeSettings) {
+      try {
+        appliesAt = (await adapter.changeSettings({ ...settings })) ?? 'nextTurn';
+      } catch (error) {
+        // The change stays in the record: the next turn start or engine session takes it.
+        this.log(`session ${sessionId}: the engine did not take the settings change now`, error);
+      }
+    }
+    // Model and effort wait for the next turn, so only an approval mode alone can apply now.
+    const waits = Object.entries(patch).some(([key, value]) => key !== 'approvalMode' && current[key] !== value);
+    if (waits) appliesAt = 'nextTurn';
+    return { session: this.session(sessionId), appliesAt };
   }
 
   /** `invalid_params` when the agent lists its models and `model` is not one of them. */

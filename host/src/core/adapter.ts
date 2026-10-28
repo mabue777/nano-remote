@@ -123,7 +123,13 @@ export interface AgentCapabilities {
 }
 
 /** A setting an open session can change (spec 6 `session/settings/update`). */
-export type SettingsUpdateKey = 'model' | 'effort';
+export type SettingsUpdateKey = 'model' | 'effort' | 'approvalMode';
+
+/**
+ * When a settings change takes effect (spec 6 `appliesAt`): `now` when the engine took it at once (also for
+ * the rest of a running turn), `nextTurn` when it waits for the next turn start.
+ */
+export type AppliesAt = 'now' | 'nextTurn';
 
 /**
  * Drives one engine session. Every method resolves once the engine accepted the call, not when its
@@ -153,13 +159,14 @@ export interface Adapter {
    */
   effectiveSettings?(): Settings;
   /**
-   * The session's settings changed (`session/settings/update`): `settings` is the whole new set. Takes no
-   * engine call and never touches a running turn: the adapter hands the change to its engine before the
-   * next turn it starts (`turnStart` while no turn runs), or a new engine session starts with it. The core
-   * asks `effectiveSettings` again after that `turnStart`. Required when the agent declares
+   * The session's settings changed (`session/settings/update`): `settings` is the whole new set. Model and effort never touch a running turn: the adapter hands them
+   * to its engine before the next turn it starts (`turnStart` while no turn runs), or a new engine session
+   * starts with them. An approval mode may go to a live engine at once, also during a turn, where the
+   * engine allows it. Resolves with when the change takes effect (nothing: `nextTurn`). The core asks
+   * `effectiveSettings` again after the next `turnStart`. Required when the agent declares
    * `capabilities.settingsUpdate`.
    */
-  changeSettings?(settings: Settings): void;
+  changeSettings?(settings: Settings): AppliesAt | void | Promise<AppliesAt | void>;
 }
 
 /** Status of an agent as `agent/list` reports it (spec 4). */

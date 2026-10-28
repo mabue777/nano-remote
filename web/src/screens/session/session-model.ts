@@ -33,7 +33,7 @@ import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
-import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
+import { attachmentsFor, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
 import { backgroundTasksText, connectionOf, folderOf, statusOf, type Connection, type ConnectionSource, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { effortLabel, modelLabel } from '../new-session-model';
@@ -42,11 +42,12 @@ import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
 import { SessionSettingsModel, type SettingsReplica } from './settings-model';
 import { detailRows, detailsSubtitle, statusLine, statusValue, type DetailRow, type StatusLine } from './session-details';
+import { PermissionsModel, permissionsValue, type PermissionsReplica } from './permissions-model';
 import { workedFor } from './transcript';
 import { agentFiles, changedFile, filesChangedText, mergeChanges } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
-export interface SessionReplica extends SettingsReplica {
+export interface SessionReplica extends SettingsReplica, PermissionsReplica {
   readonly sessions: SessionSummary[];
   session(sessionId: string): SessionView | undefined;
   open(sessionId: string): Promise<void>;
@@ -452,6 +453,8 @@ export class SessionModel extends Model {
   changesTurnId: string | undefined;
   /** The settings sheet (model and effort) is open. */
   settingsOpen = false;
+  /** The Permissions sheet (approval mode) is open. */
+  permissionsOpen = false;
   /** Files changed per finished turn, once turn/diff answered (spec 7). */
   private readonly fileCounts = new Map<string, number>();
   private readonly counted = new Set<string>();
@@ -722,6 +725,8 @@ export class SessionModel extends Model {
       canChangeSettings: this.canChangeSettings,
       ...(this.folder !== undefined ? { folder: this.folder.path } : {}),
       fullAccess: this.bypass,
+      permissions: permissionsValue(this.approvalMode),
+      canChangePermissions: this.canChangePermissions,
       ...(last?.changes !== undefined ? { changes: last.changes } : {}),
       archived,
     });
@@ -1104,6 +1109,38 @@ export class SessionModel extends Model {
   closeSettings(): void {
     this.settingsOpen = false;
     this.changed();
+  }
+
+  /** Session.settings.approvalMode as the session reports it. */
+  get approvalMode(): string | undefined {
+    const mode = this.view?.session?.settings?.approvalMode;
+    return typeof mode === 'string' && mode !== '' ? mode : undefined;
+  }
+
+  /** The modes an open session of this agent can switch between (spec 6); empty: the row stays plain. */
+  get approvalModes(): readonly string[] {
+    return changeableApprovalModes(this.agent);
+  }
+
+  /** The ⋯ sheet's Permissions row opens the Permissions sheet. */
+  get canChangePermissions(): boolean {
+    return this.summary !== undefined && this.approvalModes.length > 0;
+  }
+
+  openPermissions(): void {
+    if (!this.canChangePermissions) return;
+    this.permissionsOpen = true;
+    this.changed();
+  }
+
+  closePermissions(): void {
+    this.permissionsOpen = false;
+    this.changed();
+  }
+
+  /** The Permissions sheet's model, from the session's approval mode as it is now. */
+  permissionsSheet(): PermissionsModel {
+    return new PermissionsModel({ sessionId: this.sessionId, modes: this.approvalModes, current: this.approvalMode, replica: this.replica });
   }
 
   /** The settings sheet's model, from the session's settings as they are now. */

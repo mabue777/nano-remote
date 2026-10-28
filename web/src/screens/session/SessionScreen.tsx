@@ -27,6 +27,7 @@ import { collapse, reducedMotion, useAutoScroll, useFlip, type Flip } from './mo
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 import { FULL_ACCESS, type DetailAction } from './session-details';
 import { SessionDetailsSheet } from './SessionDetailsSheet';
+import { PermissionsSheet } from './PermissionsSheet';
 import { SessionSettingsSheet } from './SessionSettingsSheet';
 import { AgentMessage, FlatRow, JumpPill, PreviousToggle, Thinking, WorkedFor } from './TranscriptRows';
 import { layoutTurn, rowLine } from './transcript';
@@ -258,6 +259,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         <ChangesSheet sessionId={sessionId} turnId={model.changesTurnId} replica={replica} onClose={() => model.closeChanges()} />
       )}
       {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
+      {model.permissionsOpen && <PermissionsSheet create={() => model.permissionsSheet()} onClose={() => model.closePermissions()} />}
       <StopConfirm model={model} />
       {menuOpen && (
         <SessionDetailsSheet
@@ -268,6 +270,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
           onAction={(action: DetailAction) => {
             setMenuOpen(false);
             if (action === 'settings') model.openSettings();
+            else if (action === 'permissions') model.openPermissions();
             else if (action === 'changes') model.openLastChanges();
             else if (action === 'archive') {
               if (actions.askArchive(sessionId)) onBack();

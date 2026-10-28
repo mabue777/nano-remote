@@ -298,7 +298,7 @@
 
     "session/settings/update.params": {
       "type": "object",
-      "description": "Changes the model or effort of an open session (spec 6). Additive within v1.",
+      "description": "Changes the model, effort or approval mode of an open session (spec 6). Additive within v1.",
       "required": ["sessionId", "settings"],
       "properties": {
         "sessionId": {"$ref": "common.json#/$defs/Id"},
@@ -309,7 +309,12 @@
           "description": "The settings to change; each key must be in the agent's capabilities.settingsUpdate.",
           "properties": {
             "model": {"type": "string", "minLength": 1},
-            "effort": {"type": "string", "minLength": 1}
+            "effort": {"type": "string", "minLength": 1},
+            "approvalMode": {
+              "type": "string",
+              "minLength": 1,
+              "description": "One of the agent's capabilities.approvalModes. Additive within v1."
+            }
           }
         }
       }
@@ -317,7 +322,13 @@
     "session/settings/update.result": {
       "type": "object",
       "required": ["session"],
-      "properties": {"session": {"$ref": "common.json#/$defs/Session"}}
+      "properties": {
+        "session": {"$ref": "common.json#/$defs/Session"},
+        "appliesAt": {
+          "enum": ["now", "nextTurn"],
+          "description": "When the change takes effect: now (the engine took it, also for the rest of a running turn) or nextTurn (from the next turn start). Absent: an older host, nextTurn. Additive within v1."
+        }
+      }
     },
 
     "turn/start.params": {

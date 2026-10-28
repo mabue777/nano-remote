@@ -169,8 +169,8 @@ describe('agents from enabledAgents', () => {
       const phone = await h.connect();
       const listed = (await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list')).agents;
       expect(Object.fromEntries(listed.filter((a) => a.id !== 'fake').map((a) => [a.id, a.capabilities]))).toEqual({
-        codex: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] },
-        claude: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'], attachments: { images: true, files: true }, backgroundTasks: true, settingsUpdate: ['model', 'effort'] },
+        codex: { steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] },
+        claude: { steer: false, diff: true, approvalModes: ['default', 'acceptEdits', 'plan', 'never'], attachments: { images: true, files: true }, backgroundTasks: true, settingsUpdate: ['model', 'effort', 'approvalMode'] },
         pi: { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] },
       });
     } finally {

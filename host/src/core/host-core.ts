@@ -278,8 +278,8 @@ export class HostCore {
         return ok;
       })
       .register('session/settings/update', async (params) => {
-        const session = await s.updateSettings(p.str(params, 'sessionId'), p.settingsPatch(params, 'settings'));
-        return { session } as Result<'session/settings/update'>;
+        const { session, appliesAt } = await s.updateSettings(p.str(params, 'sessionId'), p.settingsPatch(params, 'settings'));
+        return { session, appliesAt } as Result<'session/settings/update'>;
       })
       .register('events/since', (params, context) => {
         const sessionId = p.str(params, 'sessionId');

@@ -1,0 +1,35 @@
+{
+  "$expect": {
+    "schema": "methods.json#/$defs/session~1settings~1update.result",
+    "at": "result"
+  },
+  "type": "server_message",
+  "client_id": "dev_8f3a9c21",
+  "stream_id": "7c1e4b2a-9d3f-4e8a-b1c6-2f5d8e0a9b71",
+  "seq_id": 43,
+  "message": {
+    "id": "c-76",
+    "result": {
+      "session": {
+        "sessionId": "ses_01JFQ3K8M2XW7Z4R9VBNTH6C5E",
+        "agentId": "claude",
+        "title": "Review the parser",
+        "cwd": "/Users/me/Desktop/phone-test",
+        "status": "running",
+        "createdAt": 1760930000,
+        "updatedAt": 1760930600,
+        "lastSeq": 63,
+        "pending": {
+          "approvals": 0,
+          "inputs": 0
+        },
+        "settings": {
+          "model": "sonnet",
+          "approvalMode": "never",
+          "effort": "low"
+        }
+      },
+      "appliesAt": "now"
+    }
+  }
+}

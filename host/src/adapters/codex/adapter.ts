@@ -4,11 +4,16 @@
 //                     settings.effort as config.model_reasoning_effort)
 //   resume         -> thread/resume {threadId, ..., initialTurnsPage {limit 5, itemsView "full"}}
 //   turn/start     -> turn/start {threadId, input, clientUserMessageId, model, effort}
+//                     (+ approvalPolicy, sandboxPolicy after the approval mode changed)
 //
 // Settings changes (spec 6 session/settings/update): turn/start takes `model` and `effort` "for this turn
 // and subsequent turns" (app-server types of codex-cli 0.163.0-alpha.11.1, the ChatGPT.app engine, and
 // 0.164.0), so changeSettings only stores them and every later turn/start carries them; a running turn
 // keeps its own. thread/resume after an engine restart sends them too (model, config effort).
+// An approval mode change goes the same way: turn/start also takes `approvalPolicy` and `sandboxPolicy`
+// "for this turn and subsequent turns" (app-server schema, docs/research/rea/codex-app-server-schema), and
+// app-server offers nothing that changes a running turn's policy (thread/settings/update also acts on
+// "subsequent turns"), so changeSettings answers nextTurn and the next turn/start carries both once.
 //
 // Effort (spec 5.1 settings.effort): thread/start takes no effort field of its own (app-server types of
 // codex-cli 0.163.0-alpha.11.1), so it goes in as the thread's model_reasoning_effort config; turn/start
@@ -30,6 +35,7 @@ import type {
   AdapterEvent,
   AdapterInputPart,
   AdapterListener,
+  AppliesAt,
 } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import {
@@ -98,6 +104,13 @@ export function sessionPolicy(settings: Settings, config: CodexConfig): { approv
   return { approvalPolicy, sandbox };
 }
 
+/** turn/start `sandboxPolicy` for a sandbox mode (thread/start takes the mode, turn/start a policy object). */
+export function sandboxPolicy(sandbox: CodexSandbox): Json {
+  if (sandbox === 'danger-full-access') return { type: 'dangerFullAccess' };
+  if (sandbox === 'read-only') return { type: 'readOnly' };
+  return { type: 'workspaceWrite' };
+}
+
 /** The requested reasoning effort (settings.effort), when the session names one. */
 export function sessionEffort(settings: Settings): string | undefined {
   return typeof settings.effort === 'string' && settings.effort !== '' ? settings.effort : undefined;
@@ -120,6 +133,8 @@ export class CodexAdapter implements Adapter {
   private turnId: string | undefined;
   private running = false;
   private turnStarting: Promise<unknown> | undefined;
+  /** The approval policy and sandbox the thread runs with (thread/start, thread/resume, a turn/start). */
+  private appliedPolicy: { approvalPolicy: CodexApprovalPolicy; sandbox: CodexSandbox } | undefined;
   /**
    * Engine messages read while turn/start awaits its reply's turn id. The lines after the reply in one
    * stdout chunk are handled before `turnStart` resumes, so they wait here and replay, in order, once the
@@ -172,6 +187,12 @@ export class CodexAdapter implements Adapter {
     this.items.clear();
     const params: Json = { threadId: this.threadId, input: toUserInput(input), clientUserMessageId: clientMessageId };
     if (this.model !== undefined) params.model = this.model;
+    const policy = sessionPolicy(this.settings, this.config);
+    const policyChanged = policy.approvalPolicy !== this.appliedPolicy?.approvalPolicy || policy.sandbox !== this.appliedPolicy?.sandbox;
+    if (policyChanged) {
+      params.approvalPolicy = policy.approvalPolicy;
+      params.sandboxPolicy = sandboxPolicy(policy.sandbox);
+    }
     const effort = sessionEffort(this.settings);
     if (effort !== undefined) {
       params.effort = effort;
@@ -184,6 +205,7 @@ export class CodexAdapter implements Adapter {
     try {
       const result = (await call) as { turn?: { id?: unknown } };
       this.turnId = str(result?.turn?.id) || undefined;
+      if (policyChanged) this.appliedPolicy = policy;
     } catch (error) {
       this.running = false;
       throw error;
@@ -304,12 +326,14 @@ export class CodexAdapter implements Adapter {
   }
 
   /**
-   * A settings change (spec 6): stored for the next turn/start, which sends the model and effort to the
-   * engine; nothing goes to the engine now, so a running turn keeps its own.
+   * A settings change (spec 6): stored for the next turn/start, which sends the model, effort and, when
+   * it changed, the approval policy and sandbox to the engine; nothing goes to the engine now, so a running
+   * turn keeps its own.
    */
-  changeSettings(settings: Settings): void {
+  changeSettings(settings: Settings): AppliesAt {
     this.settings = settings;
     if (typeof settings.model === 'string' && settings.model !== '') this.model = settings.model;
+    return 'nextTurn';
   }
 
   /** The settings the engine session runs with: `approvalMode`, `sandbox`, `effort` (spec 5.1 Session.settings). */
@@ -337,6 +361,7 @@ export class CodexAdapter implements Adapter {
       this.model = defaultModel(toModels(result.data));
     }
     const out: Json = { approvalPolicy, sandbox };
+    this.appliedPolicy = { approvalPolicy, sandbox };
     if (this.model !== undefined) out.model = this.model;
     const effort = sessionEffort(this.settings);
     if (effort !== undefined) out.config = { model_reasoning_effort: effort };

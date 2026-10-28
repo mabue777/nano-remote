@@ -219,8 +219,9 @@ and at least one of the two is true.
 `Session.backgroundTasks` and marks messages that wait behind them `queued` (section 5.1). Claude Code
 declares it; Codex and Pi declare false. Absent means false.
 `capabilities.settingsUpdate` (additive within v1) lists the settings `session/settings/update` (section 6)
-can change in an open session: `model`, `effort`, or both. Codex, Claude Code and Pi declare both. Absent or
-empty means none: clients then offer no way to change them after `session/start`.
+can change in an open session: `model`, `effort`, `approvalMode` (additive within v1), or any of them.
+Codex and Claude Code declare all three; Pi declares `model` and `effort` (it honours no `approvalMode`).
+Absent or empty means none: clients then offer no way to change them after `session/start`.
 
 ### `model/list {agentId}` → `{models:[{id, displayName, default, provider?, efforts?, defaultEffort?}]}`.
 `provider` (additive within v1) names the provider that serves the model, for agents that reach many: pi
@@ -365,6 +366,7 @@ access to what the Mac user can reach) and is reported back as `never`, so clien
 `default` mode, reported as `default`.
 Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through Nano's approval extension
 (section 11), and a Pi session reports no `approvalMode`.
+An open session changes its `approvalMode` with `session/settings/update` (section 6).
 
 `effort` (additive within v1) may be set in `session/start` settings to one of the model's `efforts`
 (section 4 `model/list`) and is reported back as in effect: the level the engine runs at after any
@@ -528,24 +530,43 @@ Brings an archived session back: the flag clears and its status becomes `idle` (
 `status/changed`), so `session/updated` moves the row back to the list. A session that is not archived
 answers `{ok:true}` and nothing changes. Starting a turn in an archived session unarchives it as well.
 
-### `session/settings/update {sessionId, settings:{model?, effort?}}` → `{session}` (additive within v1)
-Changes the model or the effort of an open session. Each key given must be in the agent's
+### `session/settings/update {sessionId, settings:{model?, effort?, approvalMode?}}` → `{session, appliesAt?}` (additive within v1)
+Changes the model, the effort or the approval mode of an open session. Each key given must be in the agent's
 `capabilities.settingsUpdate` (section 4); otherwise the host answers `not_supported` with a plain message
-(for example "Pi cannot change the sandbox of an open session") and changes nothing. A `model` the agent's
-`model/list` does not offer is `invalid_params` at `params.settings.model`. A key left out keeps its value.
+(for example "Pi cannot change the approvalMode of an open session") and changes nothing. A `model` the
+agent's `model/list` does not offer is `invalid_params` at `params.settings.model`; an `approvalMode` that is
+not in the agent's `capabilities.approvalModes` is `invalid_params` at `params.settings.approvalMode`. A key
+left out keeps its value.
 
 The host journals `session/changed` with the new `settings` at once and answers with that session, so
-`Session.settings` shows what the next turn runs with. The change applies from the next turn: when a turn
-is running, it finishes on the model and effort it started with, and the new settings apply when that turn
-ends (clients say "Applies after this turn"). After the engine took the change, the host reports the
+`Session.settings` shows what the next turn runs with. `model` and `effort` apply from the next turn: when a
+turn is running, it finishes on the model and effort it started with, and the new settings apply when that
+turn ends (clients say "Applies after this turn").
+`approvalMode` (additive within v1) applies from the next turn at the latest. While a turn runs the host
+applies it at once where the engine can change it on a live session, so approvals the running turn asks
+for from then on follow the new mode; otherwise the running turn keeps the mode it started with. A request
+already waiting for the user stays open either way. `appliesAt` (additive within v1) says which: `now` when
+the engine took every change at once, `nextTurn` when something waits for the next turn start (always for
+`model` and `effort`). A host that sends no `appliesAt` is older: clients assume `nextTurn`. Changing
+`approvalMode` also drops a `sandbox` the session reported, so the agent derives it from the new mode again
+(Codex: `never` runs with `danger-full-access`, any other mode with the host's configured sandbox). After the engine took the change, the host reports the
 settings in effect as usual (section 5.1): an effort the new model lacks is reported as the engine fitted
 it. The settings live in the session record, so a host restart or a resumed engine session keeps them.
 Per agent (section 11):
 - Codex: the new `model` and `effort` go out on the next `turn/start` (its fields "for this turn and
-  subsequent turns") and with every later turn; a resumed thread gets them on `thread/resume` as well.
+  subsequent turns") and with every later turn; a resumed thread gets them on `thread/resume` as well. A new
+  `approvalMode` goes out the same way, as `turn/start` `approvalPolicy` and `sandboxPolicy` (both "for this
+  turn and subsequent turns"; app-server has no call that changes a running turn's policy, and
+  `thread/settings/update` also acts on subsequent turns only), so it answers `appliesAt: "nextTurn"`.
 - Claude Code: `Query.setModel(model)` and `Query.applyFlagSettings({effortLevel})` on the running query
   before the next user message (both work mid-session in streaming-input mode, SDK 0.3.308); when no query
-  runs, the next one starts with them (`options.model`, `options.effort`, `resume`).
+  runs, the next one starts with them (`options.model`, `options.effort`, `resume`). A new `approvalMode`
+  goes to a live query at once as `Query.setPermissionMode(<mapped mode>)` (section 5.1 mapping), also
+  during a turn, and answers `appliesAt: "now"`. Claude Code switches into `bypassPermissions` only in a
+  session launched with bypass available, so every query starts with `allowDangerouslySkipPermissions`
+  (`--allow-dangerously-skip-permissions`: makes the mode available without entering it; the session runs
+  in the mode it asked for). Without a live query, or when the call fails, the next query or the next turn
+  start applies it (`nextTurn`); if the engine still refuses it, the session reports the mode in effect.
 - Pi: `set_model {provider, modelId}` and `set_thinking_level {level}` on the live pi process before the
   next `prompt`, then `get_state` for what is in effect; a new pi process gets them at start.
 
@@ -747,7 +768,7 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 | `session/start` | `thread/start` (`settings.effort` as `config.model_reasoning_effort`) | `query()` with a new session (`settings.effort` as `options.effort`) | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id`, then `set_thinking_level {level}` when `settings.effort` is set |
 | `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal | the same command with the stored `--session-id` (pi reloads its session file; `get_messages` returns the history) + host Journal. `--session <id>` is not used: it exits with "No session found" for a session whose first prompt never ran |
 | `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn | `prompt {message, images}`; no turn id, the host assigns one; `agent_settled` ends the turn |
-| `session/settings/update` | `model` and `effort` on the next `turn/start` and every later one | `Query.setModel()` and `Query.applyFlagSettings({effortLevel})` before the next user message; a new query takes them as options | not probed | `set_model`, `set_thinking_level`, `get_state` before the next `prompt` |
+| `session/settings/update` | `model`, `effort`, and `approvalMode` (as `approvalPolicy` and `sandboxPolicy`) on the next `turn/start` and every later one | `Query.setModel()` and `Query.applyFlagSettings({effortLevel})` before the next user message, `Query.setPermissionMode()` at once; a new query takes them as options | not probed | `set_model`, `set_thinking_level`, `get_state` before the next `prompt`; `approvalMode` is `not_supported` |
 | `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely | `steer {message, images}`: queued, delivered before the next model call, then reported by pi as a user message (the host journals its own) |
 | `turn/interrupt` | `turn/interrupt` | `query.interrupt()`; the turn ends with result `error_during_execution`, reported `interrupted` | not probed | `clear_queue`, then `abort`, then open approvals are declined (pi's abort waits for idle, which an open dialog blocks); `agent_settled {aborted: true}`, reported `interrupted` |
 | `item/*` | `item/started`, `item/*/delta`, `item/completed` | `stream_event` text deltas, then assistant text and tool_use blocks and the tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` | `message_update` `text_delta` and `thinking_delta`, `message_end`, `tool_execution_start`, `tool_execution_update` (bash output), `tool_execution_end` (`isError`; declined when the host refused it) |

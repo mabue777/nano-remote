@@ -621,7 +621,8 @@ describe('settings change (spec 6 session/settings/update)', () => {
     await manager.turnStart(session.sessionId, text('a'), cmid());
     const from = events.length;
     const updated = await manager.updateSettings(session.sessionId, { model: 'fake-2' });
-    expect(updated.settings).toEqual({ model: 'fake-2', effort: 'xhigh' });
+    expect(updated.session.settings).toEqual({ model: 'fake-2', effort: 'xhigh' });
+    expect(updated.appliesAt).toBe('nextTurn');
     expect(methods(events.slice(from))).toEqual(['session/changed']);
     expect(agent.last.calls.filter((c) => c.method === 'changeSettings').map((c) => c.args)).toEqual([[{ model: 'fake-2', effort: 'xhigh' }]]);
     // The engine has it from the next turn on.
@@ -637,7 +638,7 @@ describe('settings change (spec 6 session/settings/update)', () => {
     const { session } = await manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } });
     await manager.turnStart(session.sessionId, text('a'), cmid());
     const updated = await manager.updateSettings(session.sessionId, { effort: 'low', model: 'fake-2' });
-    expect(updated).toMatchObject({ status: 'running', settings: { model: 'fake-2', effort: 'low' } });
+    expect(updated).toMatchObject({ session: { status: 'running', settings: { model: 'fake-2', effort: 'low' } }, appliesAt: 'nextTurn' });
     expect(agent.last.calls.map((c) => c.method)).not.toContain('interrupt');
     agent.last.release();
     expect(manager.session(session.sessionId).status).toBe('idle');
@@ -655,7 +656,7 @@ describe('settings change (spec 6 session/settings/update)', () => {
       message: 'Fake Agent cannot change the model of an open session',
       data: { agentId: 'fake', setting: 'model' },
     });
-    await expect(limited.manager.updateSettings(a, { approvalMode: 'never' } as never)).rejects.toMatchObject({ code: 'not_supported' });
+    await expect(limited.manager.updateSettings(a, { approvalMode: 'never' })).rejects.toMatchObject({ code: 'not_supported' });
     await expect(limited.manager.updateSettings('ses_missing', { effort: 'low' })).rejects.toMatchObject({ code: 'not_found' });
     const full = make({ models });
     const b = (await full.manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } })).session.sessionId;
@@ -666,17 +667,81 @@ describe('settings change (spec 6 session/settings/update)', () => {
     });
     // The same values again change nothing.
     const head = full.journal.head(b);
-    expect((await full.manager.updateSettings(b, { model: 'fake-1' })).settings).toEqual({ model: 'fake-1' });
+    expect((await full.manager.updateSettings(b, { model: 'fake-1' })).session.settings).toEqual({ model: 'fake-1' });
     expect(full.journal.head(b)).toBe(head);
     expect(limited.events.slice(from)).toEqual([]);
     expect(full.agent.last.calls.map((c) => c.method)).not.toContain('changeSettings');
+  });
+
+  it('an approval mode the engine takes live applies now, also during a running turn, and is reported at once', async () => {
+    const { manager, agent, events } = make({ models, script: [[{ hold: true }]], adapter: { approvalModeAppliesAt: 'now' } });
+    const { session } = await manager.start({ agentId: 'fake', cwd, settings: { approvalMode: 'on-request', sandbox: 'workspace-write' } });
+    await manager.turnStart(session.sessionId, text('a'), cmid());
+    const from = events.length;
+    const updated = await manager.updateSettings(session.sessionId, { approvalMode: 'never' });
+    expect(updated.appliesAt).toBe('now');
+    // The sandbox followed from the old mode: dropped, so the agent derives it again.
+    expect(updated.session).toMatchObject({ status: 'running', settings: { approvalMode: 'never' } });
+    expect(updated.session.settings).not.toHaveProperty('sandbox');
+    expect(methods(events.slice(from))).toEqual(['session/changed']);
+    expect(agent.last.settings.approvalMode).toBe('never');
+    expect(agent.last.calls.map((c) => c.method)).not.toContain('interrupt');
+  });
+
+  it('an approval mode the engine takes at the next turn says so', async () => {
+    const { manager, agent } = make({ models });
+    const { session } = await manager.start({ agentId: 'fake', cwd, settings: { approvalMode: 'never' } });
+    await manager.turnStart(session.sessionId, text('a'), cmid());
+    const updated = await manager.updateSettings(session.sessionId, { approvalMode: 'on-request' });
+    expect(updated).toMatchObject({ appliesAt: 'nextTurn', session: { settings: { approvalMode: 'on-request' } } });
+    expect(agent.last.settings.approvalMode).toBe('never');
+    await manager.turnStart(session.sessionId, text('b'), cmid());
+    expect(agent.last.settings.approvalMode).toBe('on-request');
+  });
+
+  it('a change of model with the approval mode waits for the next turn, even when the engine took the mode', async () => {
+    const { manager } = make({ models, adapter: { approvalModeAppliesAt: 'now' } });
+    const { session } = await manager.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } });
+    await manager.turnStart(session.sessionId, text('a'), cmid());
+    expect((await manager.updateSettings(session.sessionId, { approvalMode: 'never', model: 'fake-2' })).appliesAt).toBe('nextTurn');
+    // Nothing to change: already in effect.
+    expect((await manager.updateSettings(session.sessionId, { approvalMode: 'never' })).appliesAt).toBe('now');
+  });
+
+  it('a dormant session, or an engine that refuses the change now, keeps it for the next turn', async () => {
+    const dormant = make({ models });
+    const a = (await dormant.manager.start({ agentId: 'fake', cwd })).session.sessionId;
+    expect(await dormant.manager.updateSettings(a, { approvalMode: 'never' })).toMatchObject({ appliesAt: 'nextTurn', session: { settings: { approvalMode: 'never' } } });
+    const refusing = make({ models, adapter: { failOn: { changeSettings: 'engine busy' } } });
+    const b = (await refusing.manager.start({ agentId: 'fake', cwd })).session.sessionId;
+    await refusing.manager.turnStart(b, text('a'), cmid());
+    expect(await refusing.manager.updateSettings(b, { approvalMode: 'never' })).toMatchObject({ appliesAt: 'nextTurn', session: { settings: { approvalMode: 'never' } } });
+    expect(refusing.log).toHaveBeenCalledWith(`session ${b}: the engine did not take the settings change now`, expect.any(Error));
+  });
+
+  it('refuses an approval mode the agent does not list, and any approval mode from an agent that honours none', async () => {
+    const { manager, events } = make({ models });
+    const a = (await manager.start({ agentId: 'fake', cwd })).session.sessionId;
+    const from = events.length;
+    await expect(manager.updateSettings(a, { approvalMode: 'bypassPermissions' })).rejects.toMatchObject({
+      code: 'invalid_params',
+      message: 'Fake Agent has no approval mode bypassPermissions',
+      data: { path: 'params.settings.approvalMode' },
+    });
+    expect(events.slice(from)).toEqual([]);
+    const pi = make({ models, capabilities: { approvalModes: [], settingsUpdate: ['model', 'effort'] } });
+    const b = (await pi.manager.start({ agentId: 'fake', cwd })).session.sessionId;
+    await expect(pi.manager.updateSettings(b, { approvalMode: 'never' })).rejects.toMatchObject({
+      code: 'not_supported',
+      message: 'Fake Agent cannot change the approvalMode of an open session',
+    });
   });
 
   it('an agent that cannot list its models leaves the model to the engine', async () => {
     const { manager, agent, log } = make({ models });
     vi.spyOn(agent, 'models').mockRejectedValue(new Error('not signed in'));
     const { session } = await manager.start({ agentId: 'fake', cwd });
-    expect((await manager.updateSettings(session.sessionId, { model: 'fake-9' })).settings).toEqual({ model: 'fake-9' });
+    expect((await manager.updateSettings(session.sessionId, { model: 'fake-9' })).session.settings).toEqual({ model: 'fake-9' });
     expect(log).toHaveBeenCalledWith('agent fake: cannot list models to check fake-9', expect.any(Error));
   });
 
@@ -688,7 +753,7 @@ describe('settings change (spec 6 session/settings/update)', () => {
     const before = new SessionManager({ journal, agents: [new FakeAgent({ models })], store });
     const { session } = await before.start({ agentId: 'fake', cwd, settings: { model: 'fake-1' } });
     await before.turnStart(session.sessionId, text('a'), cmid());
-    await before.updateSettings(session.sessionId, { model: 'fake-2', effort: 'low' });
+    await before.updateSettings(session.sessionId, { model: 'fake-2', effort: 'low', approvalMode: 'never' });
     await before.close();
     journal.close();
 
@@ -696,14 +761,14 @@ describe('settings change (spec 6 session/settings/update)', () => {
     const agent = new FakeAgent({ models });
     const after = new SessionManager({ journal: reopened, agents: [agent], store });
     open.push({ journal: reopened, manager: after });
-    expect(after.session(session.sessionId).settings).toEqual({ model: 'fake-2', effort: 'low' });
+    expect(after.session(session.sessionId).settings).toEqual({ model: 'fake-2', effort: 'low', approvalMode: 'never' });
     // Dormant: the change is journaled and no engine starts for it.
     await after.updateSettings(session.sessionId, { effort: 'high' });
     expect(agent.adapters).toHaveLength(0);
     await after.turnStart(session.sessionId, text('b'), cmid());
     const resumed = agent.last.calls.find((c) => c.method === 'resume');
-    expect(resumed?.args[2]).toEqual({ model: 'fake-2', effort: 'high' });
-    expect(agent.last.settings).toEqual({ model: 'fake-2', effort: 'high' });
+    expect(resumed?.args[2]).toEqual({ model: 'fake-2', effort: 'high', approvalMode: 'never' });
+    expect(agent.last.settings).toEqual({ model: 'fake-2', effort: 'high', approvalMode: 'never' });
     store.close();
   });
 });
@@ -759,7 +824,7 @@ describe('FakeAdapter', () => {
     await adapter.interrupt();
     off();
     expect(echoScript(text('hi'), 0)).toEqual([{ reply: 'You said: hi' }]);
-    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] });
+    expect(new FakeAgent().capabilities).toEqual({ steer: true, diff: true, approvalModes: FAKE_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] });
     expect(() => new FakeAgent().last).toThrow(/no adapter/);
   });
 

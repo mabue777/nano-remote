@@ -25,7 +25,7 @@ interface ThreadRecord {
   id: string;
   cwd: string;
   model: string;
-  /** The thread's `approvalPolicy` (thread/start, updated by thread/resume); `never` runs commands unasked. */
+  /** The thread's `approvalPolicy` (thread/start, updated by thread/resume and turn/start); `never` runs commands unasked. */
   approvalPolicy?: string;
   /** The thread's reasoning effort (config.model_reasoning_effort, updated by turn/start effort). */
   effort?: string | null;
@@ -388,8 +388,9 @@ function handle(method: string, params: Json): Json {
     case 'turn/start': {
       if (running) throw new Error('a turn is already running');
       const record = thread(params);
-      // model and effort apply "for this turn and subsequent turns".
+      // model, effort and approvalPolicy apply "for this turn and subsequent turns".
       if (typeof params.model === 'string') record.model = params.model;
+      if (typeof params.approvalPolicy === 'string') record.approvalPolicy = params.approvalPolicy;
       if (typeof params.effort === 'string') record.effort = params.effort;
       saveState();
       return startTurn(record, (params.input as Json[]) ?? [], params.clientUserMessageId);

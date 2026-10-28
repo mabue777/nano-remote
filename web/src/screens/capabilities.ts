@@ -39,7 +39,18 @@ export type SettingsKey = 'model' | 'effort';
  * an older host: without the capability the session view offers no way to change them.
  */
 export function settingsKeys(agent: Agent | undefined): readonly SettingsKey[] {
-  return agent?.capabilities?.settingsUpdate ?? [];
+  return (agent?.capabilities?.settingsUpdate ?? []).filter((key): key is SettingsKey => key === 'model' || key === 'effort');
+}
+
+/**
+ * The approval modes an open session of the agent can switch between (`capabilities.settingsUpdate` names
+ * `approvalMode`, spec 6): its `capabilities.approvalModes`. Empty when it cannot (Pi honours none) and,
+ * never guessed, for an older host: the Permissions row then stays plain text.
+ */
+export function changeableApprovalModes(agent: Agent | undefined): readonly string[] {
+  const capabilities = agent?.capabilities;
+  if (capabilities?.settingsUpdate?.includes('approvalMode') !== true) return [];
+  return capabilities.approvalModes;
 }
 
 /** The agents the screens consult; the stream client's `initialize` result fits (`() => client.host?.agents`). */

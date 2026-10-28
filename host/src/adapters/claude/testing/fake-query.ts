@@ -18,7 +18,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ChildProcess } from 'node:child_process';
 
-import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, PermissionMode, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ClaudeQuery, QueryFn } from '../adapter.js';
 
@@ -66,6 +66,10 @@ export interface FakeClaudeOptions {
   throwOnQuery?: string;
   /** setModel() and applyFlagSettings() reject with this message. */
   controlFails?: string;
+  /** setPermissionMode() rejects with this message. */
+  permissionModeFails?: string;
+  /** The query has no setPermissionMode() (an older Agent SDK). */
+  noSetPermissionMode?: boolean;
 }
 
 export interface PermissionCall {
@@ -122,6 +126,8 @@ export class FakeClaude {
 
 export class FakeQuery implements ClaudeQuery {
   readonly options: Options;
+  /** The permission mode in effect: the option, then setPermissionMode. */
+  permissionMode: PermissionMode | undefined;
   readonly sessionId: string;
   readonly userMessages: SDKUserMessage[] = [];
   readonly permissions: PermissionCall[] = [];
@@ -148,13 +154,14 @@ export class FakeQuery implements ClaudeQuery {
   private answering: string | undefined;
   /**
    * User messages and settings control requests in the order they reached the engine: `user: <text>`,
-   * `setModel: <model>`, `applyFlagSettings: <json>`.
+   * `setModel: <model>`, `applyFlagSettings: <json>`, `setPermissionMode: <mode>`.
    */
   readonly timeline: string[] = [];
 
   constructor(fake: FakeClaude, prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.fake = fake;
     this.options = options;
+    this.permissionMode = options.permissionMode;
     this.sessionId = options.resume ?? randomUUID();
     if (fake.options.spawn !== false && options.spawnClaudeCodeProcess) {
       const child = options.spawnClaudeCodeProcess({
@@ -247,6 +254,22 @@ export class FakeQuery implements ClaudeQuery {
   async setModel(model?: string): Promise<void> {
     if (this.fake.options.controlFails !== undefined) throw new Error(this.fake.options.controlFails);
     this.timeline.push(`setModel: ${model}`);
+  }
+
+  /**
+   * Like Claude Code: the mode applies to the tool calls from now on, also in a running turn, and
+   * bypassPermissions only in a session launched with allowDangerouslySkipPermissions.
+   */
+  get setPermissionMode(): ((mode: PermissionMode) => Promise<void>) | undefined {
+    if (this.fake.options.noSetPermissionMode) return undefined;
+    return async (mode) => {
+      if (this.fake.options.permissionModeFails !== undefined) throw new Error(this.fake.options.permissionModeFails);
+      if (mode === 'bypassPermissions' && !this.options.allowDangerouslySkipPermissions) {
+        throw new Error('Cannot set permission mode to bypassPermissions because the session was not launched with --dangerously-skip-permissions');
+      }
+      this.timeline.push(`setPermissionMode: ${mode}`);
+      this.permissionMode = mode;
+    };
   }
 
   async applyFlagSettings(settings: Record<string, unknown>): Promise<void> {
@@ -436,7 +459,7 @@ export class FakeQuery implements ClaudeQuery {
     });
     // The engine writes the tool_use message before it asks: let the adapter read it first.
     await this.drained();
-    const asks = step.ask !== false && this.options.permissionMode !== 'bypassPermissions' && this.options.canUseTool !== undefined;
+    const asks = step.ask !== false && this.permissionMode !== 'bypassPermissions' && this.options.canUseTool !== undefined;
     let answer: Json = { behavior: 'allow', updatedInput: input };
     if (asks) {
       this.abort = new AbortController();

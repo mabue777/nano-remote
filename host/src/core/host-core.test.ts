@@ -44,8 +44,8 @@ describe('discovery', () => {
     expect(status).toEqual({
       host: expect.objectContaining({ hostId: 'host_test' }),
       agents: [
-        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
-        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
+        { id: 'fake', name: 'Fake Agent', status: 'ready', version: '0.0.0', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] } },
+        { id: 'kimi', name: 'Kimi', status: 'unavailable', reason: 'CLI not found', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] } },
       ],
       sessionsActive: 0,
       uptimeSeconds: 42,
@@ -83,7 +83,7 @@ describe('discovery', () => {
     h.agent.setState({ status: 'unavailable', reason: 'updating' });
     const changed = await phone.until(() => phone.messages.find((m) => m.method === 'host/status/changed'));
     expect((changed.params as { agents: unknown[] }).agents).toEqual([
-      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] } },
+      { id: 'fake', name: 'Fake Agent', status: 'unavailable', reason: 'updating', capabilities: { steer: true, diff: true, approvalModes: [...FAKE_APPROVAL_MODES], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] } },
     ]);
     await h.core.close();
     const before = phone.messages.length;
@@ -246,7 +246,7 @@ describe('session lifecycle', () => {
       sessionId,
       settings: { effort: 'low' },
     });
-    expect(result.session).toMatchObject({ sessionId, settings: { effort: 'low' } });
+    expect(result).toMatchObject({ session: { sessionId, settings: { effort: 'low' } }, appliesAt: 'nextTurn' });
     const changed = await waitEvent(phone, 'session/changed');
     expect((changed.params as { session: { settings: Record<string, unknown> } }).session.settings).toMatchObject({ effort: 'low' });
     expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: { model: 'fake-1' } })).toMatchObject({
@@ -259,6 +259,20 @@ describe('session lifecycle', () => {
       data: { path: 'params.settings.effort' },
     });
     expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: [] })).toMatchObject({ data: { path: 'params.settings' } });
+  });
+
+  it('session/settings/update changes the approval mode and says when it applies', async () => {
+    const h = await setup({ agent: { adapter: { approvalModeAppliesAt: 'now' } } });
+    const phone = await h.connect();
+    const sessionId = await newSession(h, phone);
+    await rpc(phone, 'session/open', { sessionId });
+    await rpc(phone, 'turn/start', { sessionId, input: [{ type: 'text', text: 'hi' }], clientMessageId: randomUUID() });
+    const result = await rpc(phone, 'session/settings/update', { sessionId, settings: { approvalMode: 'never' } });
+    expect(result).toMatchObject({ session: { sessionId, settings: { approvalMode: 'never' } }, appliesAt: 'now' });
+    expect(await rpcError(phone, 'session/settings/update', { sessionId, settings: { approvalMode: 'yolo' } })).toMatchObject({
+      code: 'invalid_params',
+      data: { path: 'params.settings.approvalMode' },
+    });
   });
 
   it('session/archive closes the session; a new turn brings it back', async () => {

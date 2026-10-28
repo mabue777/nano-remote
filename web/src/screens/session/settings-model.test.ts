@@ -31,7 +31,7 @@ function replica(models: ModelInfo[] | Error = CODEX) {
       calls.push({ sessionId, settings });
       await hold;
       if (fail) throw fail;
-      return {};
+      return { session: {} } as never; // the sheet does not read the answer
     }),
   };
   return fake;

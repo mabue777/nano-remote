@@ -76,6 +76,11 @@ export function sessionPolicy(settings: Settings): { permissionMode: ClaudePermi
   return { permissionMode: 'default', approvalMode: 'default' };
 }
 
+/** The approvalMode a Claude permission mode reports (spec 5.1): bypassPermissions is `never`. */
+export function approvalModeOf(permissionMode: ClaudePermissionMode): string {
+  return permissionMode === 'bypassPermissions' ? 'never' : permissionMode;
+}
+
 /** The model of a session: its settings' model, else the configured default. */
 export function sessionModel(settings: Settings, config: Pick<ClaudeConfig, 'defaultModel'>): string {
   return typeof settings.model === 'string' && settings.model !== '' ? settings.model : config.defaultModel;

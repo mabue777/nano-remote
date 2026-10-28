@@ -49,11 +49,18 @@ export const PI_AGENT = {
  */
 function fakeAgents(locked: ReadonlySet<string> = new Set()): Json[] {
   return [...exampleMessage('08').result.agents, PI_AGENT].map((agent: Json) =>
-    // Codex, Claude Code and pi change model and effort in an open session (spec 4 settingsUpdate), unless
-    // a test locks an agent; Kimi (example 08) carries no capabilities, like an agent from an older host.
+    // Codex, Claude Code and pi change model and effort in an open session (spec 4 settingsUpdate), and
+    // the agents with approval modes (Codex, Claude Code) the approval mode too, unless a test locks an
+    // agent; Kimi (example 08) carries no capabilities, like an agent from an older host.
     agent.capabilities === undefined || locked.has(agent.id)
       ? agent
-      : { ...agent, capabilities: { ...agent.capabilities, settingsUpdate: ['model', 'effort'] } },
+      : {
+          ...agent,
+          capabilities: {
+            ...agent.capabilities,
+            settingsUpdate: agent.capabilities.approvalModes.length > 0 ? ['model', 'effort', 'approvalMode'] : ['model', 'effort'],
+          },
+        },
   );
 }
 
@@ -82,7 +89,7 @@ interface FakeSession {
   inputs: Map<string, Json>;
   byClientMessageId: Map<string, string>;
   /** The scripted turn in progress, if any; `timer` is its next paced step. */
-  running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout>; queued?: Json };
+  running?: { turnId: string; commandItemId: string; requestId?: string; timer?: ReturnType<typeof setTimeout>; queued?: Json; approvalMode?: string };
   /** Set by session/delete before the turn and helpers stop: the list hears no more of it (as the host). */
   deleted?: true;
 }
@@ -661,6 +668,12 @@ export class FakeHost {
         const sessionId = this.createSession({ agentId: params.agentId, cwd: params.cwd, title: params.title ?? 'New session' });
         const session = this.session(sessionId);
         if (params.settings !== undefined) session.settings = { ...session.settings, ...params.settings };
+        // Like the real host (spec 5.1): Claude Code and Codex report the mode in effect, their default too
+        // (not the template's Codex mode).
+        const defaultMode: Json = { claude: 'default', codex: 'on-request' };
+        if (params.settings?.approvalMode === undefined && defaultMode[params.agentId] !== undefined) {
+          session.settings = { ...session.settings, approvalMode: defaultMode[params.agentId] };
+        }
         if (!Array.isArray(params.input)) return { result: { session: this.full(session) } };
         const turn = this.newTurn(session, undefined);
         return {
@@ -678,10 +691,18 @@ export class FakeHost {
             throw new HostError({ code: 'not_supported', message: `${agent?.name ?? session.summary.agentId} cannot change the ${key} of an open session` });
           }
         }
+        const mode = params.settings?.approvalMode;
+        if (mode !== undefined && !agent?.capabilities?.approvalModes?.includes(mode)) {
+          throw new HostError({ code: 'invalid_params', message: `${agent?.name} has no approval mode ${mode}`, data: { path: 'params.settings.approvalMode' } });
+        }
         session.settings = { ...session.settings, ...params.settings };
         session.summary.updatedAt = Math.floor(Date.now() / 1000);
+        // Like the real adapters: Claude Code takes a new approval mode at once (also in a running turn),
+        // Codex from its next turn; model and effort always wait for the next turn.
+        const live = mode !== undefined && Object.keys(params.settings).length === 1 && session.summary.agentId === 'claude';
+        if (live && session.running) session.running.approvalMode = mode;
         this.emit(params.sessionId, 'session/changed', { session: { ...this.full(session), lastSeq: session.journal.length + 1 } });
-        return { result: { session: this.full(session) } };
+        return { result: { session: this.full(session), appliesAt: live ? 'now' : 'nextTurn' } };
       }
       case 'session/open':
         return this.open(stream, params);
@@ -915,7 +936,8 @@ export class FakeHost {
     const turnId = `trn_fake_${++this.nextId}`;
     const turn = { turnId, status: 'inProgress', startedAt: 1760930100 + this.nextId, completedAt: null, error: null, items: [] };
     if (clientMessageId !== undefined) session.byClientMessageId.set(clientMessageId, turnId);
-    session.running = { turnId, commandItemId: `itm_fake_${++this.nextId}` };
+    // The turn runs in the approval mode the session has when it starts (spec 6).
+    session.running = { turnId, commandItemId: `itm_fake_${++this.nextId}`, approvalMode: session.settings?.approvalMode };
     return turn;
   }
 
@@ -951,6 +973,11 @@ export class FakeHost {
       this.emit(sessionId, 'item/completed', { turnId, item: { ...agent, itemId: agentId, turnId, text } });
       const command = exampleMessage('29').params.item;
       this.emit(sessionId, 'item/started', { turnId, item: { ...command, itemId: running.commandItemId, turnId } });
+      // Approvals bypassed: the command runs without asking.
+      if (running.approvalMode === 'never') {
+        this.runCommand(sessionId);
+        return;
+      }
       const request = exampleMessage('32').params.request;
       running.requestId = `req_fake_${++this.nextId}`;
       // pi offers no "for this session" decision (its approvals are accept, decline or cancel)
@@ -1029,9 +1056,15 @@ export class FakeHost {
       this.finishTurn(sessionId, 'interrupted');
       return;
     }
+    this.runCommand(sessionId, decision === 'decline');
+  }
+
+  /** The turn's command runs (or is declined) and the turn completes. */
+  private runCommand(sessionId: string, declined = false): void {
+    const running = this.session(sessionId).running!;
     const command = exampleMessage('31').params.item;
     const item = { ...command, itemId: running.commandItemId, turnId: running.turnId };
-    if (decision === 'decline') {
+    if (declined) {
       this.emit(sessionId, 'item/completed', { turnId: running.turnId, item: { ...item, status: 'declined', output: '' } });
     } else {
       this.emit(sessionId, 'status/changed', { status: 'running' });
