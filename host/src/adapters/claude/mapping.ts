@@ -1,7 +1,6 @@
 // Pure translations between Claude Agent SDK shapes (sdk.d.ts of @anthropic-ai/claude-agent-sdk 0.3.308)
 // and the protocol vocabulary of protocol-v1.md section 5. This file and adapter.ts are the only places
 // that know Claude's names.
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import type {
@@ -18,6 +17,7 @@ import type { EffortLevel } from '@anthropic-ai/claude-agent-sdk';
 import type { AdapterApprovalRequest, AdapterInputPart, AdapterInputRequest, AdapterItem, FinalTurnStatus } from '../../core/adapter.js';
 import type { ClaudeConfig } from '../../config/claude.js';
 import { fileLine, inlineImage } from '../shared/attachments.js';
+import { addedDiff, applyEdits, readCurrent, unifiedDiff, type Replacement } from './edit-diff.js';
 
 type Json = Record<string, unknown>;
 
@@ -137,24 +137,32 @@ function hunk(oldText: string, newText: string): string {
 }
 
 /**
- * The file changes of a Write, Edit, MultiEdit or NotebookEdit call. The diff is the tool's new text as
- * hunks (Edit: old_string removed, new_string added); the adapter does not read the file, so line numbers
- * start at 1. A Write to a file that exists is a modify.
+ * The file changes of a Write, Edit, MultiEdit or NotebookEdit call, computed before the tool runs. Edit
+ * and MultiEdit apply their replacements (in order; replace_all replaces every occurrence) to the file as
+ * it is now, and Write compares its content with it: a unified diff with real line numbers and 3 lines of
+ * context (edit-diff.ts). A Write of a new file is an add with every line added. When the file cannot be
+ * read (over 1 MB, not a file) or an old_string is not in it, the diff is the call's own text as one hunk
+ * (old_string removed, new_string added), numbered from 1. NotebookEdit is always that hunk.
  */
 export function fileChangesFor(toolName: string, input: Json, cwd: string): FileChange[] {
   if (toolName === 'NotebookEdit') {
     return [{ path: str(input.notebook_path), kind: 'modify', diff: hunk('', str(input.new_source)) }];
   }
   const file = str(input.file_path);
+  const current = file === '' ? 'missing' : readCurrent(path.resolve(cwd, file));
   if (toolName === 'Write') {
-    const exists = file !== '' && existsSync(path.resolve(cwd, file));
-    return [{ path: file, kind: exists ? 'modify' : 'add', diff: hunk('', str(input.content)) }];
+    const content = str(input.content);
+    if (current === 'missing') return [{ path: file, kind: 'add', diff: addedDiff(content) }];
+    const diff = current === undefined ? '' : unifiedDiff(current, content);
+    return [{ path: file, kind: 'modify', diff: diff !== '' ? diff : hunk('', content) }];
   }
-  if (toolName === 'MultiEdit') {
-    const edits = list(input.edits).map(obj);
-    return [{ path: file, kind: 'modify', diff: edits.map((e) => hunk(str(e.old_string), str(e.new_string))).join('\n') }];
-  }
-  return [{ path: file, kind: 'modify', diff: hunk(str(input.old_string), str(input.new_string)) }];
+  const raw: Json[] = toolName === 'MultiEdit' ? list(input.edits).map(obj) : [input];
+  const edits: Replacement[] = raw.map((e) => ({ oldString: str(e.old_string), newString: str(e.new_string), replaceAll: e.replace_all === true }));
+  // An Edit with an empty old_string on a missing file creates it.
+  if (current === 'missing' && edits.length === 1 && edits[0]!.oldString === '') return [{ path: file, kind: 'add', diff: addedDiff(edits[0]!.newString) }];
+  const next = typeof current === 'string' && current !== 'missing' ? applyEdits(current, edits) : undefined;
+  const diff = next === undefined || current === undefined || current === 'missing' ? '' : unifiedDiff(current, next);
+  return [{ path: file, kind: 'modify', diff: diff !== '' ? diff : edits.map((e) => hunk(e.oldString, e.newString)).join('\n') }];
 }
 
 /** A tool's protocol item kind. */

@@ -97,12 +97,12 @@ describe('file changes', () => {
       { path: 'new.txt', kind: 'add', diff: '@@ -0,0 +1,2 @@\n+a\n+b' },
     ]);
     expect(fileChangesFor('Write', { file_path: path.join(cwd, 'there.txt'), content: '' }, cwd)).toEqual([
-      { path: path.join(cwd, 'there.txt'), kind: 'modify', diff: '@@ -0,0 +0,0 @@' },
+      { path: path.join(cwd, 'there.txt'), kind: 'modify', diff: '@@ -1,1 +0,0 @@\n-old' }, // emptied: the old line removed
     ]);
     expect(fileChangesFor('Write', {}, cwd)[0]).toMatchObject({ path: '', kind: 'add' });
   });
 
-  it('Edit, MultiEdit and NotebookEdit are modifies with their texts as hunks', () => {
+  it('Edit, MultiEdit and NotebookEdit of files that cannot be read are modifies with their texts as hunks', () => {
     expect(fileChangesFor('Edit', { file_path: 'a', old_string: 'x\ny', new_string: 'z' }, '/')).toEqual([
       { path: 'a', kind: 'modify', diff: '@@ -1,2 +1,1 @@\n-x\n-y\n+z' },
     ]);

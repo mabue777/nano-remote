@@ -43,7 +43,7 @@ import type { Uploader } from './attachments/upload';
 import { SessionSettingsModel, type SettingsReplica } from './settings-model';
 import { detailRows, detailsSubtitle, statusLine, statusValue, type DetailRow, type StatusLine } from './session-details';
 import { workedFor } from './transcript';
-import { filesChangedText } from './views/changes-model';
+import { agentFiles, changedFile, filesChangedText, mergeChanges } from './views/changes-model';
 
 /** What the session view needs from the Replica; Replica fits. */
 export interface SessionReplica extends SettingsReplica {
@@ -754,7 +754,11 @@ export class SessionModel extends Model {
     });
   }
 
-  /** Asks turn/diff once for every finished turn, for its "N files changed" line. Failures show no line. */
+  /**
+   * Asks turn/diff once for every finished turn, for its "N files changed" line. The count includes the
+   * files the agent's edits changed that git did not list (outside the folder, or no repository: the
+   * Changes view shows them from the agent's edits). Other failures show no line.
+   */
   private countChanges(): void {
     const view = this.view;
     if (view === undefined || !this.diffs) return;
@@ -762,12 +766,17 @@ export class SessionModel extends Model {
       const final = turn.status === 'completed' || turn.status === 'interrupted' || turn.status === 'failed';
       if (!final || turn.optimistic !== undefined || this.counted.has(turn.turnId)) continue;
       this.counted.add(turn.turnId);
+      const agent = () => agentFiles(this.view, turn.turnId);
       this.replica.turnDiff(this.sessionId, turn.turnId).then(
         (result) => {
-          this.fileCounts.set(turn.turnId, result.files.length + (result.omittedFiles ?? 0));
+          this.fileCounts.set(turn.turnId, mergeChanges(result.files.map(changedFile), agent()).length + (result.omittedFiles ?? 0));
           this.changed();
         },
-        () => undefined,
+        (error: unknown) => {
+          if ((error as { code?: unknown }).code !== 'not_a_repository') return;
+          this.fileCounts.set(turn.turnId, agent().length);
+          this.changed();
+        },
       );
     }
   }

@@ -3,7 +3,20 @@ import { describe, expect, it } from 'vitest';
 import type { TurnDiffResult } from '../../../generated/methods';
 import type { SessionView } from '../../../replica/types';
 import { RequestError } from '../../../stream/client';
-import { ChangesModel, NOT_A_REPOSITORY_TEXT, NOT_SUPPORTED_TEXT, changedFile, filesChangedText, type ChangesReplica } from './changes-model';
+import {
+  ChangesModel,
+  FROM_AGENT_TEXT,
+  NOT_A_REPOSITORY_TEXT,
+  NOT_SUPPORTED_TEXT,
+  agentFile,
+  agentFiles,
+  changedFile,
+  filesChangedText,
+  folderPath,
+  mergeChanges,
+  mergedState,
+  type ChangesReplica,
+} from './changes-model';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -116,7 +129,7 @@ describe('ChangesModel', () => {
       expect(model.summary).toBe('');
     }
     expect(NOT_SUPPORTED_TEXT).toBe('This agent does not provide diffs.');
-    expect(NOT_A_REPOSITORY_TEXT).toBe('Changes need a git repository in the session folder.');
+    expect(NOT_A_REPOSITORY_TEXT).toBe("This folder is not a git repository, so only the agent's own edits can be shown.");
   });
 
   it('fetches again when the turn status changes, keeps the old diff meanwhile, and the newest answer wins', async () => {
@@ -150,5 +163,80 @@ describe('ChangesModel', () => {
     calls[0]!.resolve({ files: [] });
     await settle();
     expect(model.state).toEqual({ state: 'loading' });
+  });
+});
+
+describe("the merge rule: git's files, then the agent's edits git did not list", () => {
+  const edit = (path: string, diff = '@@ -1 +1 @@\n-a\n+b\n', kind: 'add' | 'modify' | 'delete' = 'modify') => ({ path, kind, diff });
+  /** A session in /w whose turn t1 holds the given fileChange items. */
+  function viewWith(...changes: ReturnType<typeof edit>[][]): SessionView {
+    const items = Object.fromEntries(changes.map((c, i) => [`f${i}`, { itemId: `f${i}`, type: 'fileChange', turnId: 't1', status: 'completed', changes: c }]));
+    return { sessionId: SID, session: { cwd: '/w' }, turns: [{ turnId: 't1', status: 'completed', items: [...Object.keys(items), 'gone'] }], items } as unknown as SessionView;
+  }
+
+  it('names files inside the session folder as git does, and leaves the others as they are', () => {
+    expect(folderPath('/w/src/a.ts', '/w')).toBe('src/a.ts');
+    expect(folderPath('/w/src/a.ts', '/w/')).toBe('src/a.ts');
+    expect(folderPath('/wx/a.ts', '/w')).toBe('/wx/a.ts');
+    expect(folderPath('/tmp/a.md', '/w')).toBe('/tmp/a.md');
+    expect(folderPath('rel/a.ts', '/w')).toBe('rel/a.ts');
+    expect(folderPath('/w/a.ts', undefined)).toBe('/w/a.ts');
+  });
+
+  it("collects the turn's edits by file, several edits of one file in order", () => {
+    const view = viewWith([edit('/w/a.ts'), edit('/tmp/x.md', '+new\n', 'add')], [edit('/w/a.ts', '@@ -9 +9 @@\n-c\n+d\n')], [edit('')]);
+    const files = agentFiles(view, 't1');
+    expect(files.map((f) => [f.path, f.kind, f.added, f.removed, f.fromAgent])).toEqual([
+      ['a.ts', 'modified', 2, 2, true],
+      ['/tmp/x.md', 'added', 1, 0, true],
+    ]);
+    expect(files[0]!.lines.filter((l) => l.kind === 'hunk').map((l) => l.text)).toEqual(['@@ -1 +1 @@', '@@ -9 +9 @@']);
+    expect(agentFiles(view, 'nope')).toEqual([]);
+    expect(agentFiles(undefined, 't1')).toEqual([]);
+    expect(agentFile('gone.txt', [edit('gone.txt', '-bye\n', 'delete')])).toMatchObject({ kind: 'deleted', removed: 1 });
+    expect(agentFile('n.md', [edit('n.md', '-a\n+b\n')])).toMatchObject({ unnumbered: true });
+  });
+
+  it("keeps git's diff for files git listed, and adds the rest from the agent's edits", () => {
+    const git = [changedFile({ path: 'a.ts', kind: 'modify', diff: MODIFY })];
+    const agent = agentFiles(viewWith([edit('/w/a.ts'), edit('/tmp/x.md')]), 't1');
+    const merged = mergeChanges(git, agent);
+    expect(merged.map((f) => [f.path, f.fromAgent ?? false])).toEqual([
+      ['a.ts', false],
+      ['/tmp/x.md', true],
+    ]);
+    expect(merged[0]).toBe(git[0]);
+    expect(FROM_AGENT_TEXT).toBe("From the agent's edits, not git");
+    // Not a repository: only the agent's edits, with the note saying why; nothing at all stays notRepository.
+    expect(mergedState('notRepository', agent)).toMatchObject({ state: 'ready', note: NOT_A_REPOSITORY_TEXT, files: agent });
+    expect(mergedState('notRepository', [])).toBeUndefined();
+    expect(mergedState({ files: git, omittedFiles: 2, truncated: true }, [])).toEqual({ state: 'ready', files: git, omittedFiles: 2, truncated: true });
+  });
+
+  it("ChangesModel shows a folder outside git from the agent's edits, and follows new edits", async () => {
+    const view = viewWith([edit('/w/a.ts')]);
+    const listeners = new Set<() => void>();
+    let reject: (e: unknown) => void = () => undefined;
+    const replica: ChangesReplica = {
+      session: () => view,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      turnDiff: () => new Promise((_resolve, no) => (reject = no)),
+    };
+    const model = new ChangesModel({ sessionId: SID, turnId: 't1', replica });
+    model.start();
+    reject(new RequestError('not_a_repository', 'no git'));
+    await settle();
+    expect(model.state).toMatchObject({ state: 'ready', note: NOT_A_REPOSITORY_TEXT });
+    expect(model.summary).toBe('1 file changed');
+    expect(model.file?.path).toBe('a.ts'); // one file opens right away
+    // Another edit arrives in the same turn (same status): merged in without asking git again.
+    view.items.f9 = { itemId: 'f9', type: 'fileChange', turnId: 't1', status: 'completed', changes: [edit('/tmp/y.md')] } as never;
+    view.turns[0]!.items.push('f9');
+    listeners.forEach((fn) => fn());
+    expect(model.summary).toBe('2 files changed');
+    model.dispose();
   });
 });

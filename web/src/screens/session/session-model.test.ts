@@ -810,6 +810,31 @@ describe('SessionModel: "N files changed" per finished turn (turn/diff, spec 7)'
     expect(model.changesTurnId).toBeUndefined();
   });
 
+  it("counts the agent's edits git did not list: a folder outside git, a file outside the folder", async () => {
+    const edit = (itemId: string, turnId: string, paths: string[]) => ({
+      itemId,
+      type: 'fileChange',
+      turnId,
+      status: 'completed',
+      changes: paths.map((path) => ({ path, kind: 'modify', diff: '@@ -1 +1 @@\n-a\n+b\n' })),
+    });
+    const turns = [
+      turn('t1', { status: 'completed', items: [edit('f1', 't1', ['/work/a.ts', '/tmp/handoff.md'])] }),
+      turn('t2', { status: 'completed', items: [edit('f2', 't2', ['/work/b.ts'])] }),
+      turn('t3', { status: 'completed' }),
+    ];
+    const { client, model } = await setup({ turns, agents: FULL });
+    diffCalls(client)[0]!.resolve({ files: [{ path: 'a.ts', kind: 'modify', diff: '' }] });
+    diffCalls(client)[1]!.reject(rpcError('not_a_repository'));
+    diffCalls(client)[2]!.reject(rpcError('not_a_repository'));
+    await settle();
+    expect(model.turns.map((t) => [t.turnId, t.changes ?? null])).toEqual([
+      ['t1', '2 files changed'],
+      ['t2', '1 file changed'],
+      ['t3', null],
+    ]);
+  });
+
   it('an agent without diffs asks nothing and opens no Changes sheet', async () => {
     const { client, model } = await setup({ turns: [turn('t1', { status: 'completed' })], agents: PI_LIKE });
     expect(diffCalls(client)).toHaveLength(0);

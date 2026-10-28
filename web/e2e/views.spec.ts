@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 
+import { sheetsSettled } from './sheets';
 import { expect, test, type APIRequestContext, type Page } from './worker-host';
 
 // The review views against the fake host (test/e2e-server.ts): the item detail sheet opened from the turn
@@ -114,10 +115,19 @@ test('the Changes view lists the files with kind words; a tapped file shows its 
   await expect(fileChange).toContainText('Edited 4 files');
   await fileChange.getByRole('button', { name: 'Edited 4 files' }).click();
   await expect(fileChange).toContainText('src/new.ts');
+  // The file change row's own sheet: every file of the item from its own diff, one section each.
   await fileChange.getByRole('button', { name: 'Show changes' }).click();
-  const sheet = page.getByRole('dialog', { name: 'File change' });
+  const own = page.getByRole('dialog', { name: 'File change' });
+  await expect(own.locator('section.diff-file-view')).toHaveCount(4);
+  await expect(own.getByRole('region', { name: 'Diff of src/app.ts' }).locator('[data-line="add"] .code')).toHaveText('const a = 2;');
+  await own.getByRole('button', { name: 'Close' }).click();
+  await expect(own).toHaveCount(0);
+
+  // The turn's "4 files changed" line opens the list.
+  await conversation.getByRole('button', { name: '4 files changed', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Changes' });
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText('4 files changed');
+  await expect(sheet.locator('.detail-subtitle')).toHaveText('4 files changed');
   const files = sheet.getByRole('list', { name: 'Changed files' }).locator(':scope > li > button');
   await expect(files).toHaveCount(4);
   await expect(files.nth(0)).toHaveAttribute('data-file-kind', 'added');
@@ -246,7 +256,7 @@ test('a finished turn says "N files changed" and opens its Changes; long lines s
   await page.screenshot({ path: `${SHOTS}/6-file-diff-dark.png` });
 });
 
-test('a session folder outside git: the Changes view says it needs a repository', async ({ page, request }) => {
+test('a session folder outside git without agent edits: the Changes view says it is not a repository', async ({ page, request }) => {
   await mkdir(SHOTS, { recursive: true });
   await request.post('/test/turn-diff', {
     data: { sessionId: 'ses_fake_1', error: { code: 'not_a_repository', message: 'Changes need a git repository in the session folder.', data: { cwd: '/w' } } },
@@ -258,7 +268,7 @@ test('a session folder outside git: the Changes view says it needs a repository'
   await openCommandSheet(page);
   const sheet = page.getByRole('dialog', { name: 'Command' });
   await sheet.getByRole('tab', { name: 'Changes' }).click();
-  await expect(sheet).toContainText('Changes need a git repository in the session folder.');
+  await expect(sheet).toContainText("This folder is not a git repository, so only the agent's own edits can be shown.");
   await page.screenshot({ path: `${SHOTS}/7-not-a-repository.png` });
 });
 
@@ -274,4 +284,114 @@ test('an agent without diffs says so in the command sheet', async ({ page, reque
   await expect(command.getByLabel('Command output')).toHaveText('Created hello.txt');
   await command.getByRole('tab', { name: 'Changes' }).click();
   await expect(command).toContainText('This agent does not provide diffs.');
+});
+
+// The agent's own edits: a folder outside git, and a file outside the session folder. The
+// screenshots go to /tmp/changes-shots/.
+const AGENT_SHOTS = '/tmp/changes-shots';
+const FOLDER = '/Users/me/Desktop/phone-test';
+const NOTES_EDIT = {
+  path: `${FOLDER}/notes.md`,
+  kind: 'modify',
+  diff: '@@ -4,7 +4,7 @@\n ## Plan\n \n - read the spec\n-- write the code\n+- write the code, with tests\n - ship it\n \n ## Done',
+};
+const HANDOFF_EDIT = { path: '/tmp/nano-remote-handoff.md', kind: 'add', diff: '@@ -0,0 +1,3 @@\n+# Handoff\n+\n+The changes view shows the agent edits.' };
+
+/** A finished turn in ses_fake_3 with one file change item per edit, then a closing message. */
+async function editTurn(page: Page, request: APIRequestContext, edits: Record<string, unknown>[]): Promise<void> {
+  await openSession(page, request, 'ses_fake_3');
+  await expect(page.getByRole('heading', { name: 'Sketch the README' })).toBeVisible();
+  await request.post('/test/items', {
+    data: { sessionId: 'ses_fake_3', items: [...edits.map((change) => ({ type: 'fileChange', changes: [change] })), { type: 'agentMessage', text: 'Done.' }] },
+  });
+  await page.getByRole('region', { name: 'Conversation' }).getByRole('button', { name: /previous message/ }).click();
+}
+
+test("a folder outside git: a file change row shows the agent's own diff, and the turn's Changes lists its edits", async ({ page, request }) => {
+  await mkdir(AGENT_SHOTS, { recursive: true });
+  await request.post('/test/turn-diff', {
+    data: { sessionId: 'ses_fake_3', error: { code: 'not_a_repository', message: 'Changes need a git repository in the session folder.', data: { cwd: FOLDER } } },
+  });
+  await editTurn(page, request, [NOTES_EDIT]);
+  const conversation = page.getByRole('region', { name: 'Conversation' });
+  const line = conversation.getByRole('button', { name: '1 file changed', exact: true });
+  await expect(line).toBeVisible(); // counted from the agent's edit, though git has nothing
+
+  // The row's sheet: the edit's own diff with its line numbers.
+  const fileChange = conversation.locator('[data-item="fileChange"]');
+  await fileChange.getByRole('button').first().click();
+  await fileChange.getByRole('button', { name: 'Show changes' }).click();
+  const own = page.getByRole('dialog', { name: 'File change' });
+  const body = own.getByRole('region', { name: `Diff of ${FOLDER}/notes.md` });
+  await expect(body).toBeVisible();
+  await expect(own).toContainText('Modified');
+  await expect(own).toContainText('+1 −1');
+  await expect(own).not.toContainText('git repository');
+  const numbers = await body.locator('tr').evaluateAll((rows) =>
+    rows.map((row) => [row.getAttribute('data-line'), row.querySelector('.ln .old')!.textContent, row.querySelector('.ln .new')!.textContent]),
+  );
+  expect(numbers.slice(3, 6)).toEqual([
+    ['context', '6', '6'],
+    ['remove', '7', ''],
+    ['add', '', '7'],
+  ]);
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/1-item-diff-no-git-light.png` });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/2-item-diff-no-git-dark.png` });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await own.getByRole('button', { name: 'Close' }).click();
+
+  // The turn's Changes: the edit, marked as the agent's, with the note saying why.
+  await line.click();
+  const sheet = page.getByRole('dialog', { name: 'Changes' });
+  await expect(sheet.getByRole('region', { name: 'Diff of notes.md' })).toBeVisible(); // one file opens right away
+  await expect(sheet).toContainText("From the agent's edits, not git");
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/3-turn-file-no-git-light.png` });
+  // The list says why git has nothing.
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
+  await expect(sheet).toContainText("This folder is not a git repository, so only the agent's own edits can be shown.");
+  await expect(sheet.getByRole('list', { name: 'Changed files' })).toContainText("From the agent's edits, not git");
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/4-turn-changes-no-git-light.png` });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/5-turn-changes-no-git-dark.png` });
+});
+
+test("a git folder keeps git's diff; a file outside the folder is added from the agent's edits", async ({ page, request }) => {
+  await mkdir(AGENT_SHOTS, { recursive: true });
+  const git = {
+    path: 'notes.md',
+    kind: 'modify',
+    diff: 'diff --git a/notes.md b/notes.md\nindex 1a2b3c4..5d6e7f8 100644\n--- a/notes.md\n+++ b/notes.md\n@@ -7 +7 @@\n-- write the code\n+- write the code, with tests (git)\n',
+  };
+  await request.post('/test/turn-diff', { data: { sessionId: 'ses_fake_3', result: { files: [git] } } });
+  await editTurn(page, request, [NOTES_EDIT, HANDOFF_EDIT]);
+  const conversation = page.getByRole('region', { name: 'Conversation' });
+  await conversation.getByRole('button', { name: '2 files changed', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Changes' });
+  const files = sheet.getByRole('list', { name: 'Changed files' }).locator(':scope > li > button');
+  await expect(files).toHaveCount(2);
+  await expect(files.nth(0)).toContainText('notes.md');
+  await expect(files.nth(0)).not.toContainText('From the agent');
+  await expect(files.nth(1)).toContainText('/tmp/nano-remote-handoff.md');
+  await expect(files.nth(1)).toContainText("From the agent's edits, not git");
+  await expect(files.nth(1)).toContainText('Added');
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/6-turn-changes-outside-folder-light.png` });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await sheetsSettled(page);
+  await page.screenshot({ path: `${AGENT_SHOTS}/7-turn-changes-outside-folder-dark.png` });
+  await page.emulateMedia({ colorScheme: 'light' });
+
+  await files.nth(0).click();
+  await expect(sheet.getByRole('region', { name: 'Diff of notes.md' }).locator('[data-line="add"] .code')).toHaveText('- write the code, with tests (git)');
+  await sheet.getByRole('button', { name: 'All files', exact: true }).click();
+  await files.nth(1).click();
+  const outside = sheet.getByRole('region', { name: 'Diff of /tmp/nano-remote-handoff.md' });
+  await expect(outside.locator('[data-line="add"]')).toHaveCount(3);
+  await expect(sheet.locator('.diff-file-view')).toContainText("From the agent's edits, not git");
 });

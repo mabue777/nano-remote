@@ -1,11 +1,11 @@
 // The item detail sheet, opened from any item in the turn list. It hosts the output view (command items)
-// and the diff view of the item's turn, as tabs. State lives in ItemDetailModel.
+// and the diff view of the item's turn, as tabs; a file change item shows its own diff. State lives in ItemDetailModel.
 import { useEffect, useMemo } from 'preact/hooks';
 
 import { Sheet, SheetHeader, useCloseOnEscape } from '../../../ui/Sheet';
 import { useModel } from '../../use-model';
 import { ItemDetailModel, type DetailReplica, type DetailTab } from './detail-model';
-import { ChangesView } from './DiffView';
+import { AgentChanges, ChangesView } from './DiffView';
 import { OutputView } from './OutputView';
 
 const TAB_LABEL: Record<DetailTab, string> = { output: 'Output', changes: 'Changes' };
@@ -62,7 +62,13 @@ export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onCl
         </div>
       )}
       <div id="detail-panel" role={tabs.length > 1 ? 'tabpanel' : undefined} aria-labelledby={tabs.length > 1 ? `detail-tab-${model.tab}` : undefined}>
-        {model.tab === 'output' ? <OutputView model={model} /> : <ChangesView model={model.changes} />}
+        {model.tab === 'output' ? (
+          <OutputView model={model} />
+        ) : model.ownChanges.length > 0 ? (
+          <AgentChanges files={model.ownChanges} />
+        ) : (
+          <ChangesView model={model.changes} />
+        )}
       </div>
     </Sheet>
   );

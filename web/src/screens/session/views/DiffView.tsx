@@ -1,9 +1,11 @@
 // The Changes view of a turn (turn/diff): the list of changed files with grey kind words and +/- counts, and
 // one file's diff at a time. The diff keeps code unwrapped: old and new line numbers stay pinned at the
-// left while long lines scroll sideways. State lives in ChangesModel.
+// left while long lines scroll sideways. State lives in ChangesModel. A file shown from the agent's own edits
+// (not git) says so; lines the agent sent without line numbers get a footnote. AgentChanges shows the
+// changes of one fileChange item, every file in its own section.
 import { Icon } from '../../../ui/Icon';
 import type { ChangedFile, ChangesModel } from './changes-model';
-import { NOT_A_REPOSITORY_TEXT, NOT_SUPPORTED_TEXT } from './changes-model';
+import { FROM_AGENT_TEXT, NOT_A_REPOSITORY_TEXT, NOT_SUPPORTED_TEXT, UNNUMBERED_TEXT } from './changes-model';
 
 /** `summary`: show "N files changed" above the list (off where the sheet's header already says it). */
 export function ChangesView({ model, summary = true }: { model: ChangesModel; summary?: boolean }) {
@@ -43,10 +45,13 @@ export function ChangesView({ model, summary = true }: { model: ChangesModel; su
                   <li key={f.path}>
                     <button type="button" class="diff-file-row" data-file-kind={f.kind} onClick={() => model.open(f.path)}>
                       <KindBadge file={f} />
-                      <code class="diff-path">
-                        {f.renamedFrom !== undefined && <span class="muted">{f.renamedFrom} → </span>}
-                        {f.path}
-                      </code>
+                      <span class="diff-row-main">
+                        <code class="diff-path">
+                          {f.renamedFrom !== undefined && <span class="muted">{f.renamedFrom} → </span>}
+                          {f.path}
+                        </code>
+                        {f.fromAgent === true && <span class="diff-source small muted">{FROM_AGENT_TEXT}</span>}
+                      </span>
                       <Counts file={f} />
                       <Icon name="chevron-right" size={16} class="chevron" />
                     </button>
@@ -81,6 +86,51 @@ function Counts({ file }: { file: ChangedFile }) {
 
 const SIGN: Record<string, string> = { add: '+', remove: '−' };
 
+function FileHead({ file }: { file: ChangedFile }) {
+  return (
+    <div class="diff-file-head">
+      <KindBadge file={file} />
+      <code class="diff-path">
+        {file.renamedFrom !== undefined && <span class="muted">{file.renamedFrom} → </span>}
+        {file.path}
+      </code>
+      <Counts file={file} />
+    </div>
+  );
+}
+
+/** One file's lines: the table, or why there is none, with the notes that apply. */
+function FileBody({ file }: { file: ChangedFile }) {
+  if (file.binary) return <p class="muted small">Binary file; no text diff.</p>;
+  if (file.lines.length === 0) {
+    return <p class="muted small">{file.truncated ? 'Not shown: this turn changed too much text to show it all.' : 'No line changes.'}</p>;
+  }
+  return (
+    <>
+      {file.truncated && <p class="changes-note small">Only the first part of this file's changes is shown.</p>}
+      <div class="diff-scroll" role="region" aria-label={`Diff of ${file.path}`} tabIndex={0}>
+        <table class="diff-table">
+          <tbody>
+            {file.lines.map((line, i) => (
+              <tr key={i} class={`diff-line ${line.kind}`} data-line={line.kind}>
+                <td class="ln" aria-hidden="true">
+                  <span class="old">{line.oldLine ?? ''}</span>
+                  <span class="new">{line.newLine ?? ''}</span>
+                </td>
+                <td class="sign" aria-hidden="true">
+                  {SIGN[line.kind] ?? ''}
+                </td>
+                <td class="code">{line.text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {file.unnumbered === true && <p class="muted small diff-footnote">{UNNUMBERED_TEXT}</p>}
+    </>
+  );
+}
+
 function FileDiff({ file, onBack }: { file: ChangedFile; onBack: () => void }) {
   return (
     <div class="diff-file-view" data-file-kind={file.kind}>
@@ -88,41 +138,23 @@ function FileDiff({ file, onBack }: { file: ChangedFile; onBack: () => void }) {
         <Icon name="back" size={18} />
         All files
       </button>
-      <div class="diff-file-head">
-        <KindBadge file={file} />
-        <code class="diff-path">
-          {file.renamedFrom !== undefined && <span class="muted">{file.renamedFrom} → </span>}
-          {file.path}
-        </code>
-        <Counts file={file} />
-      </div>
-      {file.binary ? (
-        <p class="muted small">Binary file; no text diff.</p>
-      ) : file.lines.length === 0 ? (
-        <p class="muted small">{file.truncated ? 'Not shown: this turn changed too much text to show it all.' : 'No line changes.'}</p>
-      ) : (
-        <>
-          {file.truncated && <p class="changes-note small">Only the first part of this file's changes is shown.</p>}
-          <div class="diff-scroll" role="region" aria-label={`Diff of ${file.path}`} tabIndex={0}>
-            <table class="diff-table">
-              <tbody>
-                {file.lines.map((line, i) => (
-                  <tr key={i} class={`diff-line ${line.kind}`} data-line={line.kind}>
-                    <td class="ln" aria-hidden="true">
-                      <span class="old">{line.oldLine ?? ''}</span>
-                      <span class="new">{line.newLine ?? ''}</span>
-                    </td>
-                    <td class="sign" aria-hidden="true">
-                      {SIGN[line.kind] ?? ''}
-                    </td>
-                    <td class="code">{line.text}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <FileHead file={file} />
+      {file.fromAgent === true && <p class="muted small diff-source">{FROM_AGENT_TEXT}</p>}
+      <FileBody file={file} />
+    </div>
+  );
+}
+
+/** The changes of one fileChange item, from its own diff: one section per file, path as the title. */
+export function AgentChanges({ files }: { files: readonly ChangedFile[] }) {
+  return (
+    <div class="agent-changes">
+      {files.map((file, i) => (
+        <section key={i} class="diff-file-view" data-file-kind={file.kind} aria-label={file.path}>
+          <FileHead file={file} />
+          <FileBody file={file} />
+        </section>
+      ))}
     </div>
   );
 }

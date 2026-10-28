@@ -534,8 +534,15 @@ git, not from the adapter or its `fileChange` items (additive within v1):
 - **While a turn runs**, the diff compares the start tree with the folder as it is now; it is final once
   the turn has ended (clients fetch it again on `turn/completed`).
 - **Not a repository.** When the session folder is not inside a git work tree (or git is not installed),
-  `turn/diff` answers `not_a_repository` and the client says "Changes need a git repository in the session
-  folder". Turns that ran outside a repository have no snapshots.
+  `turn/diff` answers `not_a_repository`. Turns that ran outside a repository have no snapshots. This stays
+  an error, not an empty result with a `note`: an empty `files` would tell an older client "no file
+  changes", which is wrong for a turn that edited files.
+- **The agent's own edits.** git does not see a folder outside git, nor a file outside the session folder
+  (`--relative`). Every `fileChange` item carries the adapter's own `diff` of the edit, so a client shows
+  those for what git does not list: the item's own diff when the item is opened, and in the turn's Changes
+  the files of the turn's `fileChange` items that `turn/diff` did not list (all of them on
+  `not_a_repository`), marked as the agent's edits; files git listed keep git's diff. Only when there is
+  neither does the client say the folder is not a git repository.
 - The Codex engine's own `turn/diff/updated` notification is not used.
 - Snapshot trees are not referenced by any ref, so `git gc` may prune them after its grace period (two weeks
   by default); the diff of such an old turn then answers `internal`.
@@ -642,7 +649,7 @@ Data-URL image parts keep working as before and are never stored.
 | `cursor_expired` | Journal no longer holds the cursor | re-open in snapshot mode |
 | `agent_unavailable` | adapter down (`data.agentId`, `data.reason`) | show agent state |
 | `not_supported` | adapter lacks the operation (steer, diff, a `session/settings/update` key) | hide the control |
-| `not_a_repository` | `turn/diff`: the session folder is not inside a git work tree (`data.cwd`; additive within v1) | say "Changes need a git repository in the session folder" |
+| `not_a_repository` | `turn/diff`: the session folder is not inside a git work tree (`data.cwd`; additive within v1) | show the turn's `fileChange` diffs (section 7), else say the folder is not a git repository |
 | `rate_limited` | too many requests (`data.retryAfterMs`) | back off |
 | `provider_unavailable` | a relayed provider failed (`data.reason`, `data.status?`, `data.retryAfterMs?`; section 15) | show the reason's sentence |
 | `internal` | host bug | retry once, then report |

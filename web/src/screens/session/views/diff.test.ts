@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FILE_KIND_LABEL, fileKind, parseUnifiedDiff } from './diff';
+import { FILE_KIND_LABEL, fileKind, parseAgentDiff, parseUnifiedDiff } from './diff';
 
 const GIT_MODIFY = [
   'diff --git a/src/app.ts b/src/app.ts',
@@ -102,5 +102,53 @@ describe('fileKind', () => {
     expect(fileKind('modify', {})).toBe('modified');
     expect(fileKind('modify', { renamedFrom: 'old.ts' })).toBe('renamed');
     expect(FILE_KIND_LABEL.renamed).toBe('Renamed');
+  });
+});
+
+describe("tolerance for an adapter's diff", () => {
+  const rows = (diff: ReturnType<typeof parseUnifiedDiff>) => diff.lines.map((l) => [l.kind, l.oldLine ?? null, l.newLine ?? null, l.text]);
+
+  it('reads hunks without line numbers as plain removed and added lines, marked unnumbered', () => {
+    const parsed = parseUnifiedDiff('--- a/x\n+++ b/x\n@@\n keep\n-old\n+new\n@@ function tail\n+more\n');
+    expect(parsed.unnumbered).toBe(true);
+    expect(parsed.added).toBe(2);
+    expect(parsed.removed).toBe(1);
+    expect(rows(parsed)).toEqual([
+      ['context', null, null, 'keep'],
+      ['remove', null, null, 'old'],
+      ['add', null, null, 'new'],
+      ['hunk', null, null, '@@ function tail'],
+      ['add', null, null, 'more'],
+    ]);
+    // A numbered hunk after a bare one counts again.
+    expect(rows(parseUnifiedDiff('@@\n-a\n@@ -7 +7 @@\n-b\n+c\n')).slice(-2)).toEqual([
+      ['remove', 7, null, 'b'],
+      ['add', null, 7, 'c'],
+    ]);
+    expect(parseUnifiedDiff('@@ -1 +1 @@\n-a\n+b\n').unnumbered).toBeUndefined();
+  });
+
+  it("reads a new or deleted file's plain content as added or removed lines numbered from 1", () => {
+    const added = parseAgentDiff('# Title\n---\ntext\n', 'add');
+    expect(added.unnumbered).toBeUndefined();
+    expect(rows(added)).toEqual([
+      ['add', null, 1, '# Title'],
+      ['add', null, 2, '---'],
+      ['add', null, 3, 'text'],
+    ]);
+    expect(rows(parseAgentDiff('bye', 'delete'))).toEqual([['remove', 1, null, 'bye']]);
+    expect(parseAgentDiff('', 'add')).toMatchObject({ lines: [], added: 0, removed: 0 });
+  });
+
+  it('reads plain +/- lines of a changed file without line numbers, and patches as patches', () => {
+    const plain = parseAgentDiff('-a\n+b\n c\n', 'modify');
+    expect(plain.unnumbered).toBe(true);
+    expect(rows(plain)).toEqual([
+      ['remove', null, null, 'a'],
+      ['add', null, null, 'b'],
+      ['context', null, null, 'c'],
+    ]);
+    expect(parseAgentDiff(GIT_MODIFY, 'modify')).toEqual(parseUnifiedDiff(GIT_MODIFY));
+    expect(parseAgentDiff('--- a/x\n+++ b/x\n', 'add').lines).toEqual([]);
   });
 });

@@ -6,14 +6,17 @@
 // - Changes (every item): the Changes view of the item's turn (ChangesModel): the files the turn changed,
 //   then one file's diff at a time.
 //
+// - A file change item's Changes show its own diff (the adapter's `changes[].diff`), one section per file,
+//   whether or not git sees the file. Only an item without any diff text falls back to its turn's Changes.
+//
 // Command items open on Output, every other item on Changes. When the agent's capabilities say it provides
-// no diffs (spec 4), there is no Changes view: a command shows only its output, and other items have no
-// detail sheet (the session view does not offer one).
+// no diffs (spec 4), there is no turn Changes view: a command shows only its output, a file change item
+// only its own diff, and other items have no detail sheet (the session view does not offer one).
 import type { Item } from '../../../replica/types';
 import { errorText, Model } from '../../model';
 import { commandSummary, oneLine, unwrapShell } from '../session-model';
 import { cleanOutput } from './ansi';
-import { ChangesModel, type ChangesReplica } from './changes-model';
+import { agentFile, ChangesModel, type ChangedFile, type ChangesReplica } from './changes-model';
 
 /** What the detail sheet needs from the Replica; Replica fits. */
 export type DetailReplica = ChangesReplica;
@@ -70,14 +73,14 @@ export class ItemDetailModel extends Model {
     this.replica = options.replica;
     this.clipboard = options.clipboard;
     this.diffs = options.diffs ?? true;
-    this.tab = this.item?.type === 'command' || !this.diffs ? 'output' : 'changes';
+    this.tab = this.item?.type === 'command' || (!this.diffs && this.ownChanges.length === 0) ? 'output' : 'changes';
     this.changes = new ChangesModel({ sessionId: this.sessionId, turnId: this.item?.turnId, replica: this.replica });
     this.unsubscribe = [this.replica.subscribe(() => this.changed()), this.changes.subscribe(() => this.changed())];
   }
 
   /** Fetches the diff when the sheet opens on Changes. */
   start(): void {
-    if (this.tab === 'changes') this.changes.start();
+    if (this.tab === 'changes' && this.ownChanges.length === 0) this.changes.start();
   }
 
   dispose(): void {
@@ -123,8 +126,18 @@ export class ItemDetailModel extends Model {
     }
   }
 
+  /**
+   * A file change item's own changes, one per file, as the agent sent them; empty when the item is not a
+   * file change or none of its changes has diff text (the turn's Changes are shown then).
+   */
+  get ownChanges(): ChangedFile[] {
+    const item = this.item;
+    if (item?.type !== 'fileChange' || !item.changes.some((c) => c.diff.trim() !== '')) return [];
+    return item.changes.map((c) => agentFile(c.path, [c]));
+  }
+
   get tabs(): DetailTab[] {
-    const changes: DetailTab[] = this.diffs ? ['changes'] : [];
+    const changes: DetailTab[] = this.diffs || this.ownChanges.length > 0 ? ['changes'] : [];
     return this.item?.type === 'command' ? ['output', ...changes] : changes;
   }
 
@@ -150,7 +163,7 @@ export class ItemDetailModel extends Model {
     if (tab === this.tab || !this.tabs.includes(tab)) return;
     this.tab = tab;
     this.changed();
-    if (tab === 'changes') this.changes.start();
+    if (tab === 'changes' && this.ownChanges.length === 0) this.changes.start();
   }
 
   /** The output view reports whether it is scrolled to the end. */

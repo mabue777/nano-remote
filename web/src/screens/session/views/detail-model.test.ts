@@ -169,9 +169,17 @@ describe('ItemDetailModel: the Changes tab', () => {
     model.start();
     expect(model.changes.turnId).toBe('t1');
     expect(model.changes.state).toEqual({ state: 'loading' });
+    // f1 has no diff text of its own, so the sheet shows the turn's Changes: git's a.txt, then b.txt that
+    // only the agent's edits name.
+    expect(model.ownChanges).toEqual([]);
     calls[0]!.resolve({ files: [{ path: 'a.txt', kind: 'add', diff: '@@ -0,0 +1 @@\n+a\n' }] });
     await settle();
-    expect(model.changes.summary).toBe('1 file changed');
+    expect(model.changes.summary).toBe('2 files changed');
+    const state = model.changes.state as Extract<typeof model.changes.state, { state: 'ready' }>;
+    expect(state.files.map((f) => [f.path, f.fromAgent ?? false])).toEqual([
+      ['a.txt', false],
+      ['b.txt', true],
+    ]);
     expect(seen).toHaveBeenCalled();
   });
 
@@ -186,7 +194,9 @@ describe('ItemDetailModel: the Changes tab', () => {
     model.selectTab('output');
     model.selectTab('changes');
     expect(calls).toHaveLength(1);
-    expect(model.changes.state).toEqual({ state: 'ready', files: [], omittedFiles: 0, truncated: false });
+    // git listed nothing; the turn's file change item still names its two files.
+    expect(model.changes.state).toMatchObject({ state: 'ready', omittedFiles: 0, truncated: false });
+    expect(model.changes.summary).toBe('2 files changed');
   });
 
   it('ignores answers after dispose and stops listening', async () => {
@@ -197,6 +207,42 @@ describe('ItemDetailModel: the Changes tab', () => {
     calls[0]!.resolve({ files: [] });
     await settle();
     expect(model.changes.state).toEqual({ state: 'loading' });
+  });
+});
+
+describe("ItemDetailModel: a file change item's own diff", () => {
+  const EDIT = { path: '/tmp/notes.md', kind: 'modify', diff: '@@ -3,2 +3,2 @@\n keep\n-old\n+new\n' };
+  const WRITE = { path: '/w/new.ts', kind: 'add', diff: '@@ -0,0 +1,2 @@\n+a\n+b\n' };
+
+  it('shows every file of the item from its own diff, one section each, and never asks turn/diff', () => {
+    const { model, view, calls } = setup('f1');
+    view.items.f1 = item('f1', 'fileChange', { changes: [EDIT, WRITE] });
+    model.start();
+    expect(model.tab).toBe('changes');
+    expect(model.tabs).toEqual(['changes']);
+    expect(calls).toHaveLength(0);
+    expect(model.ownChanges.map((f) => [f.path, f.label, f.added, f.removed, f.fromAgent])).toEqual([
+      ['/tmp/notes.md', 'Modified', 1, 1, true],
+      ['/w/new.ts', 'Added', 2, 0, true],
+    ]);
+    expect(model.ownChanges[0]!.lines.map((l) => [l.kind, l.oldLine ?? null, l.newLine ?? null])).toEqual([
+      ['hunk', null, null],
+      ['context', 3, 3],
+      ['remove', 4, null],
+      ['add', null, 4],
+    ]);
+  });
+
+  it('keeps its Changes even when the agent provides no turn diffs', () => {
+    const { model, view, calls } = setup('f1', undefined, false);
+    view.items.f1 = item('f1', 'fileChange', { changes: [EDIT] });
+    const fresh = new ItemDetailModel({ sessionId: SID, itemId: 'f1', replica: (model as any).replica, diffs: false });
+    fresh.start();
+    expect(fresh.tab).toBe('changes');
+    expect(fresh.tabs).toEqual(['changes']);
+    expect(calls).toHaveLength(0);
+    // Other items have no ownChanges.
+    expect(setup('c1').model.ownChanges).toEqual([]);
   });
 });
 
