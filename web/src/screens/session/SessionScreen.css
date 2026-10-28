@@ -271,8 +271,24 @@ button.jump-pill:active {
   width: 72px;
   height: 72px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--fill);
+}
+
+/* A tray photo is a button that opens the image viewer (ui/ImageViewer.tsx). */
+.tray-open,
+.thumbs .thumb {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tray-open:active img,
+.thumbs .thumb:active img {
+  opacity: 0.8;
 }
 
 .tray-thumb {

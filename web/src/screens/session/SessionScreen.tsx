@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { Replica } from '../../replica/replica';
 import { Composer } from '../../ui/Composer';
 import { Icon } from '../../ui/Icon';
+import { imageViewer, preloadImageViewer, type ViewerImage } from '../../ui/image-viewer-launch';
 import { NavHeader } from '../../ui/NavHeader';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
@@ -513,18 +514,26 @@ function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
   );
 }
 
-/** A sent message's images (thumbnails that open the full image) and files (chips that download them). */
+/** A sent message's images (thumbnails that open the image viewer) and files (chips that download them). */
 function SentAttachments({ images, files }: { images: AttachmentView[]; files: AttachmentView[] }) {
+  const list = useRef<HTMLUListElement>(null);
+  const hasImages = images.length > 0;
+  // The viewer's chunk loads while the thumbnails are on screen, so the first tap does not wait for it.
+  useEffect(() => {
+    if (hasImages) preloadImageViewer();
+  }, [hasImages]);
   if (images.length === 0 && files.length === 0) return null;
+  // No name for Share: a sent image's part carries only its URL, so the viewer names the file from its type.
+  const viewerImages = images.map((image, index) => ({ src: image.url, alt: `Attached image ${index + 1}` }));
   return (
     <div class="sent-attachments">
       {images.length > 0 && (
-        <ul class="thumbs" aria-label="Attached images">
+        <ul ref={list} class="thumbs" aria-label="Attached images">
           {images.map((image, index) => (
             <li key={`${image.url}-${index}`}>
-              <a href={image.url} target="_blank" rel="noopener">
+              <button type="button" class="thumb" onClick={() => openViewer(list.current, 'img', viewerImages, index)}>
                 <img src={image.url} alt={`Attached image ${index + 1}`} loading="lazy" decoding="async" />
-              </a>
+              </button>
             </li>
           ))}
         </ul>
@@ -549,9 +558,17 @@ function SentAttachments({ images, files }: { images: AttachmentView[]; files: A
 
 /** The picked photos and files above the message field: thumbnail or name, progress, error, remove. */
 function AttachTray({ model }: { model: SessionModel }) {
+  const list = useRef<HTMLUListElement>(null);
   const entries = model.attachments?.entries ?? [];
   const notice = model.attachments?.notice;
+  const photos = entries.filter((entry) => entry.kind === 'image' && entry.previewUrl !== undefined);
+  const hasPhotos = photos.length > 0;
+  useEffect(() => {
+    if (hasPhotos) preloadImageViewer();
+  }, [hasPhotos]);
   if (entries.length === 0 && notice === undefined) return null;
+  const viewerImages = photos.map((entry) => ({ src: entry.previewUrl!, alt: entry.name, name: entry.name }));
+  const open = (entryId: string) => openViewer(list.current, 'img.tray-thumb', viewerImages, photos.findIndex((entry) => entry.id === entryId));
   return (
     <div class="attach-tray">
       {notice !== undefined && (
@@ -560,9 +577,9 @@ function AttachTray({ model }: { model: SessionModel }) {
         </p>
       )}
       {entries.length > 0 && (
-        <ul class="tray" aria-label="Attachments to send">
+        <ul ref={list} class="tray" aria-label="Attachments to send">
           {entries.map((entry) => (
-            <TrayEntry key={entry.id} entry={entry} model={model} />
+            <TrayEntry key={entry.id} entry={entry} model={model} onOpen={() => open(entry.id)} />
           ))}
         </ul>
       )}
@@ -570,12 +587,19 @@ function AttachTray({ model }: { model: SessionModel }) {
   );
 }
 
-function TrayEntry({ entry, model }: { entry: AttachmentEntry; model: SessionModel }) {
+/** Opens the image viewer at `index`; the thumbnails are the `selector` images in `list`, in the same order. */
+function openViewer(list: HTMLElement | null, selector: string, images: ViewerImage[], index: number): void {
+  imageViewer.open({ images, index, origin: (i) => (list?.querySelectorAll<HTMLImageElement>(selector)[i] ?? null) });
+}
+
+function TrayEntry({ entry, model, onOpen }: { entry: AttachmentEntry; model: SessionModel; onOpen: () => void }) {
   const label = entry.state === 'preparing' ? 'Preparing…' : entry.state === 'uploading' ? `Uploading ${Math.round(entry.progress * 100)}%` : entry.state === 'ready' ? 'Ready' : 'Failed';
   return (
     <li class={`tray-entry ${entry.kind} ${entry.state}`} data-state={entry.state} aria-label={`${entry.name}: ${label}`}>
       {entry.kind === 'image' && entry.previewUrl !== undefined ? (
-        <img class="tray-thumb" src={entry.previewUrl} alt={entry.name} />
+        <button type="button" class="tray-open" onClick={onOpen}>
+          <img class="tray-thumb" src={entry.previewUrl} alt={entry.name} />
+        </button>
       ) : (
         <span class="tray-file">
           <span class="file-icon" aria-hidden="true">

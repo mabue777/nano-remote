@@ -1,0 +1,197 @@
+/* The image viewer (ui/ImageViewer.tsx), in its own lazy chunk. The layer is black in light and dark alike,
+   like Photos, so its colours are fixed here on purpose instead of coming from the scheme's tokens; spacing,
+   type, radii and motion are the app's tokens. touch-action: none hands every finger to the viewer's own
+   pinch, pan and swipes (motion/viewer-motion.ts); the rest of the app keeps page zoom off (ui/no-zoom.ts). */
+
+.iv {
+  --iv-ink: #ffffff;
+  --iv-ink-muted: rgb(255 255 255 / 0.72);
+  --iv-glass: rgb(30 30 30 / 0.55);
+  --iv-glass-pressed: rgb(60 60 60 / 0.7);
+  position: fixed;
+  inset: 0;
+  z-index: 30; /* above sheets (10), the composer and the update prompt (20) */
+  color: var(--iv-ink);
+  touch-action: none;
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iv-backdrop {
+  position: absolute;
+  inset: 0;
+  background: #000000;
+}
+
+.iv-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.iv-track {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.iv-slide {
+  position: absolute;
+  top: 0;
+  transform-origin: 50% 50%;
+}
+
+.iv-image {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Touch and hold gives Safari's own menu with Save to Photos (the Share fallback). */
+  -webkit-touch-callout: default;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+/* Not decoded yet: no box to show, so nothing shows until it has one (no jump when it arrives). */
+.iv-image[data-loaded='false'] {
+  opacity: 0;
+}
+
+.iv-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--iv-ink-muted);
+}
+
+.iv-spin {
+  animation: iv-spin 0.9s linear infinite;
+}
+
+@keyframes iv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.iv-failed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: 0 var(--page-x);
+  text-align: center;
+  color: var(--iv-ink-muted);
+}
+
+.iv-failed p {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--iv-ink);
+}
+
+.iv-retry {
+  min-height: var(--touch);
+  padding: 0 var(--space-10);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--iv-glass-pressed);
+  color: var(--iv-ink);
+  font: var(--type-headline);
+}
+
+/* The buttons. The motion fades this wrapper (open, close, a drag down); a single tap hides the bar inside. */
+.iv-chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.iv-bar {
+  display: grid;
+  grid-template-columns: var(--touch) 1fr var(--touch);
+  align-items: center;
+  gap: var(--space-4);
+  padding: calc(var(--safe-top) + var(--space-4)) calc(var(--safe-right) + var(--page-x)) 0 calc(var(--safe-left) + var(--page-x));
+  transition:
+    opacity var(--duration-moderate) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+
+.iv-bare .iv-bar {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-moderate) var(--ease-standard),
+    visibility 0s linear var(--duration-moderate);
+}
+
+.iv-button {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--iv-glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  color: var(--iv-ink);
+}
+
+.iv-button:active,
+.iv-retry:active {
+  background: var(--iv-glass-pressed);
+}
+
+.iv-count {
+  margin: 0;
+  justify-self: center;
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--iv-glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  font: var(--type-headline);
+  font-variant-numeric: tabular-nums;
+}
+
+.iv-notice {
+  position: absolute;
+  left: calc(var(--safe-left) + var(--page-x));
+  right: calc(var(--safe-right) + var(--page-x));
+  bottom: calc(var(--safe-bottom) + var(--space-12));
+  margin: 0 auto;
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-5) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--iv-glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  font: var(--type-footnote);
+  text-align: center;
+}
+
+.iv :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Reduce Motion keeps the cross-fades above (they are fades, not movement); the spinner slows down. */
+@media (prefers-reduced-motion: reduce) {
+  .iv-spin {
+    animation-duration: 2.4s;
+  }
+}

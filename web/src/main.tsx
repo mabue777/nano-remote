@@ -6,6 +6,7 @@ import { browserPushEnvironment, type PushWindow } from './pwa/push';
 import { startUpdates, UpdatePrompt, type UpdateSignal } from './pwa/UpdatePrompt';
 import { browserOwnsEdge } from './routes/PageStack';
 import { Router } from './routes/router';
+import { ImageViewerLayer } from './ui/ImageViewerLayer';
 import { guessBrowserSwipe } from './ui/motion/page-motion';
 import { blockPinchZoom } from './ui/no-zoom';
 import './styles/index.css';
@@ -47,3 +48,8 @@ render(
   </>,
   root,
 );
+// The image viewer's own root on the body, beside the app: no page's slide transform or stacking holds it.
+const viewerRoot = document.createElement('div');
+viewerRoot.id = 'image-viewer';
+document.body.appendChild(viewerRoot);
+render(<ImageViewerLayer />, viewerRoot);

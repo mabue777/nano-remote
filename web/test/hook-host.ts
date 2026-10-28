@@ -67,9 +67,10 @@ function owner(): HookHost<unknown> {
 }
 
 export const hooks = {
-  useState<S>(initial: S): [S, (next: S | ((previous: S) => S)) => void] {
+  useState<S>(initial: S | (() => S)): [S, (next: S | ((previous: S) => S)) => void] {
     const host = owner();
-    const index = host.next(() => initial);
+    // A function is a lazy initial value, called on the first render only (as in Preact).
+    const index = host.next(() => (typeof initial === 'function' ? (initial as () => S)() : initial));
     const set = (next: S | ((previous: S) => S)) => {
       host.slots[index] = typeof next === 'function' ? (next as (previous: S) => S)(host.slots[index] as S) : next;
       host.render();
