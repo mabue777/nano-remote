@@ -516,3 +516,26 @@
   padding-bottom: var(--space-6);
   border-bottom: 1px solid var(--line);
 }
+
+/* After Done: the tray badge's stand-in (a pen, plus the comment count) and the text the message would get. */
+.lab-markup-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--primary-text);
+  font: var(--type-caption);
+  font-weight: 700;
+}
+
+.lab-markup-lines {
+  margin: var(--space-3) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--type-footnote);
+  color: var(--muted);
+}

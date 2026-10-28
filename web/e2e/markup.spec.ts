@@ -193,6 +193,7 @@ test('markup: the cover sits above the page stack, so a stroke from the left edg
   await stroke(canvas, [2, 300], [300, 300]);
   await expect(canvas).toHaveAttribute('aria-label', 'Screenshot, 1 mark');
   await cover.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('dialog', { name: 'Discard your marks?' }).getByRole('button', { name: 'Discard' }).click();
   await expect(cover).toBeHidden();
   await expect(page.locator('.lab-session-page')).toBeVisible();
   await expect(page.locator('.lab-session-page')).toHaveCSS('transform', 'none');

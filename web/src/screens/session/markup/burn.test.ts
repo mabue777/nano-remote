@@ -177,6 +177,22 @@ describe('burn-in', () => {
     expect(ring).toBeDefined();
   });
 
+  it('burns pins at 3.5% of the long edge, or at a given size (the live canvas: one screen size at any zoom)', () => {
+    const marks: Mark[] = [{ kind: 'pin', id: 'pin1', x: 50, y: 50, comment: 'first' }];
+    const burnt = new FakeContext();
+    burnIn(burnt as unknown as CanvasRenderingContext2D, marks, 2000, 1000);
+    expect(burnt.calls.find((c) => c.name === 'arc')!.args[2]).toBe(35); // 3.5% of 2000, halved
+    // 26 CSS px at 4x zoom is 6.5 image px: the number and ring scale with it, no burn-in floor
+    const live = new FakeContext();
+    burnIn(live as unknown as CanvasRenderingContext2D, marks, 2000, 1000, 6.5);
+    const arc = live.calls.find((c) => c.name === 'arc')!;
+    expect(arc.args[2]).toBe(3.25);
+    const text = live.calls.find((c) => c.name === 'fillText')!;
+    expect(text.state.font).toBe(`bold ${3.25 * 1.2}px sans-serif`);
+    const ring = live.calls.find((c) => c.name === 'stroke' && c.state.strokeStyle === '#ffffff')!;
+    expect(ring.state.lineWidth).toBeCloseTo(0.52);
+  });
+
   it('pins are drawn in mark order even when another mark is added after a pin', () => {
     const ctx = new FakeContext();
     const marks: Mark[] = [

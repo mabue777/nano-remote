@@ -17,7 +17,7 @@ import { ACTIVITY, CHANGES, DIFF_LINES, SESSIONS, type LabSession as Session } f
 import { drop, withLeaving, type Shown } from '../ui/motion/flip';
 import { LabSession } from './LabSession';
 import { LabSheet } from './LabSheet';
-import { MarkupScene } from './MarkupScene';
+import { MarkupScene, type MarkupResult } from './MarkupScene';
 import { ALL_HOSTS, hostsOf, loadLook, onHost, saveLook, type Look } from './look';
 import { AddBody, NewList, SessionDetailsBody } from './NewLook';
 import { allAt, loadSettings, saveSettings, TECHNIQUES, type LabSettings, type Mode, type TechniqueId } from './settings';
@@ -46,7 +46,7 @@ export function Lab({ storage = defaultStorage() }: { storage?: StorageLike | nu
   const [sheet, setSheet] = useState<SheetName>(null);
   const [panel, setPanel] = useState(false);
   const [markup, setMarkup] = useState(false);
-  const [markupResult, setMarkupResult] = useState('');
+  const [markupResult, setMarkupResult] = useState<MarkupResult | null>(null);
   const [replay, setReplay] = useState(0);
   const [sessions, setSessions] = useState<Shown<Session>[]>(() => SESSIONS.map((item) => ({ item, leaving: false })));
   const [peek, setPeek] = useState(false);
@@ -497,8 +497,8 @@ interface LabPanelProps {
   onChoose: (id: TechniqueId, mode: Mode) => void;
   onAll: (mode: Mode) => void;
   onReplay: () => void;
-  /** The last Markup scene's outcome ("Done with 3 marks."), empty before the first. */
-  markupResult: string;
+  /** The last Markup scene's outcome ("Done with 3 marks."), null before the first. */
+  markupResult: MarkupResult | null;
   onMarkup: () => void;
   onClose: () => void;
 }
@@ -530,7 +530,16 @@ function LabPanel({ settings, look, reduced, onLook, onChoose, onAll, onReplay, 
         <div class="lab-technique lab-scene" role="group" aria-label="Markup">
           <div class="lab-technique-text">
             <strong>Markup</strong>
-            <span class="muted small">{markupResult || 'Draw on a screenshot: one finger draws, two fingers pan and pinch, double tap fits.'}</span>
+            <span class="muted small">{markupResult?.summary ?? 'Draw on a screenshot: one finger draws, two fingers pan and pinch, double tap fits. The comment tool pins a note.'}</span>
+            {markupResult !== null && markupResult.summary.startsWith('Done') && (
+              <span class="lab-markup-badge" role="img" aria-label={markupResult.comments === 0 ? 'Marked' : `Marked, ${markupResult.comments === 1 ? '1 comment' : `${markupResult.comments} comments`}`}>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z" />
+                </svg>
+                {markupResult.comments > 0 && <span>{markupResult.comments}</span>}
+              </span>
+            )}
+            {markupResult !== null && markupResult.lines.length > 0 && <pre class="lab-markup-lines" aria-label="Text sent with the picture">{markupResult.lines.join('\n')}</pre>}
           </div>
           <button type="button" class="small" onClick={onMarkup}>
             Open

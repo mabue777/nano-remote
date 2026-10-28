@@ -73,9 +73,11 @@ function drawArrow(ctx: CanvasRenderingContext2D, from: Point, to: Point, width:
   ctx.fill();
 }
 
-function drawPin(ctx: CanvasRenderingContext2D, pin: PinMark & { number: number }, diameter: number, color: MarkupColor): void {
+/** `exact`: the diameter is a screen size given in image pixels (the live canvas at any zoom), so the ring and
+ * number scale with it and have no floor; otherwise the burn-in floors keep a tiny image's pin readable. */
+function drawPin(ctx: CanvasRenderingContext2D, pin: PinMark & { number: number }, diameter: number, color: MarkupColor, exact = false): void {
   const radius = diameter / 2;
-  const ringWidth = Math.max(1, diameter * 0.06);
+  const ringWidth = exact ? diameter * 0.08 : Math.max(1, diameter * 0.06);
 
   ctx.beginPath();
   ctx.arc(pin.x, pin.y, radius, 0, Math.PI * 2);
@@ -91,16 +93,17 @@ function drawPin(ctx: CanvasRenderingContext2D, pin: PinMark & { number: number 
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `bold ${Math.max(10, radius * 1.2)}px sans-serif`;
+  ctx.font = `bold ${exact ? radius * 1.2 : Math.max(10, radius * 1.2)}px sans-serif`;
   ctx.fillText(String(pin.number), pin.x, pin.y);
 }
 
 /** Draw every mark onto the context. The caller is expected to have already drawn the background image.
- * Marks are drawn in order: shapes and strokes first, then numbered pins on top. */
-export function burnIn(ctx: CanvasRenderingContext2D, marks: readonly Mark[], width: number, height: number): void {
+ * Marks are drawn in order: shapes and strokes first, then numbered pins on top. `pinSize` overrides the
+ * burn-in pin diameter (image pixels): the live canvas keeps pins at one screen size at any zoom. */
+export function burnIn(ctx: CanvasRenderingContext2D, marks: readonly Mark[], width: number, height: number, pinSize?: number): void {
   const longEdge = Math.max(width, height);
   const widths = strokeWidths(longEdge);
-  const pinD = pinDiameter(longEdge);
+  const pinD = pinSize ?? pinDiameter(longEdge);
   const pins = numberedPins(marks);
   const pinById = new Map(pins.map((p) => [p.id, p]));
 
@@ -125,7 +128,7 @@ export function burnIn(ctx: CanvasRenderingContext2D, marks: readonly Mark[], wi
   for (const mark of marks) {
     if (mark.kind !== 'pin') continue;
     const numbered = pinById.get(mark.id);
-    drawPin(ctx, numbered!, pinD, 'red');
+    drawPin(ctx, numbered!, pinD, 'red', pinSize !== undefined);
   }
   ctx.restore();
 }

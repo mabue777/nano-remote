@@ -7,18 +7,32 @@
 // The cover is not part of the page stack, so the left-edge back swipe never starts under it. It rises like the
 // app's sheets (the sheet spring) and is not dragged down: a downward stroke must draw. With Reduce Motion it
 // cross-fades. Loaded lazily: the owner imports this module on first use. Styles: markup.css.
+//
+// Comments (ticket 3): the comment tool puts a numbered pin where the finger taps (with a haptic tick) and opens
+// the comment sheet (CommentSheet.tsx); a tap on a pin or a mark, with any tool, opens the same sheet for it, and
+// a mark's new pin sits at its top-right corner (comments.ts). Pins number 1, 2, 3 in the order made and
+// renumber when one is deleted. On screen a pin keeps one size at any zoom; the export burns it in at its own
+// size. A visually hidden list of the pins ("Comment 2: wrong colour here") lets VoiceOver read and edit them.
+// Cancel asks before it throws marks away.
 import type { JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { Icon } from '../../../ui/Icon';
+import { hapticTick } from '../../../ui/motion/haptic';
 import { motionOf, prefersReducedMotion } from '../../../ui/motion/motion';
 import { SHEET_SPRING, springEasing } from '../../../ui/motion/spring';
+import { Sheet } from '../../../ui/Sheet';
 import { burnIn } from './burn';
+import { CommentSheet } from './CommentSheet';
+import { commentAt, marksSummary, PIN_SCREEN, pinLabel, type CommentTarget } from './comments';
 import { clampView, fitView, GestureTracker, lerpView, pinchView, sameView, toImage, zoomAt, type Size, type View } from './gestures';
-import { MARKUP_COLORS, markId, MarkupState, type Mark, type MarkupColor, type Point } from './marks';
+import { MARKUP_COLORS, markId, MarkupState, numberedPins, type Mark, type MarkupColor, type PinMark, type Point } from './marks';
 import './markup.css';
 
-export type MarkupTool = 'pen' | 'highlighter' | 'rectangle' | 'arrow';
+/** The comment lines for the sent text, for owners that load this chunk (the lab, the composer). */
+export { composeCommentLines } from './marks';
+
+export type MarkupTool = 'pen' | 'highlighter' | 'rectangle' | 'arrow' | 'comment';
 
 export interface MarkupScreenProps {
   /** The picture to mark up (an object URL or an asset URL); its own pixels are the marks' coordinates. */
@@ -27,7 +41,7 @@ export interface MarkupScreenProps {
   label?: string;
   /** Done: the cover has left the screen; `marks` are in image pixels. */
   onDone: (marks: readonly Mark[], size: Size) => void;
-  /** Cancel (or Escape): the cover has left the screen; nothing changed. */
+  /** Cancel (or Escape), confirmed when there were marks: the cover has left the screen; nothing changed. */
   onCancel: () => void;
 }
 
@@ -36,6 +50,7 @@ const TOOLS: { id: MarkupTool; label: string }[] = [
   { id: 'highlighter', label: 'Highlighter' },
   { id: 'rectangle', label: 'Rectangle' },
   { id: 'arrow', label: 'Arrow' },
+  { id: 'comment', label: 'Comment' },
 ];
 
 const COLORS: { id: MarkupColor; label: string }[] = [
@@ -45,8 +60,9 @@ const COLORS: { id: MarkupColor; label: string }[] = [
   { id: 'green', label: 'Green' },
 ];
 
-/** Red for the pen and shapes, yellow for the highlighter; a colour picked for a tool stays with it. */
-const DEFAULT_COLORS: Record<MarkupTool, MarkupColor> = { pen: 'red', highlighter: 'yellow', rectangle: 'red', arrow: 'red' };
+/** Red for the pen and shapes, yellow for the highlighter; a colour picked for a tool stays with it. Pins are
+ * always red (burn.ts), so the colours are off while the comment tool is chosen. */
+const DEFAULT_COLORS: Record<MarkupTool, MarkupColor> = { pen: 'red', highlighter: 'yellow', rectangle: 'red', arrow: 'red', comment: 'red' };
 
 /** The Reduce Motion cross-fade (ms). The duration tokens drop to 1 ms under Reduce Motion, so not a token. */
 const FADE_MS = 200;
@@ -67,6 +83,13 @@ const GLYPHS: Record<MarkupTool | 'undo' | 'redo', JSX.Element> = {
     <>
       <path d="M7 17 17 7" />
       <path d="M7 7h10v10" />
+    </>
+  ),
+  comment: (
+    <>
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+      <path d="M8 12h8" />
+      <path d="M12 8v8" />
     </>
   ),
   undo: (
@@ -103,6 +126,11 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
   const [colors, setColors] = useState(DEFAULT_COLORS);
   const [ready, setReady] = useState(false);
   const [closing, setClosing] = useState(false);
+  /** The comment the sheet edits, while it is open. */
+  const [editing, setEditing] = useState<CommentTarget | null>(null);
+  /** Cancel with marks: the "Discard your marks?" sheet is open. */
+  const [confirming, setConfirming] = useState(false);
+  const proxy = useRef<HTMLInputElement>(null);
   const color = colors[tool];
   // The canvas's working state lives in one mutable object: pointer moves must not re-render Preact.
   const paint = useRef<Painter | null>(null);
@@ -116,6 +144,40 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
     painter.schedule();
   };
   painter.onCommit = changed;
+
+  /** Opens the comment sheet; a new pin shows on the canvas (numbered next) while it is written. */
+  const openComment = (target: CommentTarget) => {
+    setEditing(target);
+    painter.pending = target.id === undefined ? { kind: 'pin', id: 'pending', x: target.x, y: target.y, comment: '', markId: target.markId } : null;
+    painter.schedule();
+  };
+  const closeComment = () => {
+    setEditing(null);
+    painter.pending = null;
+    changed();
+    root.current?.focus({ preventScroll: true });
+  };
+  // A tap on the canvas, inside the pointer's handler: the haptic tick and the keyboard need that (iOS opens the
+  // keyboard only for a focus inside a touch, so a stand-in field takes it now and the sheet's field takes over).
+  painter.onTap = (at, scale) => {
+    if (editing !== null || confirming || closing) return;
+    const target = commentAt(model.marks, at, scale, painter.imageSize(), tool === 'comment');
+    if (target === null) return;
+    if (target.id === undefined) hapticTick();
+    proxy.current?.focus({ preventScroll: true });
+    openComment(target);
+  };
+  const saveComment = (comment: string) => {
+    const target = editing;
+    if (target === null) return;
+    if (target.id !== undefined) model.update(target.id, (m) => (m.kind === 'pin' ? { ...m, comment } : m));
+    else model.add({ kind: 'pin', id: markId(), x: target.x, y: target.y, comment, ...(target.markId === undefined ? {} : { markId: target.markId }) });
+    closeComment();
+  };
+  const deleteComment = () => {
+    if (editing?.id !== undefined) model.remove(editing.id);
+    closeComment();
+  };
 
   // Rise like a sheet; cross-fade with Reduce Motion. Focus moves into the cover for VoiceOver.
   useLayoutEffect(() => {
@@ -165,8 +227,13 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
     };
   }, [src, painter]);
 
-  const leave = (done: boolean) => {
+  const leave = (done: boolean, discard = false) => {
     if (closing) return;
+    if (!done && !discard && model.marks.length > 0) {
+      setConfirming(true);
+      return;
+    }
+    setConfirming(false);
     setClosing(true);
     painter.stop();
     const finish = () => (done ? onDone(model.marks, painter.imageSize()) : onCancel());
@@ -196,6 +263,7 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
   // Escape cancels; Cmd/Ctrl+Z undoes, with Shift redoes (hardware keyboards).
   const keys = useRef<(event: KeyboardEvent) => void>(() => undefined);
   keys.current = (event) => {
+    if (editing !== null || confirming) return; // the open sheet has the keys (Escape closes it)
     if (event.key === 'Escape') leave(false);
     else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
@@ -210,6 +278,7 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
   }, []);
 
   const count = model.marks.length;
+  const pins = numberedPins(model.marks);
   return (
     <div ref={root} class={`markup${closing ? ' markup-closing' : ''}`} role="dialog" aria-modal="true" aria-label="Mark up" tabIndex={-1}>
       <header class="markup-bar">
@@ -232,7 +301,19 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
         </button>
       </header>
       <div ref={stage} class="markup-stage">
-        <canvas ref={canvas} class="markup-canvas" role="img" aria-label={`${label}, ${count === 0 ? 'no marks' : count === 1 ? '1 mark' : `${count} marks`}`} data-ready={ready ? 'true' : undefined} />
+        <canvas ref={canvas} class="markup-canvas" role="img" aria-label={`${label}, ${marksSummary(model.marks)}`} data-ready={ready ? 'true' : undefined} />
+        {pins.length > 0 && (
+          <ul class="visually-hidden" aria-label="Comments">
+            {pins.map((p) => (
+              <li key={p.id}>
+                <button type="button" onClick={() => openComment({ id: p.id, x: p.x, y: p.y, markId: p.markId, number: p.number, comment: p.comment })}>
+                  {pinLabel(p.number, p.comment)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input ref={proxy} class="markup-focus-proxy" aria-hidden="true" tabIndex={-1} />
       </div>
       <footer class="markup-tools">
         <div class="markup-group" role="group" aria-label="Tool">
@@ -250,12 +331,30 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
               class="markup-swatch"
               aria-label={c.label}
               aria-pressed={color === c.id}
+              disabled={tool === 'comment'}
               style={{ '--swatch': MARKUP_COLORS[c.id] }}
               onClick={() => setColors({ ...colors, [tool]: c.id })}
             />
           ))}
         </div>
       </footer>
+      {editing !== null && (
+        <CommentSheet number={editing.number} comment={editing.comment} isNew={editing.id === undefined} onSave={saveComment} onDelete={deleteComment} onCancel={closeComment} />
+      )}
+      {confirming && (
+        <Sheet labelledBy="markup-discard-title" class="markup-sheet confirm-sheet" onClose={() => setConfirming(false)}>
+          <h2 id="markup-discard-title">Discard your marks?</h2>
+          <p class="muted small">{`The ${marksSummary(model.marks)} on this picture will be lost.`}</p>
+          <div class="actions">
+            <button type="button" class="small ghost" onClick={() => setConfirming(false)}>
+              Keep editing
+            </button>
+            <button type="button" class="small danger" onClick={() => leave(false, true)}>
+              Discard
+            </button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -267,6 +366,10 @@ class Painter {
   tool: MarkupTool = 'pen';
   color: MarkupColor = 'red';
   onCommit: () => void = () => undefined;
+  /** A tap that did not draw: where (image pixels) and the zoom (CSS px per image pixel). */
+  onTap: (at: Point, scale: number) => void = () => undefined;
+  /** A new pin shown while its comment is written, not yet in the model. */
+  pending: PinMark | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private base: HTMLCanvasElement | null = null;
   /** What the cached layer shows: the marks list (a new array after every change) and the view. */
@@ -300,7 +403,7 @@ class Painter {
       },
       pinch: (a0, b0, a1, b1) => this.setView(pinchView(this.pinchFrom, a0, b0, a1, b1, this.imageSize(), this.box)),
       pinchEnd: () => undefined,
-      tap: () => undefined,
+      tap: (at) => this.onTap(toImage(this.view, at), this.view.scale),
       doubleTap: () => this.fit(true),
     });
   }
@@ -422,7 +525,9 @@ class Painter {
     const p = toImage(this.view, from);
     const id = markId();
     const tool = this.tool;
-    this.live = tool === 'pen' || tool === 'highlighter' ? { kind: tool, id, color: this.color, points: [p] } : { kind: tool, id, color: this.color, from: p, to: p };
+    // The comment tool only taps: a drag with it draws nothing.
+    if (tool === 'comment') this.live = null;
+    else this.live = tool === 'pen' || tool === 'highlighter' ? { kind: tool, id, color: this.color, points: [p] } : { kind: tool, id, color: this.color, from: p, to: p };
   }
 
   private strokeMove(to: Point): void {
@@ -452,7 +557,7 @@ class Painter {
     const size = this.imageSize();
     ctx.setTransform(d * scale, 0, 0, d * scale, d * x, d * y);
     if (withImage && this.image !== null) ctx.drawImage(this.image, 0, 0, size.width, size.height);
-    burnIn(ctx, marks, size.width, size.height);
+    burnIn(ctx, marks, size.width, size.height, PIN_SCREEN / scale);
   }
 
   private draw(): void {
@@ -463,7 +568,7 @@ class Painter {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (this.live === null) {
-      this.paint(ctx, this.model.marks, true);
+      this.paint(ctx, this.pending === null ? this.model.marks : [...this.model.marks, this.pending], true);
       return;
     }
     // Drawing a stroke: the picture and the committed marks come from the cached layer.

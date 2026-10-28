@@ -59,6 +59,11 @@
   gap: var(--space-2);
 }
 
+/* Five tools and four colours fit a 390 px phone side by side: the targets touch, no gap between them. */
+.markup-tools .markup-group {
+  gap: 0;
+}
+
 .markup-icon {
   display: inline-flex;
   align-items: center;
@@ -85,10 +90,11 @@
   color: var(--text);
 }
 
-/* A colour: a 26 px dot in a 36 px target; the chosen one wears a ring in the text colour. */
+/* A colour: a 26 px dot in a 34 px target; the chosen one wears a ring in the text colour. Off (faded) while
+   the comment tool is chosen: pins are always red. */
 .markup-swatch {
   position: relative;
-  width: 36px;
+  width: 34px;
   min-height: var(--touch);
   height: var(--touch);
   padding: 0;
@@ -100,13 +106,17 @@
 .markup-swatch::before {
   content: '';
   position: absolute;
-  left: 5px;
+  left: 4px;
   top: 9px;
   width: 26px;
   height: 26px;
   border-radius: var(--radius-round);
   background: var(--swatch);
   box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15);
+}
+
+.markup-swatch:disabled {
+  opacity: 0.3;
 }
 
 .markup-swatch[aria-pressed='true']::before {
@@ -132,6 +142,59 @@
   touch-action: none;
 }
 
+/* Takes the focus inside a tap so iOS opens the keyboard; the comment sheet's field takes over (CommentSheet). */
+.markup-focus-proxy {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The comment sheet's layer: the visible area above the iOS keyboard, following iOS's scroll (CommentSheet.tsx).
+   The transform makes it the box of the sheet's fixed backdrop, so the sheet sits on the keyboard. */
+.markup-keyboard {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--markup-vvh, 100%);
+  transform: translateY(var(--markup-vvtop, 0px));
+  z-index: 1;
+}
+
+.markup-comment {
+  padding-bottom: calc(var(--safe-bottom) + var(--space-8));
+}
+
+/* The cover turns text selection off; the field needs it back. */
+.markup-comment-field {
+  display: block;
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.markup-comment-actions {
+  justify-content: flex-end;
+  margin-top: var(--space-6);
+}
+
+.markup-comment-delete {
+  margin-right: auto;
+  color: var(--error);
+}
+
+/* A sheet over the cover slides out as a copy on the page (ui/motion/sheet-motion.ts): above the cover too. */
+.sheet-ghost:has(.markup-sheet) {
+  z-index: 51;
+}
+
 @media (max-width: 370px) {
   .markup-bar,
   .markup-tools {
@@ -141,10 +204,14 @@
   }
 
   .markup-swatch {
-    width: 32px;
+    width: 30px;
   }
 
   .markup-swatch::before {
-    left: 3px;
+    left: 2px;
+  }
+
+  .markup-tool {
+    width: 40px;
   }
 }
