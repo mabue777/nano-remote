@@ -133,7 +133,7 @@ test.describe('on an iPhone in a Safari tab', () => {
 
 /** Back from Settings to the Sessions tab of Home. */
 async function backToSessions(page: Page): Promise<void> {
-  await page.locator('a.back').click(); // Back (to Chats)
+  await page.locator('a.back').click(); // Back (to Sessions: Home's title with a host)
   await page.getByRole('tab', { name: 'Sessions' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('region', { name: 'Host' })).toBeVisible();

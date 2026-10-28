@@ -5,6 +5,7 @@ import { SID, agentItem, approval, ev, inputRequest, session, snapshot, summary,
 import { Replica } from '../../replica/replica';
 import type { Item, TurnView } from '../../replica/types';
 import type { AgentsSource } from '../capabilities';
+import type { ConnectionSource } from '../home-model';
 import { FakeUploader, fakeObjectUrls, fakeResize, picked } from '../../../test/attachment-doubles';
 import type { Agent } from '../../generated/common';
 import {
@@ -35,7 +36,7 @@ function command(over: Record<string, unknown> = {}): any {
 }
 
 async function setup(
-  options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource; attachments?: AttachmentServices; now?: () => number } = {},
+  options: { open?: boolean; turns?: any[]; over?: Record<string, unknown>; agents?: AgentsSource; attachments?: AttachmentServices; now?: () => number; link?: ConnectionSource } = {},
 ) {
   const client = new FakeTransport();
   client.rule('session/list', () => ({ sessions: [summary({ title: 'Listed title', cwd: '/Users/me/Desktop/phone-test' })] }));
@@ -50,6 +51,7 @@ async function setup(
     ...(options.agents ? { agents: options.agents } : {}),
     ...(options.attachments ? { attachments: options.attachments } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.link ? { link: options.link } : {}),
   });
   const changes = vi.fn();
   model.subscribe(changes);
@@ -641,6 +643,133 @@ describe('header status word', () => {
     expect(model.status).toEqual({ label: 'Finished', tone: 'ok', status: 'idle' });
     live(11, [['status/changed', { status: 'waiting_approval' }]]);
     expect(model.status).toMatchObject({ label: 'Needs approval', tone: 'attention' });
+  });
+});
+
+/** A stream client's connection as the session view reads it: state, retry time, host name, state events. */
+function fakeLink(state: ConnectionSource['state'] = 'ready') {
+  const listeners = new Set<(state: ConnectionSource['state'], detail: string) => void>();
+  const link = {
+    state,
+    reconnectAt: undefined as number | undefined,
+    host: { host: { name: 'Mac mini' } } as ConnectionSource['host'],
+    on: (_event: 'state', listener: (state: ConnectionSource['state'], detail: string) => void) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    set(next: ConnectionSource['state'], reconnectAt?: number) {
+      link.state = next;
+      link.reconnectAt = reconnectAt;
+      for (const listener of listeners) listener(next, '');
+    },
+    listeners,
+  };
+  return link;
+}
+
+describe('SessionModel: the centred header and its ⋯ sheet', () => {
+  it('running: "Working" with the elapsed time since the turn started, counting while it runs, none after', async () => {
+    let now = 40_000; // the turn started at 10 s
+    const { model, live, changes } = await setup({ now: () => now });
+    expect(model.statusLine).toMatchObject({ text: 'Idle', ticking: false });
+    expect(model.ticking).toBe(false);
+    live(1, [
+      ['turn/started', { turn: turn('t1') }],
+      ['status/changed', { status: 'running' }],
+    ]);
+    expect(model.statusLine).toMatchObject({ text: 'Working · 30s', status: 'running', tone: 'busy' });
+    expect(model.ticking).toBe(true);
+    now = 144_000;
+    changes.mockClear();
+    model.tick();
+    expect(changes).toHaveBeenCalledTimes(1);
+    expect(model.statusLine.text).toBe('Working · 2m 14s');
+    live(3, [
+      ['turn/completed', { turn: turn('t1', { status: 'completed', completedAt: 202 }) }],
+      ['status/changed', { status: 'idle' }],
+    ]);
+    expect(model.statusLine).toMatchObject({ text: 'Finished', ticking: false });
+    expect(model.ticking).toBe(false);
+    changes.mockClear();
+    model.tick();
+    expect(changes).not.toHaveBeenCalled();
+    expect(model.detailRows(false)[0]!.value).toEqual([{ text: 'Finished · Worked for 3m 12s' }]);
+  });
+
+  it('waiting for an approval: the word, no timer', async () => {
+    const { model, live } = await setup();
+    live(1, [
+      ['turn/started', { turn: turn('t1') }],
+      ['status/changed', { status: 'waiting_approval' }],
+    ]);
+    expect(model.statusLine).toMatchObject({ text: 'Needs approval', tone: 'attention', status: 'waiting_approval', ticking: false });
+  });
+
+  it('Mac offline comes first, with the retry countdown, and follows the connection live', async () => {
+    let now = 50_000;
+    const link = fakeLink();
+    const { model, changes, live } = await setup({ link, now: () => now });
+    live(1, [
+      ['turn/started', { turn: turn('t1') }],
+      ['status/changed', { status: 'running' }],
+    ]);
+    expect(model.connection).toMatchObject({ kind: 'connected' });
+    changes.mockClear();
+    link.set('waiting', 53_000);
+    expect(changes).toHaveBeenCalled();
+    expect(model.statusLine).toMatchObject({ text: 'Mac offline · retrying in 3 s', tone: 'error', status: 'offline', ticking: true });
+    now = 51_000;
+    expect(model.statusLine.text).toBe('Mac offline · retrying in 2 s');
+    link.set('stopped');
+    expect(model.statusLine).toMatchObject({ text: 'Mac offline', ticking: false });
+    expect(model.ticking).toBe(false); // offline hides the elapsed time, and no retry is counting down
+    link.set('ready');
+    expect(model.statusLine).toMatchObject({ status: 'running', ticking: true });
+  });
+
+  it('without a link there is no connection; dispose stops listening to it', async () => {
+    const { model } = await setup();
+    expect(model.connection).toBeUndefined();
+    const link = fakeLink();
+    const linked = await setup({ link });
+    expect(link.listeners.size).toBe(1);
+    linked.model.dispose();
+    expect(link.listeners.size).toBe(0);
+    expect(model.detailsSubtitle).toBe('work');
+    expect(linked.model.detailsSubtitle).toBe('Mac mini · work');
+  });
+
+  it('the ⋯ sheet: status, agent, model and effort, folder, permissions, Changes, archive and delete', async () => {
+    const turns = [turn('t1', { status: 'completed', completedAt: 20 })];
+    const { model, client } = await setup({
+      turns,
+      agents: FULL,
+      over: { session: session({ lastSeq: 0, settings: { model: 'gpt-5.5-codex', effort: 'high', approvalMode: 'never' } }) },
+    });
+    client.calls.find((c) => c.method === 'turn/diff')!.resolve({ files: [{ path: 'a', kind: 'add', diff: '' }] });
+    await settle();
+    const rows = model.detailRows(false);
+    expect(rows.map((row) => [row.key, row.value.map((part) => part.text).join(' · ')])).toEqual([
+      ['status', 'Finished · Worked for 10s'],
+      ['agent', 'Codex'],
+      ['model', 'gpt-5.5-codex · High'],
+      ['folder', '/work'],
+      ['permissions', 'Full access'],
+      ['changes', '1 file changed'],
+      ['archive', ''],
+      ['delete', ''],
+    ]);
+    expect(model.statusLine.fullAccess).toBe(true);
+    expect(model.detailRows(true).map((row) => row.key)).toContain('unarchive');
+    model.openLastChanges();
+    expect(model.changesTurnId).toBe('t1');
+  });
+
+  it('no finished turn with changes: no Changes row, and openLastChanges does nothing', async () => {
+    const { model } = await setup({ turns: [turn('t1', { status: 'completed', completedAt: 20 })], agents: PI_LIKE });
+    expect(model.detailRows(false).map((row) => row.key)).not.toContain('changes');
+    model.openLastChanges();
+    expect(model.changesTurnId).toBeUndefined();
   });
 });
 

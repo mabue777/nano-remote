@@ -9,9 +9,12 @@
 // Test hooks: `POST /test/code` issues a fresh code; `POST /test/expire` issues one that is already
 // expired; `POST /test/reset` puts the three seeded sessions back (every spec starts from them) and empties
 // the request log;
-// `POST /test/run {sessionId, text, answer?, deltas?}` starts a scripted turn the way the desktop would
-// (`answer` replaces its streamed text, in `deltas` item/delta events); `POST /test/kill` drops every
+// `POST /test/run {sessionId, text, answer?, deltas?, startedAt?}` starts a scripted turn the way the desktop
+// would (`answer` replaces its streamed text, in `deltas` item/delta events; `startedAt: "now"` stamps it with
+// the real time instead of the fixture's, for the header's live elapsed time); `POST /test/kill` drops every
 // socket without a close frame (the app reconnects and replays from its cursor);
+// `POST /test/offline {on}` keeps the Mac unreachable: every socket drops and new ones close at once with
+// 4010 (draining, so the app retries every 5 s and shows the countdown); `{on: false}` lets them in again;
 // `POST /test/resolve {sessionId, decision}` answers its approval from another device;
 // `POST /test/touch {sessionId, agoSeconds}` sets a session's updatedAt to that many seconds ago;
 // `POST /test/delay {method, ms}` holds back the answer to the next request of that method;
@@ -168,6 +171,7 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
               return json(200, { ok: true });
             case '/test/reset':
               seed(host);
+              host.refuse(undefined);
               blobs.clear();
               uploadFailure = undefined;
               swVersion = null;
@@ -177,10 +181,21 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
             case '/test/provider-chats':
               return json(200, { chats: provider.chats });
             case '/test/run':
-              host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.', { ...(body.answer !== undefined ? { answer: body.answer } : {}), ...(body.deltas !== undefined ? { deltas: body.deltas } : {}) });
+              host.runScriptedTurn(body.sessionId, body.text ?? 'Go on.', {
+                ...(body.answer !== undefined ? { answer: body.answer } : {}),
+                ...(body.deltas !== undefined ? { deltas: body.deltas } : {}),
+                ...(body.startedAt === 'now' ? { startedAt: Math.floor(Date.now() / 1000) } : {}),
+              });
               return json(200, { ok: true });
             case '/test/kill':
               host.kill();
+              return json(200, { ok: true });
+            case '/test/offline':
+              if (body.on === false) host.refuse(undefined);
+              else {
+                host.refuse({ code: 4010, reason: 'test: Mac offline' });
+                host.kill();
+              }
               return json(200, { ok: true });
             case '/test/resolve':
               host.resolveElsewhere(body.sessionId, body.decision ?? 'accept');

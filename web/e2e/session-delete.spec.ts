@@ -157,11 +157,11 @@ test('Delete all archived states the count and empties the section', async ({ pa
   await expect(toggle(page)).toHaveCount(0);
 });
 
-test('the session view: Archive and Delete in the header menu', async ({ page, request }) => {
+test('the session view: Archive and Delete in the header ⋯ sheet', async ({ page, request }) => {
   await pair(page, request);
   await row(page, FINISHED).click();
   await expect(page.getByRole('heading', { name: FINISHED })).toBeVisible();
-  await page.getByRole('button', { name: 'Session actions' }).click();
+  await page.getByRole('button', { name: 'Session details' }).click();
   await page.getByRole('dialog', { name: FINISHED }).getByRole('button', { name: 'Archive' }).click();
   // Back on Home, with the Undo toast and the session under Archived.
   await expect(page).toHaveURL(/\/$/);
@@ -170,7 +170,7 @@ test('the session view: Archive and Delete in the header menu', async ({ page, r
 
   await row(page, FRESH).click();
   await expect(page.getByRole('heading', { name: FRESH })).toBeVisible();
-  await page.getByRole('button', { name: 'Session actions' }).click();
+  await page.getByRole('button', { name: 'Session details' }).click();
   await page.getByRole('dialog', { name: FRESH }).getByRole('button', { name: 'Delete…' }).click();
   const confirm = page.getByRole('dialog', { name: `Delete ${FRESH}?` });
   await expect(confirm).toContainText(CONFIRM);
@@ -218,7 +218,7 @@ test('screenshots, light and dark: swipe actions, actions sheet, confirmation, A
     await page.getByRole('dialog', { name: 'Delete 2 archived sessions?' }).getByRole('button', { name: 'Cancel' }).click();
 
     await row(page, WAITING).click();
-    await page.getByRole('button', { name: 'Session actions' }).click();
+    await page.getByRole('button', { name: 'Session details' }).click();
     await expect(page.getByRole('dialog', { name: WAITING })).toBeVisible();
     await shot(`${scheme}-6-session-header-menu`);
   }

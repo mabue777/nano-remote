@@ -27,7 +27,8 @@ test('a scripted turn streams in, waits for a decision, and completes', async ({
   await request.post('/test/run', { data: { sessionId: 'ses_fake_3', text: 'Sketch the README.' } });
   const agent = conversation.locator('[data-item="agent"]');
   await expect(agent).toHaveAttribute('data-streaming', 'true');
-  await expect(page.getByLabel('Session status')).toHaveText('Working');
+  // The fixture's turn started long ago (its fixed time keeps "Worked for 10m 0s" below): any elapsed time.
+  await expect(page.getByLabel('Session status')).toHaveText(/^Working · (\d+h \d+m|\d+m \d+s|\d+s)$/);
   // The text grows delta by delta until it is the whole message.
   const seen = new Set<string>();
   await expect

@@ -240,6 +240,132 @@
   margin-left: calc(-1 * var(--space-3)); /* one-off: the chevron's own inset lines up with the gutter */
 }
 
+/* The centred top bar (ui/NavHeader.tsx, new look item 8): round back and ⋯ buttons, the title centred at the
+   nav title size with one footnote line under it. Two lines high; a solid page background, so nothing shows
+   through it. The page (padding) already keeps it below the top safe area. */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--touch) minmax(0, 1fr) var(--touch);
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  background: var(--bg);
+}
+
+.round-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--fill);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.nav-title h1 {
+  margin: 0;
+  font: var(--type-nav-title);
+  letter-spacing: var(--tracking-title);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nav-footnote {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--type-footnote);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.nav-footnote .status-word {
+  min-width: 0;
+}
+
+.nav-extra {
+  flex: none;
+  white-space: pre;
+}
+
+/* A grouped list on a grey fill (ui/GroupList.tsx): the ⋯ details sheet's rows. */
+.group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-inner);
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.group-list + .group-list {
+  margin-top: var(--space-8);
+}
+
+.group-list > li + li {
+  border-top: 0.5px solid var(--line);
+}
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-4) var(--space-7);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: var(--type-body);
+  text-align: left;
+}
+
+.group-row > .icon:first-child {
+  color: var(--muted);
+}
+
+.group-row.error,
+.group-row.error > .icon:first-child {
+  color: var(--error);
+}
+
+.group-label {
+  flex: none;
+}
+
+.group-value {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font: var(--type-callout);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.group-row > .chevron {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
 /* The line icons (ui/Icon.tsx) sit in the text line and take its colour. */
 .icon {
   flex: none;

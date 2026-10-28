@@ -34,13 +34,14 @@ import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
 import { attachmentsFor, canBypass, canSteer, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
-import { backgroundTasksText, folderOf, statusOf, type SessionRow } from '../home-model';
+import { backgroundTasksText, connectionOf, folderOf, statusOf, type Connection, type ConnectionSource, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { effortLabel, modelLabel } from '../new-session-model';
 import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
 import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
 import { SessionSettingsModel, type SettingsReplica } from './settings-model';
+import { detailRows, detailsSubtitle, statusLine, statusValue, type DetailRow, type StatusLine } from './session-details';
 import { workedFor } from './transcript';
 import { filesChangedText } from './views/changes-model';
 
@@ -421,8 +422,10 @@ export interface SessionModelOptions {
   agents?: AgentsSource;
   /** Uploads for the composer; without them the composer offers no attach button. */
   attachments?: AttachmentServices;
-  /** Milliseconds since the epoch (background task times). Default Date.now. */
+  /** Milliseconds since the epoch (background task times, the header's elapsed time). Default Date.now. */
   now?: () => number;
+  /** The host connection (the stream client): offline shows "Mac offline" in the header. */
+  link?: ConnectionSource;
 }
 
 /** Above the field while you type into a running turn: steer, or queue when the agent cannot steer. */
@@ -467,11 +470,13 @@ export class SessionModel extends Model {
   confirmingStop = false;
   private readonly openTasks = new Set<string>();
   private readonly now: () => number;
+  private readonly link: ConnectionSource | undefined;
 
   constructor(options: SessionModelOptions) {
     super();
     this.sessionId = options.sessionId;
     this.now = options.now ?? Date.now;
+    this.link = options.link;
     this.replica = options.replica;
     this.agents = options.agents;
     this.attachmentServices = options.attachments;
@@ -492,6 +497,7 @@ export class SessionModel extends Model {
         this.changed();
       }),
     );
+    if (this.link !== undefined) this.unsubscribe.push(this.link.on('state', () => this.changed()));
   }
 
   /** Opens the session in the Replica (session/open, then live events). */
@@ -657,9 +663,74 @@ export class SessionModel extends Model {
     this.changed();
   }
 
-  /** Re-renders the strip: elapsed times count up, ended tasks leave (the screen calls it every second while it shows). */
+  /** Something on screen counts in seconds: the background-task strip, the header's elapsed time or retry countdown. */
+  get ticking(): boolean {
+    return this.backgroundTasks.length > 0 || this.statusLine.ticking;
+  }
+
+  /** Re-renders what counts: elapsed times count up, ended tasks leave (the screen calls it every second while ticking). */
   tick(): void {
-    if (this.backgroundTasks.length > 0) this.changed();
+    if (this.ticking) this.changed();
+  }
+
+  // ---- header and details sheet -----------------------------------------------------------------
+
+  /** The host connection as Home shows it; undefined without a link (tests, older callers). */
+  get connection(): Connection | undefined {
+    return this.link === undefined ? undefined : connectionOf(this.link.state, this.link.reconnectAt, this.now());
+  }
+
+  /** The header's one status: the session's dot and word, the live elapsed time, "Mac offline" first. */
+  get statusLine(): StatusLine {
+    const connection = this.connection;
+    const since = this.runningTurn?.startedAt;
+    return statusLine({
+      status: this.status,
+      ...(connection !== undefined ? { connection } : {}),
+      ...(typeof since === 'number' ? { runningSince: since } : {}),
+      now: this.now(),
+      fullAccess: this.bypass,
+    });
+  }
+
+  private get runningTurn(): SessionView['turns'][number] | undefined {
+    const id = this.runningTurnId;
+    return id === undefined ? undefined : this.view?.turns.find((turn) => turn.turnId === id);
+  }
+
+  /** The newest finished turn: its "Worked for" and its Changes. */
+  private get lastFinished(): TurnRow | undefined {
+    return [...this.turns].reverse().find((turn) => turn.final);
+  }
+
+  /** The ⋯ sheet's subtitle: "host · folder". */
+  get detailsSubtitle(): string {
+    return detailsSubtitle(this.link?.host?.host.name, this.folder?.name);
+  }
+
+  /** The ⋯ sheet's rows (session-details.ts). */
+  detailRows(archived: boolean): DetailRow[] {
+    const line = this.statusLine;
+    const last = this.lastFinished;
+    const agent = this.agent?.name ?? this.agentId;
+    return detailRows({
+      status: statusValue(line, last?.workedFor),
+      statusTone: line.tone,
+      ...(agent !== undefined ? { agent } : {}),
+      ...(this.model !== undefined ? { model: this.model } : {}),
+      ...(this.effort !== undefined ? { effort: this.effort } : {}),
+      canChangeSettings: this.canChangeSettings,
+      ...(this.folder !== undefined ? { folder: this.folder.path } : {}),
+      fullAccess: this.bypass,
+      ...(last?.changes !== undefined ? { changes: last.changes } : {}),
+      archived,
+    });
+  }
+
+  /** The Changes row: the newest finished turn's Changes sheet. */
+  openLastChanges(): void {
+    const last = this.lastFinished;
+    if (last?.changes !== undefined) this.openChanges(last.turnId);
   }
 
   get turns(): TurnRow[] {

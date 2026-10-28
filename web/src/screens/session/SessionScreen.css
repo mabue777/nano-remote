@@ -1,15 +1,8 @@
-/* The session page (SessionScreen.tsx): header, turn list, composer, attachments (spec 8.1).
+/* The session page (SessionScreen.tsx): turn list, composer, attachments (spec 8.1).
    The local chat page (chat/ChatScreen.tsx) reuses this layout. */
 
-/* "Full access" next to the title (the agent runs without asking): the plain grey tag (.pill), no colour. */
-.session-tag {
-  display: inline-block;
-  margin-left: var(--space-4);
-  vertical-align: middle;
-}
-
-/* The session's title under the back header: the headline role, not the page's large title (the centred
-   header of a later step makes it the nav title). */
+/* Local chat's title under its back header (chat/ChatScreen.tsx): the headline role. The session view has
+   the centred bar (ui/NavHeader.tsx) instead. */
 .session-heading {
   margin-bottom: var(--space-3);
   font: var(--type-headline);
@@ -30,32 +23,10 @@
   margin: 0 0 var(--space-4);
 }
 
-/* Under the title, one footnote line in tertiary grey, proportional (look polish): "codex · phone-test ·
-   gpt-5-codex · high effort  Change". The model part opens the settings sheet when the agent can change them
-   (spec 6); its "Change" is ink, as a control. */
+/* Under local chat's title, one footnote line in tertiary grey: the provider. */
 .session-head .session-meta-line {
   color: var(--text-tertiary);
   overflow-wrap: anywhere;
-}
-
-.session-model-button {
-  display: inline;
-  min-height: 32px; /* a tap target on the phone */
-  /* At most the line (plus the clip room of .session-model): a long model name ellipsizes, not overflows. */
-  max-width: calc(100% + 2 * var(--space-1));
-  padding-block: var(--space-3); /* one-off: the inline button's tap height; the sides come from .session-model */
-  border: 0;
-  border-radius: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.session-model-change {
-  color: var(--text);
-  font-weight: 500;
 }
 
 .session-settings-note {

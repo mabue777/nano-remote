@@ -1,12 +1,12 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
-import { sheetsSettled } from './sheets';
+import { closeDetails, openDetails, sheetsSettled } from './sheets';
 
 // The quiet approval and question cards (look step 4; RequestCards.tsx) against the fake host
 // (test/e2e-server.ts): Accept and Decline in the row, the other decisions under More, the card turning
 // into one answered line in its place, questions with round checks and an "Other…" row, a blocking question
 // on the composer bar, a request answered on another device naming it, one status on the session screen
-// (the header's dot and word), and the grey "Full access" tag.
+// (the header's dot and word), and "Full access" after it in plain grey.
 
 const DESKTOP = 'Mabue MacBook'; // the fake host's device/list name for dev_desktop
 
@@ -257,7 +257,7 @@ test('a question answered on another device names it, with the answer it sent', 
   await expect(conversation(page).getByLabel('Question answered')).toContainText(`Answered on ${DESKTOP}: Yes`);
 });
 
-test('a Bypass session shows the grey "Full access" tag next to the title', async ({ page, request }) => {
+test('a Bypass session says "Full access" in plain grey after the status, and in the ⋯ sheet\'s Permissions row', async ({ page, request }) => {
   await pair(page, request);
   await page.getByRole('button', { name: 'New session' }).click();
   const sheet = page.getByRole('dialog', { name: 'New session' });
@@ -267,12 +267,18 @@ test('a Bypass session shows the grey "Full access" tag next to the title', asyn
   await sheet.getByLabel('Title (optional)').fill('Full access session');
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
-  const tag = page.getByRole('heading', { name: /Full access session/ }).getByLabel('Approvals bypassed');
-  await expect(tag).toHaveText('Full access');
-  await expect(tag).toHaveAttribute('title', 'Approvals bypassed: the agent runs everything without asking');
-  const style = await tag.evaluate((el) => {
+  await sheetsSettled(page);
+  const footnote = page.locator('.nav-footnote');
+  await expect(footnote).toHaveText(/^(Idle|Finished|Working · \d+s) · Full access$/);
+  const extra = footnote.locator('.nav-extra');
+  await expect(extra).toHaveText(' · Full access');
+  const style = await extra.evaluate((el) => {
     const s = getComputedStyle(el);
-    return { color: s.color, background: s.backgroundColor, outline: s.outlineStyle, border: s.borderTopWidth };
+    return { color: s.color, background: s.backgroundColor };
   });
-  expect(style).toEqual({ color: await token(page, '--muted'), background: await token(page, '--fill'), outline: 'none', border: '0px' });
+  expect(style).toEqual({ color: await token(page, '--muted'), background: 'rgba(0, 0, 0, 0)' });
+  await expect(page.getByLabel('Approvals bypassed')).toHaveCount(0); // no tag any more
+  const details = await openDetails(page);
+  await expect(details.locator('[data-row="permissions"]')).toHaveText(/Permissions\s*Full access/);
+  await closeDetails(page, details);
 });

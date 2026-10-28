@@ -2,12 +2,12 @@ import { mkdirSync } from 'node:fs';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { sheetsSettled } from './sheets';
+import { closeDetails, expectSettings, openDetails, sheetsSettled } from './sheets';
 
 // The effort picker on the new-session sheet at 390 x 844 (spec 4 ModelInfo.efforts, 5.1 settings.effort):
 // shown for a model with levels and its default preselected, hidden for a model without, "Auto" for a
 // model without a default (Claude), the choice sent in session/start, remembered per agent, and named in
-// the session header. Screenshots, light and dark, go to /tmp/effort/ for the operator.
+// the session's ⋯ details sheet. Screenshots, light and dark, go to /tmp/effort/ for the operator.
 const SHOTS = '/tmp/effort';
 
 test.beforeEach(async ({ request }) => {
@@ -51,14 +51,14 @@ test('effort: default preselected, sent, remembered per agent, hidden without le
   }
   await page.emulateMedia({ colorScheme: 'light' });
 
-  // A choice goes in session/start and comes back in the header.
+  // A choice goes in session/start and comes back in the ⋯ sheet.
   await effort.getByRole('radio', { name: 'XHigh' }).click();
   await expect(effort.getByRole('radio', { name: 'XHigh' })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
   await sheetsSettled(page); // the closed sheet's copy, with its own Effort group, has slid out
   expect((await lastParams(page, 'session/start'))?.settings).toEqual({ effort: 'xhigh' });
-  await expect(page.getByLabel('Effort', { exact: true })).toHaveText('XHigh effort');
+  await expectSettings(page, { model: 'gpt-5-codex', effort: 'XHigh' }); // only the effort was sent: the host's default model
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.screenshot({ path: `${SHOTS}/session-header-effort-${scheme}.png` });
@@ -91,5 +91,7 @@ test('effort: default preselected, sent, remembered per agent, hidden without le
   await expect(page).toHaveURL(/\/s\/ses_fake_\d+$/);
   await sheetsSettled(page);
   expect((await lastParams(page, 'session/start'))?.settings).toBeUndefined();
-  await expect(page.getByLabel('Effort', { exact: true })).toHaveCount(0);
+  const details = await openDetails(page);
+  await expect(details.getByLabel('Effort', { exact: true })).toHaveCount(0);
+  await closeDetails(page, details);
 });

@@ -7,11 +7,16 @@ import type { ItemRow, Tone } from './session-model';
 
 /** "Worked for 12s", "Worked for 3m 12s", "Worked for 3h 42m" (the iOS Codex wording); a stopped turn passes its own lead. */
 export function workedFor(ms: number, lead = 'Worked for'): string {
+  return `${lead} ${shortDuration(ms)}`;
+}
+
+/** "12s", "3m 12s", "1h 4m": the "Worked for" line's duration, also the header's live elapsed time. */
+export function shortDuration(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${lead} ${seconds}s`;
+  if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${lead} ${minutes}m ${seconds % 60}s`;
-  return `${lead} ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 /** "1 previous message", "3 previous messages". */

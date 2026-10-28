@@ -122,6 +122,18 @@ with them so each file is rewritten once:
    "Full access".
 5. **Centred header and the ⋯ sheet (item 8).** M. It must come before the page push, because the push moves
    whole pages including the header.
+   **Done 2026-10-27:** the bar is `ui/NavHeader.tsx` (styles `.nav*`, `.round-button` in `components.css`), the
+   ⋯ sheet `screens/session/SessionDetailsSheet.tsx` with the grouped rows of `ui/GroupList.tsx`; the status
+   line's wording and the sheet's rows are `screens/session/session-details.ts`. The lab's New look renders the
+   same bar and rows. Choices the lab left open: the line under the title is the session's one status, not
+   "host · folder" (that moved to the sheet's subtitle); while a turn runs it counts "Working · 2m 14s" from the
+   turn's `startedAt`; when the stream to the Mac is lost it says "Mac offline · retrying in N s" in red, before
+   anything else; a Full-access session adds " · Full access" in grey. The sheet lists Status (with "Worked for"
+   once the turn ended), Agent, Model and effort (opens the settings sheet where the agent allows it), Folder (full
+   path), Permissions, Changes (the last turn's, when it changed files), then Archive or Unarchive and Delete. The
+   bar has a solid page background. Settings' back now names Home's title ("Sessions" with a paired Mac, "Chats"
+   without) and goes to Home; Settings and local chat keep the labelled back link (the lab shows no other).
+   The elapsed time trusts the Mac's clock: if the phone's clock is off, the count is off by as much.
 6. **Session list with motion part 3 (item 6, techniques 8 and 2).** M + M + L. The flat list and the list
    changes rewrite the same rows; the page push and back swipe come last, as the motion study recommended.
 

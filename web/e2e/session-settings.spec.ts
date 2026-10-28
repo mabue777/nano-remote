@@ -2,12 +2,12 @@ import { mkdirSync } from 'node:fs';
 
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
-import { sheetsSettled } from './sheets';
+import { closeDetails, expectSettings, openDetails, sheetsSettled } from './sheets';
 
 // Changing the model and effort of an open session at 390 x 844 (spec 6 session/settings/update): the
-// header's model line opens a sheet with the New session sheet's grouped model picker and effort control;
-// Save sends what changed and the header shows it; while a turn runs the sheet says "Applies after this
-// turn" and the turn goes on; an agent without capabilities.settingsUpdate gets a plain line. Screenshots,
+// Model row of the header's ⋯ details sheet opens a sheet with the New session sheet's grouped model picker and effort control;
+// Save sends what changed and the ⋯ sheet shows it; while a turn runs the sheet says "Applies after this
+// turn" and the turn goes on; an agent without capabilities.settingsUpdate gets a plain row. Screenshots,
 // light and dark, go to /tmp/session-settings/ for the operator.
 const SHOTS = '/tmp/session-settings';
 
@@ -55,8 +55,10 @@ async function startSession(page: Page, agent: string, model: string): Promise<v
   await sheetsSettled(page);
 }
 
+/** The ⋯ sheet's Model row opens the settings sheet. */
 async function openSettings(page: Page): Promise<Locator> {
-  await page.getByTitle('Change model and effort').click();
+  const details = await openDetails(page);
+  await details.getByTitle('Change model and effort').click();
   const sheet = page.getByRole('dialog', { name: 'Model and effort' });
   await expect(sheet).toBeVisible();
   await sheetsSettled(page);
@@ -75,7 +77,7 @@ test('Codex: switch the model, then pick an effort the new model offers; the hea
   mkdirSync(SHOTS, { recursive: true });
   await pair(page, request);
   await startSession(page, 'Codex', 'gpt-5.5-mini');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('gpt-5.5-mini');
+  await expectSettings(page, { model: 'gpt-5.5-mini', effort: null });
 
   // The session's model is preselected; it has no levels, so there is no effort control and nothing to save.
   let sheet = await openSettings(page);
@@ -99,9 +101,8 @@ test('Codex: switch the model, then pick an effort the new model offers; the hea
   await shoot(page, sheet, 'sheet-idle');
 
   await saveAndExpectSent(page, request, sheet, { model: 'gpt-5.5-codex', effort: 'high' });
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('gpt-5.5-codex');
-  await expect(page.getByLabel('Effort', { exact: true })).toHaveText('High effort');
-  await shoot(page, page.locator('.session-head'), 'header-after');
+  await expectSettings(page, { model: 'gpt-5.5-codex', effort: 'High' });
+  await shoot(page, page.locator('.nav'), 'header-after');
 
   // Reopened, the sheet starts from the new settings; Cancel sends nothing.
   sheet = await openSettings(page);
@@ -131,14 +132,13 @@ test('a running turn: the sheet says the change applies after it, and the turn g
   await effort.getByRole('radio', { name: 'Max' }).click();
   await shoot(page, sheet, 'sheet-running');
   await saveAndExpectSent(page, request, sheet, { model: 'claude-opus', effort: 'max' });
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('claude-opus');
-  await expect(page.getByLabel('Effort', { exact: true })).toHaveText('Max effort');
+  await expectSettings(page, { model: 'claude-opus', effort: 'Max' });
   // The turn was not touched: the approval still waits.
   await expect(page.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
   await expect(page.getByLabel('Session status')).toHaveAttribute('data-status', 'waiting_approval');
 });
 
-test('pi: the grouped picker; the header names the new model and its provider', async ({ page, request }) => {
+test('pi: the grouped picker; the ⋯ sheet names the new model and its provider', async ({ page, request }) => {
   await pair(page, request);
   await startSession(page, 'Pi', 'llamacpp/bonsai-27b');
   const sheet = await openSettings(page);
@@ -148,98 +148,54 @@ test('pi: the grouped picker; the header names the new model and its provider', 
   await picker.selectOption('openrouter/deepseek/deepseek-v4.1-flash');
   await expect(sheet.getByText('via openrouter', { exact: true })).toBeVisible();
   await saveAndExpectSent(page, request, sheet, { model: 'openrouter/deepseek/deepseek-v4.1-flash' });
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('deepseek/deepseek-v4.1-flash · openrouter');
+  await expectSettings(page, { model: 'deepseek/deepseek-v4.1-flash · openrouter' });
 });
 
-test('an agent without the capability: the model line is plain text and opens nothing', async ({ page, request }) => {
+test('an agent without the capability: the Model row is plain text and opens nothing', async ({ page, request }) => {
   await request.post('/test/settings-locked', { data: { agentId: 'codex' } });
   await pair(page, request);
   await page.goto('/s/ses_fake_1');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('gpt-5-codex');
-  await expect(page.getByTitle('Change model and effort')).toHaveCount(0);
-  await page.getByLabel('Model', { exact: true }).click();
+  const details = await openDetails(page);
+  await expect(details.getByLabel('Model', { exact: true })).toHaveText('gpt-5-codex');
+  await expect(details.getByTitle('Change model and effort')).toHaveCount(0);
+  await expect(details.locator('[data-row="model"] button')).toHaveCount(0);
+  await details.getByLabel('Model', { exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Model and effort' })).toHaveCount(0);
+  await closeDetails(page, details);
 });
 
-/**
- * Where the model line's first glyph sits (iPhone bug: "fable" showed as "rable", its first letter cut on the
- * left). The glyph starts inside the header's content box, aligned with the lines above; the button's clip
- * edge lies left of it with room for ink that starts left of the glyph's origin; nothing scrolled the name
- * sideways; and the strip at the left edge looks the same with the clip turned off, so no ink was cut.
- */
-async function expectModelNameWhole(page: Page): Promise<void> {
-  const button = page.getByTitle('Change model and effort');
-  const geometry = await button.evaluate((el) => {
-    const name = el.querySelector('[aria-label="Model"]')!.firstChild!;
-    const range = document.createRange();
-    range.setStart(name, 0);
-    range.setEnd(name, 1);
-    const head = document.querySelector('.session-head')!;
-    const pad = parseFloat(getComputedStyle(head).paddingLeft);
-    return {
-      glyph: range.getBoundingClientRect().x,
-      contentLeft: head.getBoundingClientRect().x + pad,
-      line: document.querySelector('.session-meta-line')!.getBoundingClientRect().x,
-      clipLeft: el.getBoundingClientRect().x,
-      height: el.getBoundingClientRect().height,
-      scrollLeft: el.scrollLeft,
-    };
-  });
-  expect(geometry.glyph).toBeGreaterThanOrEqual(geometry.contentLeft - 0.5);
-  expect(geometry.glyph).toBeGreaterThanOrEqual(geometry.line - 0.5);
-  expect(geometry.glyph - geometry.clipLeft).toBeGreaterThanOrEqual(1.5);
-  expect(geometry.scrollLeft).toBe(0);
-  expect(geometry.height).toBeGreaterThanOrEqual(32); // the tap target
-  const box = (await button.boundingBox())!;
-  const strip = { x: box.x - 4, y: box.y, width: 24, height: box.height };
-  const clipped = await page.screenshot({ clip: strip });
-  await button.evaluate((el) => (el.style.overflow = 'visible'));
-  const unclipped = await page.screenshot({ clip: strip });
-  await button.evaluate((el) => (el.style.overflow = ''));
-  expect(clipped.equals(unclipped)).toBe(true);
-}
-
-test('the model line shows its first letter whole after the sheet opens and closes; a long name ellipsizes', async ({ page, request }) => {
+test('a long model name shows whole in the ⋯ sheet: it wraps inside its row, nothing is cut or overflows', async ({ page, request }) => {
   mkdirSync(SHOTS, { recursive: true });
   await pair(page, request);
   await startSession(page, 'Claude', 'fable');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('fable');
-  await expectModelNameWhole(page);
+  await expectSettings(page, { model: 'fable', effort: null });
 
-  // Open, pick Medium, Save: the sheet closes and the header names both.
+  // Open, pick Medium, Save: the ⋯ sheet names both.
   let sheet = await openSettings(page);
   await sheet.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio', { name: 'Medium' }).click();
   await saveAndExpectSent(page, request, sheet, { effort: 'medium' });
-  await expect(page.getByLabel('Effort', { exact: true })).toHaveText('Medium effort');
-  await expectModelNameWhole(page);
+  await expectSettings(page, { model: 'fable', effort: 'Medium' });
 
-  // Open and Cancel.
+  const long = 'claude-fable-experimental-preview-with-a-very-long-model-name';
   sheet = await openSettings(page);
-  await sheet.getByRole('button', { name: 'Cancel' }).click();
-  await expect(sheet).toHaveCount(0);
-  await sheetsSettled(page);
-  await expectModelNameWhole(page);
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await page.locator('.session-head').screenshot({ path: `${SHOTS}/header-model-name-dark.png` });
-  await page.emulateMedia({ colorScheme: 'light' });
-
-  // A name longer than the line stays inside it and ends in an ellipsis; its start is still whole.
-  sheet = await openSettings(page);
-  await sheet.getByRole('combobox', { name: 'Model' }).selectOption('claude-fable-experimental-preview-with-a-very-long-model-name');
+  await sheet.getByRole('combobox', { name: 'Model' }).selectOption(long);
   await sheet.getByRole('button', { name: 'Save' }).click(); // a second save: saveAndExpectSent checks only the first
   await expect(sheet).toHaveCount(0);
   await sheetsSettled(page);
-  const button = page.getByTitle('Change model and effort');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('claude-fable-experimental-preview-with-a-very-long-model-name');
-  const fit = await button.evaluate((el) => ({
-    right: el.getBoundingClientRect().right,
-    lineRight: el.parentElement!.getBoundingClientRect().right,
-    truncated: el.scrollWidth > el.clientWidth,
-    ellipsis: getComputedStyle(el).textOverflow,
+  const details = await openDetails(page);
+  const name = details.getByLabel('Model', { exact: true });
+  await expect(name).toHaveText(long);
+  const fit = await details.locator('[data-row="model"] .group-row').evaluate((row) => ({
+    right: row.getBoundingClientRect().right,
+    sheetRight: row.closest('.sheet')!.getBoundingClientRect().right,
+    clipped: row.scrollWidth > row.clientWidth,
   }));
-  expect(fit.right).toBeLessThanOrEqual(fit.lineRight + 2.5); // the 2 px clip room
-  expect(fit).toMatchObject({ truncated: true, ellipsis: 'ellipsis' });
+  expect(fit.right).toBeLessThanOrEqual(fit.sheetRight);
+  expect(fit.clipped).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expectModelNameWhole(page);
-  { const row = (await button.boundingBox())!; await page.screenshot({ path: `${SHOTS}/header-long-model.png`, clip: { x: 0, y: row.y - 60, width: 390, height: row.height + 60 } }); }
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await details.screenshot({ path: `${SHOTS}/details-long-model-${scheme}.png` });
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
 });

@@ -301,6 +301,8 @@ export const FAKE_VAPID_PUBLIC_KEY = 'BLqV9YHYYANsdXdPRsHojo-QK0K6dl2lGcRree27K9
 export interface TurnScript {
   answer?: string;
   deltas?: number;
+  /** The turn's startedAt (Unix seconds); the fixture time by default, so "Worked for" reads the same each run. */
+  startedAt?: number;
 }
 
 export class FakeHost {
@@ -923,7 +925,7 @@ export class FakeHost {
     const running = session.running!;
     const steps: (() => void)[] = [];
     steps.push(() => {
-      this.emit(sessionId, 'turn/started', { turn: { turnId, status: 'inProgress', startedAt: 1760930100, completedAt: null, error: null, items: [] } });
+      this.emit(sessionId, 'turn/started', { turn: { turnId, status: 'inProgress', startedAt: script.startedAt ?? 1760930100, completedAt: null, error: null, items: [] } });
       const user = {
         itemId: `itm_fake_${++this.nextId}`,
         type: 'userMessage',

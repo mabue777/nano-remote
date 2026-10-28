@@ -277,32 +277,7 @@
 }
 
 /* ---------- Session header (item 8) ---------- */
-.lab[data-look='new'] .lab-nl-nav {
-  display: grid;
-  grid-template-columns: var(--touch) 1fr var(--touch);
-  align-items: center;
-  gap: var(--space-4);
-  padding-bottom: var(--space-4);
-}
-
-.lab-nl-nav-title {
-  min-width: 0;
-  text-align: center;
-}
-
-.lab-nl-nav-title h1 {
-  font: var(--type-nav-title);
-  letter-spacing: var(--tracking-title);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.lab-nl-nav-title p {
-  margin: 0;
-  font: var(--type-footnote);
-  color: var(--muted);
-}
+/* The centred session header is the app's (.nav in styles/components.css). */
 
 /* ---------- Transcript (items 2, 4) ---------- */
 .lab[data-look='new'] .turns {
@@ -536,14 +511,6 @@
 
 .lab[data-look='new'] .lab-nl-group-row > .icon:first-child {
   color: var(--muted);
-}
-
-.lab-nl-value {
-  margin-left: auto;
-  color: var(--muted);
-  font: var(--type-callout);
-  text-align: right;
-  overflow-wrap: anywhere;
 }
 
 /* The Changes sheet: grey kind words instead of coloured badges, the Codex diff colours (item 11, as needed). */

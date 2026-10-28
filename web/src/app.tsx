@@ -20,7 +20,7 @@ import { ChatsPanel } from './screens/chat/ChatsPanel';
 import { createChatServices, hasLocalChat, type ChatServices } from './screens/chat/services';
 import { SettingsScreen } from './screens/settings/SettingsScreen';
 import { forgetDevice, loadDevice, type PairedDevice } from './screens/device';
-import { AwayTracker, type SessionStorageLike } from './screens/home-model';
+import { AwayTracker, homeTitle, type SessionStorageLike } from './screens/home-model';
 import { HomeScreen } from './screens/HomeScreen';
 import { SessionActions } from './screens/session-actions';
 import type { FetchLike } from './screens/pair-model';
@@ -58,7 +58,7 @@ export function App({ router, storage = defaultStorage(), fetch = window.fetch.b
   // The hidden interaction lab: fake data, no host, no pairing needed.
   if (route.name === 'lab') return <LabRoute />;
   if (localOnly) {
-    if (route.name === 'settings') return <SettingsScreen services={chat} backLabel="Chats" onBack={() => router.navigate('/')} />;
+    if (route.name === 'settings') return <SettingsScreen services={chat} backLabel={homeTitle(false)} onBack={() => router.navigate('/')} />;
     if (route.name === 'chat') {
       return <ChatScreen key={route.chatId} chatId={route.chatId} services={chat} backLabel="Chats" onBack={() => router.navigate('/')} onSettings={settings} />;
     }
@@ -189,8 +189,8 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           services={chat}
           hostLink={services.client}
           {...(services.notifications !== undefined ? { notifications: services.notifications } : {})}
-          backLabel="Chats"
-          onBack={() => router.navigate('/chats')}
+          backLabel={homeTitle(true)}
+          onBack={() => router.navigate('/')}
         />
       );
     case 'session':
@@ -204,6 +204,7 @@ function Connected({ device, route, router, storage, push, chat, onUnpaired }: C
           agents={services.agents}
           attachments={services.attachments}
           actions={services.actions}
+          link={services.client}
           onBack={() => router.navigate('/')}
         />
       );

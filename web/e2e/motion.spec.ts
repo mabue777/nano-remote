@@ -122,14 +122,17 @@ test('a tap on the dim layer closes with the slide-out; so does Escape and start
   await sheetsClosed(page);
   expect((await played(page)).filter((p) => p.ghost)).toHaveLength(4);
 
-  // Escape (a hardware keyboard) on the session's settings sheet.
+  // Escape (a hardware keyboard) on the session's settings sheet, opened from the ⋯ sheet's Model row (which
+  // slides the ⋯ sheet out).
+  await page.getByRole('button', { name: 'Session details' }).click();
+  await sheetsSettled(page);
   await page.getByTitle('Change model and effort').click();
   await expect(page.getByRole('dialog', { name: 'Model and effort' })).toBeVisible();
   await sheetsSettled(page);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await sheetsClosed(page);
-  expect((await played(page)).filter((p) => p.ghost)).toHaveLength(6);
+  expect((await played(page)).filter((p) => p.ghost)).toHaveLength(8);
 });
 
 test('a short drag down springs back; a long one dismisses; a drag on a field or in scrolled content leaves the sheet', async ({ page, request }) => {

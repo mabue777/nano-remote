@@ -17,6 +17,7 @@ import {
   awayTransition,
   AwayTracker,
   HomeModel,
+  homeTitle,
   isFinished,
   orderSessions,
   rankOf,
@@ -24,6 +25,13 @@ import {
   statusOf,
   type HomeClient,
 } from './home-model';
+
+describe('homeTitle', () => {
+  it('names Home the way a back control into it does: Sessions with a host, Chats without', () => {
+    expect(homeTitle(true)).toBe('Sessions');
+    expect(homeTitle(false)).toBe('Chats');
+  });
+});
 
 const INIT: InitializeResult = exampleMessage('08').result;
 const STATUS = exampleMessage('44').params;

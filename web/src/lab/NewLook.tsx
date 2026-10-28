@@ -8,6 +8,8 @@
 import type { RefObject } from 'preact';
 import { useState } from 'preact/hooks';
 
+import { GroupList, type GroupRow } from '../ui/GroupList';
+import { NavHeader } from '../ui/NavHeader';
 import { SheetHeader } from '../ui/Sheet';
 import { CrossFade } from './dom';
 import { APPROVAL, QUESTION, type LabSession as Session, type ToolRow } from './fixtures';
@@ -30,6 +32,7 @@ import {
   type QuestionDraft,
 } from '../screens/session/approvals/questions';
 import { AnsweredLine, ApprovalCard, QuestionCard } from '../screens/session/approvals/RequestCards';
+import { detailRows } from '../screens/session/session-details';
 import { indicatorOf, previousMessages, type Indicator } from './look';
 
 export interface NewListProps {
@@ -113,29 +116,12 @@ function RowIndicator({ value }: { value: string }) {
   return <span class="lab-nl-indicator-none" />;
 }
 
-/** Item 8: round back button, centred 17 px title with a grey subtitle, round more button. */
+/** Item 8: the app's centred bar (ui/NavHeader.tsx): round back button, centred 17 px title with a grey line, round more button. */
 export function NewSessionHeader({ title, subtitle, onBack, onMore }: { title: string; subtitle: string; onBack: () => void; onMore: () => void }) {
   return (
-    <header class="lab-nl-nav">
-      <a
-        class="lab-nl-round"
-        href="/lab"
-        aria-label="Back to sessions"
-        onClick={(event) => {
-          event.preventDefault();
-          onBack();
-        }}
-      >
-        <Icon name="back" />
-      </a>
-      <div class="lab-nl-nav-title">
-        <h1>{title}</h1>
-        <p>{subtitle}</p>
-      </div>
-      <button type="button" class="lab-nl-round" aria-label="Session details" onClick={onMore}>
-        <Icon name="more" />
-      </button>
-    </header>
+    <NavHeader href="/lab" backLabel="Back to sessions" onBack={onBack} title={title} moreLabel="Session details" onMore={onMore}>
+      {subtitle}
+    </NavHeader>
   );
 }
 
@@ -275,41 +261,28 @@ export function NewQuestionCard({ flipKey, answer, shelled, animate, onAnswer }:
   );
 }
 
-/** The session's ⋯ sheet: what the old header carried (status, agent and model, folder) plus Changes. */
+/** The session's ⋯ sheet: the app's rows (session-details.ts) with the fixture's values; the lab has no archive or delete. */
 export function SessionDetailsBody({ status, onChanges, onClose }: { status: string; onChanges: () => void; onClose: () => void }) {
+  const tone = status === 'Running' ? 'busy' : status === 'Finished' ? 'ok' : 'attention';
+  const rows = detailRows({
+    status,
+    statusTone: tone,
+    agent: 'Codex',
+    model: 'gpt-5.5',
+    effort: 'High',
+    canChangeSettings: false,
+    folder: '~/code/nano-remote',
+    fullAccess: false,
+    changes: '3 files',
+    archived: false,
+  }).flatMap((row): GroupRow[] => {
+    if (row.action !== undefined && row.action !== 'changes') return [];
+    return [{ key: row.key, icon: row.icon, label: row.label, value: row.value, ...(row.action === 'changes' ? { onClick: onChanges, opens: true } : {}) }];
+  });
   return (
     <>
       <SheetHeader titleId="lab-details-title" title="Fix the failing parser test" subtitle="Mac mini · nano-remote" actionLabel="Done" onAction={onClose} />
-      <ul class="lab-nl-group" aria-label="Session details">
-        <li class="lab-nl-group-row">
-          <Icon name={status === 'Running' ? 'spinner' : status === 'Finished' ? 'check' : 'question'} size={18} />
-          <span>Status</span>
-          <span class="lab-nl-value">{status}</span>
-        </li>
-        <li class="lab-nl-group-row">
-          <Icon name="terminal" size={18} />
-          <span>Agent</span>
-          <span class="lab-nl-value">Codex</span>
-        </li>
-        <li class="lab-nl-group-row">
-          <Icon name="gear" size={18} />
-          <span>Model</span>
-          <span class="lab-nl-value">gpt-5.5 · High</span>
-        </li>
-        <li class="lab-nl-group-row">
-          <Icon name="folder" size={18} />
-          <span>Folder</span>
-          <span class="lab-nl-value">~/code/nano-remote</span>
-        </li>
-        <li>
-          <button type="button" class="lab-nl-group-row" onClick={onChanges}>
-            <Icon name="file-diff" size={18} />
-            <span>Changes</span>
-            <span class="lab-nl-value">3 files</span>
-            <Icon name="chevron-right" size={16} class="lab-nl-chevron" />
-          </button>
-        </li>
-      </ul>
+      <GroupList label="Session details" rows={rows} />
     </>
   );
 }

@@ -9,14 +9,15 @@ import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Replica } from '../../replica/replica';
-import { BackHeader } from '../../ui/BackHeader';
 import { Composer } from '../../ui/Composer';
 import { Icon } from '../../ui/Icon';
+import { NavHeader } from '../../ui/NavHeader';
 import { Sheet } from '../../ui/Sheet';
 import { PullIndicator, usePullToRefresh } from '../../ui/PullToRefresh';
 import type { AgentsSource } from '../capabilities';
 import { SessionActions } from '../session-actions';
-import { ActionsSheet, DeleteConfirmSheet } from '../SessionActionsSheets';
+import type { ConnectionSource } from '../home-model';
+import { DeleteConfirmSheet } from '../SessionActionsSheets';
 import { useModel } from '../use-model';
 import { placeByTurn, placeInTurn } from './approvals/answered';
 import { ApprovalsModel, type AnsweredRow } from './approvals/approvals-model';
@@ -24,6 +25,8 @@ import { AnsweredLines, InlineRequests, PinnedQuestions } from './approvals/Requ
 import type { AttachmentEntry } from './attachments/composer';
 import { collapse, reducedMotion, useAutoScroll, useFlip, type Flip } from './motion-hooks';
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
+import { FULL_ACCESS, type DetailAction } from './session-details';
+import { SessionDetailsSheet } from './SessionDetailsSheet';
 import { SessionSettingsSheet } from './SessionSettingsSheet';
 import { AgentMessage, FlatRow, JumpPill, PreviousToggle, Thinking, WorkedFor } from './TranscriptRows';
 import { layoutTurn, rowLine } from './transcript';
@@ -51,11 +54,13 @@ export interface SessionScreenProps {
   agents?: AgentsSource;
   /** Photo and file uploads for the composer (spec 8.1); without them there is no attach button. */
   attachments?: AttachmentServices;
-  /** Archive and delete from the header's More menu (shared with Home, which shows the archive's Undo). */
+  /** Archive and delete from the header's ⋯ sheet (shared with Home, which shows the archive's Undo). */
   actions?: SessionActions;
+  /** The host connection (the stream client): "Mac offline" in the header, the host's name in the ⋯ sheet. */
+  link?: ConnectionSource;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared }: SessionScreenProps) {
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared, link }: SessionScreenProps) {
   const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
   useEffect(() => () => own?.dispose(), [own]);
   const actions = useModel((shared ?? own)!);
@@ -68,8 +73,9 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
           replica,
           ...(agents !== undefined ? { agents } : {}),
           ...(attachments !== undefined ? { attachments } : {}),
+          ...(link !== undefined ? { link } : {}),
         }),
-      [sessionId, replica, agents, attachments],
+      [sessionId, replica, agents, attachments, link],
     ),
   );
   const requests = useModel(
@@ -84,13 +90,14 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   }, [model]);
   useEffect(() => () => requests.dispose(), [requests]);
   useEffect(() => onOpened?.(sessionId), [sessionId, onOpened]);
-  // While the background-task strip shows, elapsed times count up and ended tasks leave on time.
-  const tasksShown = model.backgroundTasks.length > 0;
+  // Once a second while something counts: the header's elapsed time or retry countdown, the background
+  // tasks' elapsed times (and ended tasks leave on time). No timer otherwise.
+  const ticking = model.ticking;
   useEffect(() => {
-    if (!tasksShown) return undefined;
+    if (!ticking) return undefined;
     const timer = setInterval(() => model.tick(), 1000);
     return () => clearInterval(timer);
-  }, [model, tasksShown]);
+  }, [model, ticking]);
 
   const scroller = useRef<HTMLElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -159,78 +166,31 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   };
   const pull = usePullToRefresh(() => (scroller.current?.scrollTop ?? 0) <= 0, loadOlder);
 
-  const status = model.status;
+  const line = model.statusLine;
   const turns = model.turns;
   const answered = placeByTurn(requests.answered, new Set(turns.map((t) => t.turnId)));
   const steers = model.steerRows;
   const running = model.runningTurnId !== undefined;
   // Sending (technique 6): the message rises out of the composer, the field clears in the same frame, and the
   // older rows glide up as the view pins to the new bottom.
+  const archived = replica.archivedSessions.some((s) => s.sessionId === sessionId);
   const send = () => flip(() => model.send(), { enter: false, rise: SENT_ROWS, beforePlay: () => scroll.pin() });
 
   return (
     <main class="screen session-screen">
-      <BackHeader href="/" label="Sessions" onBack={onBack}>
-        <div class="topbar-end">
-          <span class={`status-word ${status.tone}`} aria-label="Session status" data-status={status.status}>
-            <span class="dot" aria-hidden="true" />
-            {status.label}
-          </span>
-          <button type="button" class="ghost icon-button" aria-label="Session actions" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
-            <Icon name="more" size={22} />
-          </button>
-        </div>
-      </BackHeader>
+      <NavHeader href="/" backLabel="Sessions" onBack={onBack} title={model.title} moreLabel="Session details" onMore={() => setMenuOpen(true)}>
+        {/* The session's one status: dot and word, the live elapsed time or "Mac offline"; " · Full access" after it. */}
+        <span class={`status-word small ${line.tone}`} aria-label="Session status" data-status={line.status}>
+          <span class="dot" aria-hidden="true" />
+          {line.text}
+        </span>
+        {line.fullAccess && <span class="nav-extra"> · {FULL_ACCESS}</span>}
+      </NavHeader>
       {actions.error !== undefined && (
         <p class="error session-actions-error" role="alert">
           {actions.error}
         </p>
       )}
-      <div class="session-head">
-        <h1 class="session-heading">
-          {model.title}
-          {model.bypass && (
-            <span class="pill session-tag" title="Approvals bypassed: the agent runs everything without asking" aria-label="Approvals bypassed">
-              Full access
-            </span>
-          )}
-        </h1>
-        {/* One footnote line: agent · folder · model · effort, then Change (a control) where the agent allows it. */}
-        <p class="session-meta-line small">
-          {model.agentId ?? ''}
-          {model.folder !== undefined && (
-            <>
-              {' · '}
-              <span class="session-folder" title={model.folder.path}>
-                {model.folder.name}
-              </span>
-            </>
-          )}
-          {model.canChangeSettings ? (
-            <>
-              {' · '}
-              <button type="button" class="session-model session-model-button" aria-haspopup="dialog" title="Change model and effort" onClick={() => model.openSettings()}>
-                <span aria-label="Model">{model.model ?? 'Default model'}</span>
-                {model.effort !== undefined && ' · '}
-                {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
-                <span aria-hidden="true">
-                  {' · '}
-                  <span class="session-model-change">Change</span>
-                </span>
-              </button>
-            </>
-          ) : (
-            (model.model !== undefined || model.effort !== undefined) && (
-              <span class="session-model">
-                {' · '}
-                {model.model !== undefined && <span aria-label="Model">{model.model}</span>}
-                {model.model !== undefined && model.effort !== undefined && ' · '}
-                {model.effort !== undefined && <span aria-label="Effort">{model.effort} effort</span>}
-              </span>
-            )
-          )}
-        </p>
-      </div>
       <BackgroundTasks rows={model.backgroundTasks} model={model} flip={flip} scroller={scroller} />
       {model.openError !== undefined && (
         <p class="error" role="alert">
@@ -300,21 +260,19 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
       <StopConfirm model={model} />
       {menuOpen && (
-        <ActionsSheet
+        <SessionDetailsSheet
           title={model.title}
-          archived={replica.archivedSessions.some((s) => s.sessionId === sessionId)}
+          subtitle={model.detailsSubtitle}
+          rows={model.detailRows(archived)}
           onClose={() => setMenuOpen(false)}
-          onArchive={() => {
+          onAction={(action: DetailAction) => {
             setMenuOpen(false);
-            if (actions.askArchive(sessionId)) onBack();
-          }}
-          onUnarchive={() => {
-            setMenuOpen(false);
-            void actions.unarchive(sessionId);
-          }}
-          onDelete={() => {
-            setMenuOpen(false);
-            actions.askDelete(sessionId);
+            if (action === 'settings') model.openSettings();
+            else if (action === 'changes') model.openLastChanges();
+            else if (action === 'archive') {
+              if (actions.askArchive(sessionId)) onBack();
+            } else if (action === 'unarchive') void actions.unarchive(sessionId);
+            else actions.askDelete(sessionId);
           }}
         />
       )}

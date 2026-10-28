@@ -86,6 +86,19 @@ export interface SessionRow {
   backgroundTasks: number;
 }
 
+/** Home's own title, which a back control into Home names: "Sessions" while a host is paired, else "Chats" (local chat only). */
+export function homeTitle(paired: boolean): string {
+  return paired ? 'Sessions' : 'Chats';
+}
+
+/** What the session view needs from the stream client to know the host connection (connectionOf) and name; StreamClient fits. */
+export interface ConnectionSource {
+  readonly state: ClientState;
+  readonly reconnectAt: number | undefined;
+  readonly host: InitializeResult | undefined;
+  on(event: 'state', listener: (state: ClientState, detail: string) => void): () => void;
+}
+
 /** "1 background task", "3 background tasks". */
 export function backgroundTasksText(count: number): string {
   return `${count} background task${count === 1 ? '' : 's'}`;

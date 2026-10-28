@@ -150,7 +150,7 @@ button {
 }
 
 /* Full-width bars and rows only dim: shrinking them would pull their edges in from the page's. */
-:root :is(.archived-toggle, .bg-task-row, .diff-file-row, .dir, .candidate, .picker-models .choice, .session-model-button, .file-chip, .form > button):active {
+:root :is(.archived-toggle, .bg-task-row, .diff-file-row, .dir, .candidate, .picker-models .choice, .group-row, .file-chip, .form > button):active {
   transform: none;
 }
 

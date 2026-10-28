@@ -279,7 +279,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await sheet.getByRole('switch', { name: 'Bypass approvals (full access)' }).click();
       await sheet.getByLabel('Title (optional)').fill('Full access session');
       await sheet.getByRole('button', { name: 'Start session' }).click();
-      await expect(page.getByLabel('Approvals bypassed')).toHaveText('Full access');
+      await expect(page.locator('.nav-extra')).toHaveText(' · Full access');
       await shot(page, 'card-bypass-header');
     });
 

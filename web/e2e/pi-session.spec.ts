@@ -1,9 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+import { expectSettings } from './sheets';
+
 // Pi on the new-session sheet at 390 x 844 (Phase 5b): the fake host lists agent "pi" with models from two
 // providers (llamacpp, openrouter). The picker groups them by provider; choosing one starts the session on it
 // (settings.model is the provider/model id); pi's approval card is the usual one with accept, decline and
-// cancel; the session header and the session row name the model and its provider. Pi's capabilities honour
+// cancel; the session's ⋯ details sheet and the session row name the model and its provider. Pi's capabilities honour
 // no approvalMode (approvalModes []), so the sheet offers no "Bypass approvals" switch for it.
 
 test.beforeEach(async ({ request }) => {
@@ -57,7 +59,7 @@ test('pick Pi and a model, start, accept the approval; header and row show the m
   expect(await lastParams(request, 'session/start')).toMatchObject({ agentId: 'pi', settings: { model: 'openrouter/qwen/qwen3.5-coder' } });
 
   await expect(page.getByRole('heading', { name: 'Pi phone session' })).toBeVisible();
-  await expect(page.getByLabel('Model', { exact: true })).toHaveText('qwen/qwen3.5-coder · openrouter');
+  await expectSettings(page, { model: 'qwen/qwen3.5-coder · openrouter' });
 
   const card = page.getByRole('group', { name: 'Approval: Run this command?' });
   await expect(card).toBeVisible();
