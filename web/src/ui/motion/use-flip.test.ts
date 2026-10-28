@@ -122,6 +122,22 @@ describe('useFlip', () => {
     none.value.prepare();
     none.render();
   });
+
+  it('notifies the auto-scroll layout handle around a FLIP change', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const page = new FakeContainer();
+    page.layout('a');
+    const layoutChange = { start: vi.fn(), end: vi.fn() };
+    const host = renderHook(() => useFlip(ref(page), true, layoutChange));
+    host.value(() => page.layout('a', 'b'));
+    expect(layoutChange.start).toHaveBeenCalledTimes(1);
+    expect(layoutChange.end).not.toHaveBeenCalled();
+    host.render();
+    expect(layoutChange.end).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(layoutChange.end).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
 });
 
 describe('useListMotion', () => {

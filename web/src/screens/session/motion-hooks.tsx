@@ -82,6 +82,11 @@ export interface AutoScroll {
   pin(): void;
   /** Whether it follows the bottom now. */
   following(): boolean;
+  /** Notify the follower that the app is changing the layout (FLIP/collapse) so it does not treat the resulting scroll as a reader gesture. */
+  layout: {
+    start(): void;
+    end(): void;
+  };
   /** For the scroller element. */
   handlers: {
     onScroll: () => void;
@@ -169,11 +174,15 @@ export function useAutoScroll(scroller: RefObject<HTMLElement>, content: RefObje
       if (el === null) return;
       follower.jump();
       el.scrollTop = el.scrollHeight - el.clientHeight;
-      follower.scrolledTo(el.scrollTop);
+      follower.scrolledTo(el);
       setPill(false);
       follow.current?.(true);
     },
     following: () => follower.following,
+    layout: {
+      start: () => follower.startLayoutChange(),
+      end: () => follower.endLayoutChange(),
+    },
     handlers: {
       onScroll: () => {
         const el = scroller.current;

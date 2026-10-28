@@ -53,7 +53,7 @@ export function ChatScreen({ chatId, services, onBack, backLabel, onSettings }: 
   const content = useRef<HTMLDivElement>(null);
   const lastScrollRequest = useRef(-1);
   const scroll = useAutoScroll(scroller, content);
-  const flip = useFlip(scroller, !reducedMotion());
+  const flip = useFlip(scroller, !reducedMotion(), scroll.layout);
   // The history is on the phone: land at its end at once; after that new content glides into view.
   useLayoutEffect(() => scroll.snap(), []); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {

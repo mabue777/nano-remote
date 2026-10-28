@@ -36,8 +36,13 @@ interface Timing {
  * lets the change render, then animates rows from their old places and shells from their old heights, and
  * marks what it played (`data-flip-anim`, flip.ts markPlayed). With `enabled` false it only runs the update.
  */
-export function useFlip(container: RefObject<HTMLElement>, enabled: boolean): Flip {
+export function useFlip(
+  container: RefObject<HTMLElement>,
+  enabled: boolean,
+  layoutChange?: { start(): void; end(): void },
+): Flip {
   const pending = useRef<{ before: Map<string, Box>; heights: Map<string, number>; request: FlipRequest } | null>(null);
+  const endTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useLayoutEffect(() => {
     const job = pending.current;
     const element = container.current;
@@ -49,11 +54,19 @@ export function useFlip(container: RefObject<HTMLElement>, enabled: boolean): Fl
     markPlayed(element, plan);
     if (job.request.rise !== undefined) riseEntered(element, plan.entered, job.request.rise, { duration: m.moderate, easing: m.enter });
     growShells(element, job.heights, { duration: m.relaxed, easing: m.standard });
+    if (layoutChange !== undefined) {
+      clearTimeout(endTimeout.current);
+      endTimeout.current = setTimeout(() => layoutChange.end(), m.relaxed);
+    }
+    return () => clearTimeout(endTimeout.current);
   });
   return useMemo(() => {
     const prepare = (request: FlipRequest = {}) => {
       const element = container.current;
-      if (enabled && element !== null && pending.current === null) pending.current = { before: measure(element), heights: shellHeights(element), request };
+      if (enabled && element !== null && pending.current === null) {
+        pending.current = { before: measure(element), heights: shellHeights(element), request };
+        layoutChange?.start();
+      }
     };
     const flip = ((update: () => void, request: FlipRequest = {}) => {
       prepare(request);
@@ -61,7 +74,7 @@ export function useFlip(container: RefObject<HTMLElement>, enabled: boolean): Fl
     }) as Flip;
     flip.prepare = prepare;
     return flip;
-  }, [container, enabled]);
+  }, [container, enabled, layoutChange]);
 }
 
 function shellHeights(container: HTMLElement): Map<string, number> {

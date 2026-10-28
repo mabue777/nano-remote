@@ -21,9 +21,12 @@ export function distanceFromBottom(m: ScrollMetrics): number {
 export class Follower {
   following = true;
   private touching = false;
-  private lastSet: number | undefined;
+  /** The last scroll we wrote ourselves, so we can tell a genuine reader scroll from one the layout caused. */
+  private lastScroll: ScrollMetrics | undefined;
   /** The list's height when last seen, to tell a shrinking list from a scroll up. */
   private lastHeight: number | undefined;
+  /** Nesting counter for app layout changes; scroll events during these are treated as app-caused. */
+  private layoutChangeDepth = 0;
 
   /** Fraction of the remaining distance covered per 60 fps frame (0.35: about 90% within 100 ms). A longer
    *  frame covers what the 60 fps frames in it would have, so a slow device does not trail further behind. */
@@ -41,12 +44,38 @@ export class Follower {
     this.following = distanceFromBottom(m) <= BOTTOM_SLACK;
   }
 
-  /** A scroll event. One this class caused is ignored; the reader's own scroll decides whether to follow. */
+  /** Tells the follower an app layout change (FLIP, collapse) is about to happen. */
+  startLayoutChange(): void {
+    this.layoutChangeDepth++;
+  }
+
+  /** Tells the follower the app layout change finished. */
+  endLayoutChange(): void {
+    this.layoutChangeDepth = Math.max(0, this.layoutChangeDepth - 1);
+  }
+
+  /** A scroll event. One this class caused is ignored; the reader's own scroll decides whether to follow.
+   *  A scroll caused by the app's own layout change is also ignored: either the helper told us one is in
+   *  progress, or the new scrollTop is the last programmatic one shifted by the content-height delta. */
   onScroll(m: ScrollMetrics): void {
     const shrank = this.lastHeight !== undefined && m.scrollHeight < this.lastHeight - 0.5;
     this.lastHeight = m.scrollHeight;
-    if (this.lastSet !== undefined && Math.abs(m.scrollTop - this.lastSet) <= 1) return;
-    this.lastSet = undefined;
+    // While the app is explicitly changing the layout, scrolls are its own while we are following.
+    if (this.layoutChangeDepth > 0 && this.following && !this.touching) {
+      if (this.lastScroll !== undefined) {
+        this.lastScroll = { ...m };
+      }
+      return;
+    }
+    if (this.lastScroll !== undefined && !this.touching) {
+      const expected = this.lastScroll.scrollTop + (m.scrollHeight - this.lastScroll.scrollHeight);
+      if (Math.abs(m.scrollTop - expected) <= 1 || Math.abs(m.scrollTop - this.lastScroll.scrollTop) <= 1) {
+        // The layout moved the scroll position for us; keep the reference point up to date.
+        this.lastScroll = { ...m };
+        return;
+      }
+    }
+    this.lastScroll = undefined;
     if (this.touching) return;
     // The list got shorter (a finished turn folded) and the browser pulled the view up with it: that is not
     // the reader scrolling away, so keep following.
@@ -59,9 +88,10 @@ export class Follower {
     this.following = true;
   }
 
-  /** The caller scrolled to `top` itself (a send pins to the bottom): its scroll event is not the reader's. */
-  scrolledTo(top: number): void {
-    this.lastSet = top;
+  /** The caller scrolled to the metrics in `m` itself (a send pins to the bottom): its scroll event is not the reader's. */
+  scrolledTo(m: ScrollMetrics): void {
+    this.lastScroll = { ...m };
+    this.lastHeight = m.scrollHeight;
   }
 
   /** The scrollTop to set this frame (`dtMs` since the last one), or undefined to leave it. */
@@ -73,7 +103,7 @@ export class Follower {
     if (remaining <= 0.5) return undefined;
     const share = 1 - (1 - this.ease) ** (Math.max(0, dtMs) / FRAME_MS);
     const next = Math.min(target, m.scrollTop + Math.max(1, remaining * share));
-    this.lastSet = next;
+    this.lastScroll = { scrollTop: next, scrollHeight: m.scrollHeight, clientHeight: m.clientHeight };
     return next;
   }
 }

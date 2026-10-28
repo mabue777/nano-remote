@@ -106,7 +106,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   const lastScrollRequest = useRef(-1);
   // Auto-scroll: eases to new content while the reader is at the bottom, lets go at the first touch.
   const scroll = useAutoScroll(scroller, content, (following) => model.setAtBottom(following));
-  const flip = useFlip(scroller, !reducedMotion());
+  const flip = useFlip(scroller, !reducedMotion(), scroll.layout);
 
   // A turn that ends folds its work behind "N previous messages": measure the rows before that renders, so
   // the rest slides into place instead of jumping.

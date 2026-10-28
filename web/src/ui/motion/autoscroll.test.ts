@@ -80,10 +80,73 @@ describe('Follower', () => {
 
   it('a scroll the caller made itself (a send pinning to the bottom) does not stop it, even when content grew since', () => {
     const f = new Follower();
-    f.scrolledTo(1400);
+    f.scrolledTo(at(1400, 2000));
     f.onScroll(at(1400, 2200)); // the event arrives after the reply's first rows made the list taller
     expect(f.following).toBe(true);
     f.onScroll(at(1000, 2200)); // the reader's own scroll up still counts
+    expect(f.following).toBe(false);
+  });
+
+  it('ignores a scroll caused by the app layout change, using the height delta since the last programmatic scroll', () => {
+    const f = new Follower();
+    const set = f.step(at(1000, 2000))!; // 400 px to go; with default ease it moves a bit
+    f.onScroll(at(set + 200, 2200)); // content grew 200 px and the browser kept distance from bottom: scrollTop shifted by 200
+    expect(f.following).toBe(true);
+    f.onScroll(at(set + 200 + 100, 2300)); // content grew another 100 px: still app-caused
+    expect(f.following).toBe(true);
+    f.onScroll(at(set + 200 + 50, 2300)); // same height, but the reader also scrolled 50 px away
+    expect(f.following).toBe(false);
+  });
+
+  it('ignores a scroll caused by the app layout change when the list shrinks', () => {
+    const f = new Follower();
+    f.scrolledTo(at(1400, 2000));
+    f.onScroll(at(1300, 1900)); // list shrank 100 px; browser kept distance from bottom
+    expect(f.following).toBe(true);
+    f.onScroll(at(1200, 1900)); // same shrink, but the reader scrolled another 100 px up
+    expect(f.following).toBe(false);
+  });
+
+  it('does not mistake a layout-caused scroll for a user scroll while a touch is held', () => {
+    const f = new Follower();
+    f.hold();
+    f.scrolledTo(at(1400, 2000));
+    f.onScroll(at(1400, 2200)); // app-caused growth during touch
+    expect(f.following).toBe(false); // still not following because the finger is down
+  });
+
+  it('treats scrolls during an explicit app layout change as app-caused while following', () => {
+    const f = new Follower();
+    f.scrolledTo(at(1400, 2000));
+    f.startLayoutChange();
+    f.onScroll(at(500, 2200)); // would normally be a huge scroll up, but it is during the app layout change
+    expect(f.following).toBe(true);
+    f.endLayoutChange();
+    f.onScroll(at(400, 2200)); // after the layout change, a real scroll up stops following
+    expect(f.following).toBe(false);
+  });
+
+  it('still lets go for a real user scroll after the app layout change ends', () => {
+    const f = new Follower();
+    f.scrolledTo(at(1400, 2000));
+    f.startLayoutChange();
+    f.endLayoutChange();
+    f.onScroll(at(900, 2000)); // reader scrolled up
+    expect(f.following).toBe(false);
+  });
+
+  it('nests explicit layout changes safely', () => {
+    const f = new Follower();
+    f.scrolledTo(at(1400, 2000));
+    f.startLayoutChange();
+    f.startLayoutChange();
+    f.onScroll(at(500, 2200));
+    expect(f.following).toBe(true);
+    f.endLayoutChange();
+    f.onScroll(at(500, 2200)); // still nested one deep, so still ignored
+    expect(f.following).toBe(true);
+    f.endLayoutChange();
+    f.onScroll(at(400, 2200)); // now outside the layout change and a new position
     expect(f.following).toBe(false);
   });
 
