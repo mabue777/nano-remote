@@ -66,7 +66,7 @@ describe('PiAdapter start and resume', () => {
     expect(r.fake.log()[0]!.cwd).toBe(realpathSync(r.fake.cwd));
     // No set_model without settings.model: pi's own default model, reported back as provider/id.
     expect(r.fake.log().flatMap((e) => (e.record ? [e.record.type] : []))).toEqual(['get_state']);
-    expect(r.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
+    expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'llamacpp/bonsai-27b' });
   });
 
   it('settings.model provider/id selects the model with set_model (the id may hold slashes)', async () => {
@@ -75,7 +75,7 @@ describe('PiAdapter start and resume', () => {
     expect(r.fake.sent('set_model')).toEqual([
       { id: 'nano-1', type: 'set_model', provider: 'openrouter', modelId: '~deepseek/deepseek-v4-flash-latest' },
     ]);
-    expect(r.adapter.effectiveSettings()).toEqual({ model: 'openrouter/~deepseek/deepseek-v4-flash-latest' });
+    expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'openrouter/~deepseek/deepseek-v4-flash-latest' });
   });
 
   describe('effort (settings.effort as the thinking level)', () => {
@@ -91,27 +91,27 @@ describe('PiAdapter start and resume', () => {
       await r.adapter.start(r.fake.cwd, { model: 'google/gemini-3.1-pro-preview', effort: 'low' });
       expect(types(r)).toEqual(['set_model', 'set_thinking_level', 'get_state']);
       expect(r.fake.sent('set_thinking_level')).toEqual([expect.objectContaining({ level: 'low' })]);
-      expect(r.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'google/gemini-3.1-pro-preview', effort: 'low' });
     });
 
     it('pi fits a level the model lacks, and that is what the session reports', async () => {
       const r = rig({ models });
       await r.adapter.start(r.fake.cwd, { effort: 'medium' });
       expect(r.fake.sent('set_thinking_level')).toEqual([expect.objectContaining({ level: 'medium' })]);
-      expect(r.adapter.effectiveSettings()).toEqual({ model: 'kimi-coding/k3', effort: 'high' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'kimi-coding/k3', effort: 'high' });
     });
 
     it('is not sent when unset or not a pi level; pi\'s own level is reported, none for a model without reasoning', async () => {
       const r = rig({ models, thinkingLevel: 'max' });
       await r.adapter.start(r.fake.cwd, {});
       expect(types(r)).toEqual(['get_state']);
-      expect(r.adapter.effectiveSettings()).toEqual({ model: 'kimi-coding/k3', effort: 'max' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'kimi-coding/k3', effort: 'max' });
       const odd = rig({ models });
       await odd.adapter.start(odd.fake.cwd, { effort: 'turbo' });
       expect(odd.fake.sent('set_thinking_level')).toEqual([]);
       const plain = rig({ models });
       await plain.adapter.start(plain.fake.cwd, { model: 'llamacpp/bonsai-27b', effort: 'high' });
-      expect(plain.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
+      expect(plain.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'llamacpp/bonsai-27b' });
     });
 
     it('resume sets it again', async () => {
@@ -163,7 +163,7 @@ describe('PiAdapter start and resume', () => {
         'prompt c',
       ]);
       // pi fitted max to the model's highest level.
-      expect(r.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'high' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'google/gemini-3.1-pro-preview', effort: 'high' });
     });
 
     it('a change during a running turn waits for its end (steering sends nothing)', async () => {
@@ -176,7 +176,7 @@ describe('PiAdapter start and resume', () => {
       expect(calls(r.fake)).toEqual(['get_state', 'prompt a']);
       await turn(r, 'b');
       expect(calls(r.fake).slice(2)).toEqual(['set_model llamacpp/bonsai-27b', 'get_state', 'prompt b']);
-      expect(r.adapter.effectiveSettings()).toEqual({ model: 'llamacpp/bonsai-27b' });
+      expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'llamacpp/bonsai-27b' });
     });
 
     it('a pi restarted after a crash, and a resume after a host restart, start on the changed settings', async () => {
@@ -192,7 +192,7 @@ describe('PiAdapter start and resume', () => {
       // The host restarted: the session record holds the changed settings.
       const after = rig({}, fake);
       await after.adapter.resume(id, fake.cwd, { model: 'google/gemini-3.1-pro-preview', effort: 'low' });
-      expect(after.adapter.effectiveSettings()).toEqual({ model: 'google/gemini-3.1-pro-preview', effort: 'low' });
+      expect(after.adapter.effectiveSettings()).toEqual({ approvalMode: 'ask', model: 'google/gemini-3.1-pro-preview', effort: 'low' });
       await turn(after, 'c');
       expect(calls(fake).slice(-4)).toEqual(['set_model google/gemini-3.1-pro-preview', 'set_thinking_level low', 'get_state', 'prompt c']);
     });
@@ -512,6 +512,99 @@ describe('PiAdapter approvals (Nano extension, ruling R3)', () => {
     // An answered request is gone: a second answer does nothing.
     await r.adapter.resolveApproval(approval.params.request.requestId, 'accept');
     expect(r.fake.sent('extension_ui_response')).toHaveLength(1);
+  });
+});
+
+describe('PiAdapter approval modes (spec 5.1 settings.approvalMode)', () => {
+  const write = (file: string) => ({ tool: { name: 'write', args: { path: file, content: 'hi\n' }, output: `Successfully wrote to ${file}` } });
+  const approvals = (r: Rig) => r.events.filter((e) => e.method === 'approval/request');
+
+  it('the session reports its mode; an unknown mode runs as ask', async () => {
+    const r = rig();
+    await r.adapter.start(r.fake.cwd, { approvalMode: 'acceptEdits' });
+    expect(r.adapter.effectiveSettings()).toEqual({ approvalMode: 'acceptEdits', model: 'llamacpp/bonsai-27b' });
+    const other = rig();
+    await other.adapter.start(other.fake.cwd, { approvalMode: 'bogus' });
+    expect(other.adapter.effectiveSettings()).toMatchObject({ approvalMode: 'ask' });
+  });
+
+  it('acceptEdits: a write inside the folder runs unasked and still shows as an item; bash asks', async () => {
+    const r = rig({ turns: [[write('in.txt'), bash, { reply: 'done', chunks: 1 }]] });
+    await r.adapter.start(r.fake.cwd, { approvalMode: 'acceptEdits' });
+    await r.adapter.turnStart(text('go'), 'cm');
+    const approval = await r.next('approval/request');
+    expect(approval.params.request).toMatchObject({ kind: 'command', command: 'echo hi' });
+    expect(approvals(r)).toHaveLength(1);
+    await r.adapter.resolveApproval(approval.params.request.requestId, 'accept');
+    await r.next('turn/completed');
+    expect(readFileSync(path.join(r.fake.cwd, 'in.txt'), 'utf8')).toBe('hi\n');
+    const [file, command] = completedItems(r.events);
+    expect(file).toMatchObject({ type: 'fileChange', status: 'completed', changes: [{ path: 'in.txt', kind: 'add' }] });
+    expect(command).toMatchObject({ type: 'command', status: 'completed' });
+    expect(r.fake.sent('extension_ui_response').map((m) => m.confirmed)).toEqual([true, true]);
+    expect(r.logs).toContain('pi: write runs without asking (approval mode acceptEdits)');
+  });
+
+  it('acceptEdits: a write outside the folder asks', async () => {
+    const r = rig({ turns: [[write('../out-of-folder.txt')]] });
+    await r.adapter.start(r.fake.cwd, { approvalMode: 'acceptEdits' });
+    await r.adapter.turnStart(text('go'), 'cm');
+    const approval = await r.next('approval/request');
+    expect(approval.params.request).toMatchObject({ kind: 'fileChange', changes: [{ path: '../out-of-folder.txt' }] });
+    await r.adapter.resolveApproval(approval.params.request.requestId, 'decline');
+    await r.next('turn/completed');
+    expect(existsSync(path.join(r.fake.cwd, '..', 'out-of-folder.txt'))).toBe(false);
+  });
+
+  it('never: bash, writes and other tools run unasked', async () => {
+    const r = rig({
+      turns: [[bash, write('a.txt'), { tool: { name: 'webfetch', args: { url: 'https://example.org' }, output: 'page' } }, { reply: 'done', chunks: 1 }]],
+    });
+    await r.adapter.start(r.fake.cwd, { approvalMode: 'never' });
+    const done = await turn(r, 'go');
+    expect(done.params.status).toBe('completed');
+    expect(approvals(r)).toEqual([]);
+    expect(completedItems(r.events).map((i) => [i.type, i.status])).toEqual([
+      ['command', 'completed'],
+      ['fileChange', 'completed'],
+      ['toolCall', 'completed'],
+      ['agentMessage', 'completed'],
+    ]);
+  });
+
+  it('a change mid-turn applies to the next tool call (appliesAt now); the open request stays open', async () => {
+    const r = rig({ turns: [[bash, bash, { reply: 'done', chunks: 1 }]] });
+    await r.adapter.start(r.fake.cwd, {});
+    await r.adapter.turnStart(text('go'), 'cm');
+    const first = await r.next('approval/request');
+    expect(r.adapter.changeSettings({ approvalMode: 'never' })).toBe('now');
+    expect(r.adapter.effectiveSettings()).toMatchObject({ approvalMode: 'never' });
+    // The request already waiting stays open until the user answers it.
+    expect(r.fake.sent('extension_ui_response')).toEqual([]);
+    await r.adapter.resolveApproval(first.params.request.requestId, 'accept');
+    await r.next('turn/completed');
+    expect(approvals(r)).toHaveLength(1);
+    expect(completedItems(r.events).map((i) => [i.type, i.status])).toEqual([
+      ['command', 'completed'],
+      ['command', 'completed'],
+      ['agentMessage', 'completed'],
+    ]);
+    // A mode change alone sends pi nothing at the next turn start.
+    expect(r.fake.sent('set_model')).toEqual([]);
+  });
+
+  it('back to ask mid-turn: the next tool call asks again', async () => {
+    const r = rig({ turns: [[write('a.txt'), bash, { reply: 'done', chunks: 1 }]] });
+    await r.adapter.start(r.fake.cwd, { approvalMode: 'never' });
+    r.adapter.changeSettings({ approvalMode: 'ask' });
+    await r.adapter.turnStart(text('go'), 'cm');
+    const first = await r.next('approval/request');
+    expect(first.params.request).toMatchObject({ kind: 'fileChange' });
+    await r.adapter.resolveApproval(first.params.request.requestId, 'accept');
+    const second = await r.next('approval/request', (e) => e.params.request.requestId !== first.params.request.requestId);
+    expect(second.params.request).toMatchObject({ kind: 'command' });
+    await r.adapter.resolveApproval(second.params.request.requestId, 'accept');
+    await r.next('turn/completed');
   });
 });
 

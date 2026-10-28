@@ -14,13 +14,14 @@ import type { AgentCapabilities, AgentProvider, AgentState } from '../../core/ad
 import { childPath, piConfig, type PiConfig } from '../../config/pi.js';
 import { PiAdapter } from './adapter.js';
 import { PiEngine } from './engine.js';
-import { obj, toModels, versionFrom } from './mapping.js';
+import { PI_APPROVAL_MODES, obj, toModels, versionFrom } from './mapping.js';
 
 /**
- * pi steers a running turn (`steer`), has turn diffs (the host's), and honours no approvalMode: Nano's approval
- * extension always asks (ADR 0007), so a Pi session never runs with approvals bypassed.
+ * pi steers a running turn (`steer`), has turn diffs (the host's), and honours the approval modes `ask`,
+ * `acceptEdits` and `never`: Nano's approval extension asks the host (ADR 0007), and the host answers by the
+ * session's mode, so a mode change applies to the next tool call.
  */
-export const PI_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] };
+export const PI_CAPABILITIES: AgentCapabilities = { steer: true, diff: true, approvalModes: PI_APPROVAL_MODES, attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] };
 
 export interface PiAgentOptions {
   config?: PiConfig;

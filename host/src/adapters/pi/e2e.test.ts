@@ -57,21 +57,50 @@ const items = (phone: TestClient, sessionId: string) =>
     .map((e) => (e.params as { item: Record<string, unknown> }).item);
 
 describe('session core end to end with the pi adapter', () => {
-  it('pi honours no approvalMode: agent/list says so and session/start with never stores and reports none', async () => {
+  it('pi honours ask, acceptEdits and never: agent/list says so, session/start stores and reports the mode', async () => {
     const { h, phone } = await setup();
     const { agents } = await rpc<{ agents: { id: string; capabilities?: unknown }[] }>(phone, 'agent/list');
-    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: true, approvalModes: [], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort'] });
+    expect(agents.find((a) => a.id === 'pi')?.capabilities).toEqual({ steer: true, diff: true, approvalModes: ['ask', 'acceptEdits', 'never'], attachments: { images: true, files: true }, backgroundTasks: false, settingsUpdate: ['model', 'effort', 'approvalMode'] });
     const { session } = await rpc<{ session: { sessionId: string; settings: Record<string, unknown> } }>(phone, 'session/start', {
       agentId: 'pi',
       cwd: h.cwd,
       settings: { approvalMode: 'never' },
     });
-    expect(session.settings).not.toHaveProperty('approvalMode');
-    expect(h.journal.session(session.sessionId)?.settings).not.toHaveProperty('approvalMode');
+    expect(session.settings).toMatchObject({ approvalMode: 'never' });
+    expect(h.journal.session(session.sessionId)?.settings).toMatchObject({ approvalMode: 'never' });
     const opened = await rpc<{ session: { settings: Record<string, unknown> } }>(phone, 'session/open', {
       sessionId: session.sessionId,
     });
-    expect(opened.session.settings).not.toHaveProperty('approvalMode');
+    expect(opened.session.settings).toMatchObject({ approvalMode: 'never' });
+    // A mode of another agent is not Pi's: the session runs, and reports, ask.
+    const other = await rpc<{ session: { settings: Record<string, unknown> } }>(phone, 'session/start', {
+      agentId: 'pi',
+      cwd: h.cwd,
+      settings: { approvalMode: 'default' },
+    });
+    expect(other.session.settings).toMatchObject({ approvalMode: 'ask' });
+  });
+
+  it('session/settings/update to never mid-turn answers appliesAt now, and the next tool call runs unasked', async () => {
+    const bash = (command: string) => ({ tool: { name: 'bash', args: { command }, output: 'ok' } });
+    const { h, phone } = await setup({ turns: [[bash('echo one'), bash('echo two'), { reply: 'done' }]] });
+    const { sessionId } = await newSession(phone, h.cwd);
+    const turnId = await startTurn(phone, sessionId, 'two commands');
+    const approval = await waitEvent(phone, 'approval/request');
+    expect(request(approval)).toMatchObject({ kind: 'command', command: 'echo one' });
+    const update = await rpc<{ session: { settings: Record<string, unknown> }; appliesAt: string }>(phone, 'session/settings/update', {
+      sessionId,
+      settings: { approvalMode: 'never' },
+    });
+    expect(update).toMatchObject({ appliesAt: 'now', session: { settings: { approvalMode: 'never' } } });
+    await rpc(phone, 'approval/resolve', { sessionId, requestId: request(approval).requestId, decision: 'accept' });
+    const end = await turnEnd(phone, sessionId, turnId);
+    expect((end.params as { turn: { status: string } }).turn.status).toBe('completed');
+    expect(eventsOf(phone, sessionId).filter((e) => e.method === 'approval/request')).toHaveLength(1);
+    expect(items(phone, sessionId).filter((i) => i.type === 'command').map((i) => [i.command, i.status])).toEqual([
+      ['echo one', 'completed'],
+      ['echo two', 'completed'],
+    ]);
   });
 
   it('model/list carries the provider; session/start on a model; a write approved through approval/resolve', async () => {
@@ -83,7 +112,7 @@ describe('session core end to end with the pi adapter', () => {
       { id: 'openrouter/~deepseek/deepseek-v4-flash-latest', displayName: 'DeepSeek V4 Flash', default: false, provider: 'openrouter' },
     ]);
     const session = await newSession(phone, h.cwd, 'openrouter/~deepseek/deepseek-v4-flash-latest');
-    expect(session.settings).toEqual({ model: 'openrouter/~deepseek/deepseek-v4-flash-latest' });
+    expect(session.settings).toEqual({ approvalMode: 'ask', model: 'openrouter/~deepseek/deepseek-v4-flash-latest' });
     const turnId = await startTurn(phone, session.sessionId, 'write hello');
     const approval = await waitEvent(phone, 'approval/request');
     expect(request(approval)).toMatchObject({

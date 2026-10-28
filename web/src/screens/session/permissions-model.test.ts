@@ -5,6 +5,7 @@ import { ASKS_FIRST, FULL_ACCESS } from './session-details';
 
 const CODEX = ['untrusted', 'on-failure', 'on-request', 'never'];
 const CLAUDE = ['default', 'acceptEdits', 'plan', 'never'];
+const PI = ['ask', 'acceptEdits', 'never'];
 
 function make(options: { modes?: string[]; current?: string; appliesAt?: 'now' | 'nextTurn'; reported?: string | null; fail?: Error } = {}) {
   const updateSettings = vi.fn(async (_sessionId: string, settings: { approvalMode?: string }) => {
@@ -22,6 +23,28 @@ function make(options: { modes?: string[]; current?: string; appliesAt?: 'now' |
 }
 
 describe('approval mode words', () => {
+  it('the three Pi modes in plain words: asks, accepts edits in the folder, full access', () => {
+    const { model } = make({ modes: PI, current: 'ask' });
+    expect(model.rows.map((r) => [r.mode, r.title, r.short, r.current, r.danger])).toEqual([
+      ['ask', 'Ask before running', ASKS_FIRST, true, false],
+      ['acceptEdits', 'Accept edits', 'Accepts edits', false, false],
+      ['never', BYPASS_TITLE, FULL_ACCESS, false, true],
+    ]);
+    expect(modeWords('ask').detail).toBe('Asks before every command and file edit.');
+    expect(modeWords('acceptEdits').detail).toBe('Edits files in the folder without asking; asks before running commands.');
+    expect(permissionsValue('ask')).toBe(ASKS_FIRST);
+  });
+
+  it('a Pi switch to full access asks first, then applies now (no "next turn" note)', async () => {
+    const { model, updateSettings } = make({ modes: PI, current: 'ask', appliesAt: 'now' });
+    expect(await model.choose('never')).toBe(false);
+    expect(model.confirming).toBe(true);
+    expect(await model.confirmBypass()).toBe(true);
+    expect(updateSettings).toHaveBeenCalledWith('ses_1', { approvalMode: 'never' });
+    expect(model.current).toBe('never');
+    expect(model.note).toBeUndefined();
+  });
+
   it('every Codex and Claude mode has a title, a line and a row value; full access uses the New session words', () => {
     for (const mode of [...CODEX, ...CLAUDE]) {
       const words = modeWords(mode);

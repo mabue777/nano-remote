@@ -10,6 +10,11 @@ export function canBypass(agent: Agent | undefined): boolean {
   return capabilities === undefined || capabilities.approvalModes.includes('never');
 }
 
+/** "Accept edits" is offered: the agent honours approvalMode `acceptEdits` (Claude Code, Pi). */
+export function canAcceptEdits(agent: Agent | undefined): boolean {
+  return agent?.capabilities?.approvalModes.includes('acceptEdits') ?? false;
+}
+
 /** turn/steer works while a turn runs. */
 export function canSteer(agent: Agent | undefined): boolean {
   return agent?.capabilities?.steer ?? true;
@@ -44,7 +49,7 @@ export function settingsKeys(agent: Agent | undefined): readonly SettingsKey[] {
 
 /**
  * The approval modes an open session of the agent can switch between (`capabilities.settingsUpdate` names
- * `approvalMode`, spec 6): its `capabilities.approvalModes`. Empty when it cannot (Pi honours none) and,
+ * `approvalMode`, spec 6): its `capabilities.approvalModes`. Empty when it cannot and,
  * never guessed, for an older host: the Permissions row then stays plain text.
  */
 export function changeableApprovalModes(agent: Agent | undefined): readonly string[] {

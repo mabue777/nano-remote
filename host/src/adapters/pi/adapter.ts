@@ -13,7 +13,13 @@
 //   turn/interrupt -> open dialogs declined, clear_queue, abort
 //   items          <- message_update text and thinking deltas, message_end, tool_execution_start/update/end
 //   approvals      <- extension_ui_request confirm titled "nano-approval" (bash: command, write/edit:
-//                     fileChange, other tools: permission); answered with extension_ui_response {confirmed}
+//                     fileChange, other tools: permission); answered with extension_ui_response {confirmed}.
+//                     The session's approval mode (settings.approvalMode, spec 5.1) is consulted when the
+//                     confirm arrives: a call the mode allows (`never`: every call; `acceptEdits`: file tools
+//                     inside the session folder, mapping.ts autoApproves) is confirmed at once without an
+//                     approval/request; its tool item still shows what ran. A mode change
+//                     (session/settings/update) applies to the next confirm (appliesAt "now"); a request
+//                     already waiting for the user stays open.
 //   questions      <- any other dialog (select, input, editor, a foreign confirm)
 //   turn end       <- agent_settled (aborted: interrupted; an assistant error: failed)
 //   usage          <- get_session_stats after every turn
@@ -28,7 +34,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Decision, Settings } from '../../generated/common.js';
-import type { Adapter, AdapterEvent, AdapterInputPart, AdapterItem, AdapterListener } from '../../core/adapter.js';
+import type { Adapter, AdapterEvent, AppliesAt, AdapterInputPart, AdapterItem, AdapterListener } from '../../core/adapter.js';
 import { newId } from '../../core/ids.js';
 import { piConfig, type PiConfig } from '../../config/pi.js';
 import { RpcError } from '../../errors.js';
@@ -36,12 +42,14 @@ import { PiEngine, unavailable } from './engine.js';
 import {
   DIALOG_METHODS,
   approvalAnswer,
+  autoApproves,
   dialogAnswer,
   finishToolItem,
   isThinkingLevel,
   modelKey,
   obj,
   parseApproval,
+  piApprovalMode,
   resultText,
   splitModel,
   thinkingLevels,
@@ -138,18 +146,26 @@ export class PiAdapter implements Adapter {
     await this.connect();
   }
 
-  /** The model the session runs on, as `provider/id`, and its thinking level (spec 5.1 Session.settings). */
+  /**
+   * The model the session runs on, as `provider/id`, its thinking level, and the approval mode the next
+   * confirm is answered by (spec 5.1 Session.settings).
+   */
   effectiveSettings(): Settings {
-    const settings: Settings = {};
+    const settings: Settings = { approvalMode: piApprovalMode(this.settings.approvalMode) };
     if (this.model !== undefined) settings.model = this.model;
     if (this.effort !== undefined) settings.effort = this.effort;
     return settings;
   }
 
-  /** A settings change (spec 6): stored; the next turn start hands it to pi before the prompt. */
-  changeSettings(settings: Settings): void {
+  /**
+   * A settings change (spec 6): model and effort are stored, and the next turn start hands them to pi before
+   * the prompt. The approval mode is the host's own (the confirm answer), so it applies at once: `now`.
+   */
+  changeSettings(settings: Settings): AppliesAt {
+    const before = this.settings;
     this.settings = settings;
-    this.changed = true;
+    if (settings.model !== before.model || settings.effort !== before.effort) this.changed = true;
+    return 'now';
   }
 
   async turnStart(input: AdapterInputPart[], _clientMessageId: string): Promise<void> {
@@ -451,6 +467,14 @@ export class PiAdapter implements Adapter {
     if (!this.running) {
       // Nobody can be asked outside a turn: nothing that changes things runs unasked.
       this.engine?.respondUi(uiId, call ? { confirmed: false } : { cancelled: true });
+      return;
+    }
+    // The approval mode as it is now (a change applies to the next confirm): a call it allows runs unasked,
+    // and tool_execution_start reports it as usual.
+    const mode = piApprovalMode(this.settings.approvalMode);
+    if (call && autoApproves(mode, call, this.cwd)) {
+      this.options.log?.(`pi: ${call.toolName} runs without asking (approval mode ${mode})`);
+      this.engine?.respondUi(uiId, { confirmed: true });
       return;
     }
     const requestId = newId('req');

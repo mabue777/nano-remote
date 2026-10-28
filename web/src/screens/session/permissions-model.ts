@@ -29,7 +29,7 @@ export interface ModeWords {
   short: string;
 }
 
-/** Codex approval policies and Claude Code permission modes (spec 5.1), in plain words. */
+/** Codex approval policies, Claude Code permission modes and Pi approval modes (spec 5.1), in plain words. */
 const WORDS: Readonly<Record<string, ModeWords>> = {
   // Codex
   untrusted: { title: 'Ask for most commands', detail: 'Runs only commands known to be safe, like reading files; asks before anything else.', short: 'Asks for most commands' },
@@ -37,9 +37,11 @@ const WORDS: Readonly<Record<string, ModeWords>> = {
   'on-request': { title: 'Ask when it needs more access', detail: 'Works inside the folder; asks before going outside it or online.', short: ASKS_FIRST },
   // Claude Code
   default: { title: 'Ask before running', detail: 'Asks before every command and file edit.', short: ASKS_FIRST },
-  acceptEdits: { title: 'Accept edits', detail: 'Edits files without asking; asks before running commands.', short: 'Accepts edits' },
+  acceptEdits: { title: 'Accept edits', detail: 'Edits files in the folder without asking; asks before running commands.', short: 'Accepts edits' },
   plan: { title: 'Plan only', detail: 'Reads and plans; changes nothing until you approve the plan.', short: 'Plans only' },
-  // Both
+  // Pi
+  ask: { title: 'Ask before running', detail: 'Asks before every command and file edit.', short: ASKS_FIRST },
+  // Claude Code and Pi
   [BYPASS_MODE]: { title: BYPASS_TITLE, detail: BYPASS_WARNING, short: FULL_ACCESS },
 };
 

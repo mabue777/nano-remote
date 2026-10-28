@@ -116,6 +116,19 @@ export function NewSessionSheet({ client, replica, onClose, onStarted }: NewSess
           )}
         </div>
 
+        {model.acceptEditsOffered && (
+          <div class="field bypass-row">
+            <span id="accept-edits-title" class="bypass-title">
+              Accept edits
+            </span>
+            <Switch checked={model.acceptEdits} labelledBy="accept-edits-title" onChange={(on) => model.setAcceptEdits(on)} />
+          </div>
+        )}
+        {model.acceptEditsOffered && model.acceptEdits && (
+          <p class="muted small" role="note">
+            Edits files in the folder without asking; still asks before running commands.
+          </p>
+        )}
         {model.bypassOffered && (
           <div class={`field bypass-row${model.bypass ? ' on' : ''}`}>
             <span id="bypass-title" class="bypass-title">

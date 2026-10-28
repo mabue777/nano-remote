@@ -220,7 +220,7 @@ and at least one of the two is true.
 declares it; Codex and Pi declare false. Absent means false.
 `capabilities.settingsUpdate` (additive within v1) lists the settings `session/settings/update` (section 6)
 can change in an open session: `model`, `effort`, `approvalMode` (additive within v1), or any of them.
-Codex and Claude Code declare all three; Pi declares `model` and `effort` (it honours no `approvalMode`).
+Codex, Claude Code and Pi declare all three.
 Absent or empty means none: clients then offer no way to change them after `session/start`.
 
 ### `model/list {agentId}` → `{models:[{id, displayName, default, provider?, efforts?, defaultEffort?}]}`.
@@ -364,8 +364,13 @@ Claude Code: `never` runs the session in Claude's permission mode `bypassPermiss
 access to what the Mac user can reach) and is reported back as `never`, so clients mark it the same way;
 `acceptEdits` and `plan` pass through as the Claude modes of those names; any other value is Claude's
 `default` mode, reported as `default`.
-Pi honours no `approvalMode` (`approvalModes` is empty): it always asks through Nano's approval extension
-(section 11), and a Pi session reports no `approvalMode`.
+Pi values: `ask` | `acceptEdits` | `never` (additive within v1); any other value runs as `ask` and is reported
+as `ask`. Nano's approval extension (section 11) sends every call that is not read-only to the host, which
+answers it by the session's mode when it arrives: `ask` asks the user for every one; `acceptEdits` lets pi's
+file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) run without asking when their path stays inside the
+session folder, also after symlinks, and asks for `bash` and every other tool (they can reach outside the
+folder or the network); `never` lets every call run without asking, so clients mark it like the others. A
+call that runs without asking still appears as its item, without an `approval/request`.
 An open session changes its `approvalMode` with `session/settings/update` (section 6).
 
 `effort` (additive within v1) may be set in `session/start` settings to one of the model's `efforts`
@@ -568,7 +573,9 @@ Per agent (section 11):
   in the mode it asked for). Without a live query, or when the call fails, the next query or the next turn
   start applies it (`nextTurn`); if the engine still refuses it, the session reports the mode in effect.
 - Pi: `set_model {provider, modelId}` and `set_thinking_level {level}` on the live pi process before the
-  next `prompt`, then `get_state` for what is in effect; a new pi process gets them at start.
+  next `prompt`, then `get_state` for what is in effect; a new pi process gets them at start. A new
+  `approvalMode` is the host's own (it answers the extension's confirm), so it applies to the next tool call,
+  also during a turn, and answers `appliesAt: "now"`.
 
 `session/delete` also deletes the session's attachments (section 8.1) from the host's disk; their
 `/v1/blob` URLs answer 404 from then on.
@@ -768,12 +775,12 @@ marked "not probed" are covered only by the fake pi of the unit tests.
 | `session/start` | `thread/start` (`settings.effort` as `config.model_reasoning_effort`) | `query()` with a new session (`settings.effort` as `options.effort`) | `kimi acp`, `initialize`, `session/new {cwd, mcpServers}` | `pi --mode rpc --no-extensions -e <Nano approval extension> --session-id <new id>` in the session folder, then `set_model {provider, modelId}` when `settings.model` is `provider/id`, then `set_thinking_level {level}` when `settings.effort` is set |
 | `session/open` snapshot | `thread/read` + `thread/resume {initialTurnsPage}` | `resume: sessionId` + host Journal | `session/load {sessionId, cwd}` replays history as `session/update`, + host Journal | the same command with the stored `--session-id` (pi reloads its session file; `get_messages` returns the history) + host Journal. `--session <id>` is not used: it exits with "No session found" for a session whose first prompt never ran |
 | `turn/start` | `turn/start {clientUserMessageId}` | send user message on the query stream | `session/prompt {sessionId, prompt}`; no turn id, the host assigns one; the response `{stopReason}` ends the turn | `prompt {message, images}`; no turn id, the host assigns one; `agent_settled` ends the turn |
-| `session/settings/update` | `model`, `effort`, and `approvalMode` (as `approvalPolicy` and `sandboxPolicy`) on the next `turn/start` and every later one | `Query.setModel()` and `Query.applyFlagSettings({effortLevel})` before the next user message, `Query.setPermissionMode()` at once; a new query takes them as options | not probed | `set_model`, `set_thinking_level`, `get_state` before the next `prompt`; `approvalMode` is `not_supported` |
+| `session/settings/update` | `model`, `effort`, and `approvalMode` (as `approvalPolicy` and `sandboxPolicy`) on the next `turn/start` and every later one | `Query.setModel()` and `Query.applyFlagSettings({effortLevel})` before the next user message, `Query.setPermissionMode()` at once; a new query takes them as options | not probed | `set_model`, `set_thinking_level`, `get_state` before the next `prompt`; `approvalMode` at once (the host answers the next confirm by it) |
 | `turn/steer` | `turn/steer {expectedTurnId}` | `not_supported` (the adapter declares no steer capability) | not probed; `not_supported` likely | `steer {message, images}`: queued, delivered before the next model call, then reported by pi as a user message (the host journals its own) |
 | `turn/interrupt` | `turn/interrupt` | `query.interrupt()`; the turn ends with result `error_during_execution`, reported `interrupted` | not probed | `clear_queue`, then `abort`, then open approvals are declined (pi's abort waits for idle, which an open dialog blocks); `agent_settled {aborted: true}`, reported `interrupted` |
 | `item/*` | `item/started`, `item/*/delta`, `item/completed` | `stream_event` text deltas, then assistant text and tool_use blocks and the tool_result | `session/update`: `tool_call`, `tool_call_update` (`completed` or `failed`), `agent_message_chunk` | `message_update` `text_delta` and `thinking_delta`, `message_end`, `tool_execution_start`, `tool_execution_update` (bash output), `tool_execution_end` (`isError`; declined when the host refused it) |
 | `approval/request` command | `item/commandExecution/requestApproval` | `canUseTool` fires for Bash (`input.command`) | reverse request `session/request_permission` (not probed for shell commands) | Nano's extension `tool_call` hook calls `ctx.ui.confirm`; it arrives as `extension_ui_request {method: confirm, title: "nano-approval"}` for bash, answered with `extension_ui_response {confirmed}`; a refusal blocks the tool (accepted and declined both probed). Decisions `accept`, `decline`, `cancel` |
-| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed, with suggestions, so `acceptForSession` is offered) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome | the same confirm for `write` (probed) and `edit` (not probed); any other tool except read, grep, find, ls asks as `permission` (not probed) |
+| `approval/request` fileChange | `item/fileChange/requestApproval` (did not occur in the spike) | `canUseTool` fires for Write (observed, with suggestions, so `acceptForSession` is offered) and Edit (same callback, not probed separately) | `session/request_permission` for `Write` (observed); options `allow_once` \| `allow_always` \| `reject_once` map to `accept` \| `acceptForSession` \| `decline`, `cancel` to the `cancelled` outcome | the same confirm for `write` (probed) and `edit` (not probed); any other tool except read, grep, find, ls asks as `permission` (not probed). In `acceptEdits` a `write` or `edit` inside the session folder, and in `never` every call, is confirmed by the host without an `approval/request` |
 | `input/request` | `item/tool/requestUserInput` | `canUseTool` fires for `AskUserQuestion`; answers are keyed by question text | not probed (shares `session/request_permission` per the docs) | other dialogs (`select`, `input`, `editor`) become one question (not probed) |
 | `status/changed` | `thread/status/changed` | derived from stream state (running on a user message or on output while no turn runs, idle on `result`) | derived (active while `session/prompt` is pending) | derived (running from `turn/start` to `agent_settled`, `error` when pi exits) |
 | `usage/updated` | `thread/tokenUsage/updated` | result message usage | `session/update` `usage_update` | `get_session_stats` after every turn (`tokens`, `contextUsage.percent`) |

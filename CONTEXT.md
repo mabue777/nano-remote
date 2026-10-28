@@ -25,7 +25,7 @@ _Avoid_: engine (the agent's own program, which the adapter starts), bot, provid
 **Agent capabilities**:
 What an agent supports, fixed per agent and sent with it in `initialize` and
 `agent/list`: `steer` (input while a turn runs), `diff` (a turn's changes),
-`approvalModes` (the approval modes it honours; Pi honours none),
+`approvalModes` (the approval modes it honours; Pi: ask, acceptEdits, never),
 `attachments` (whether it sees attached images and takes attached files) and
 `backgroundTasks` (whether it reports its background tasks; Claude Code only) and
 `settingsUpdate` (which of model and effort an open session can change; all three

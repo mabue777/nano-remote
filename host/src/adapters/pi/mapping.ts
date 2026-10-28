@@ -1,7 +1,8 @@
 // Pure translations between pi's RPC shapes (pi docs/rpc-commands.md, json.md, message-types.md,
 // rpc-extension-ui.md) and the protocol vocabulary of protocol-v1.md section 5. This file and adapter.ts
 // are the only places that know pi's names.
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 
 import type { AdapterApprovalRequest, AdapterInputPart, AdapterItem } from '../../core/adapter.js';
@@ -233,6 +234,89 @@ export function toApproval(requestId: string, call: { toolCallId: string; toolNa
     scope: 'turn',
     reason: `pi wants to use the ${call.toolName} tool`,
   };
+}
+
+// ---- approval modes (spec 5.1 settings.approvalMode) -----------------------------------------------
+
+/**
+ * The approval modes a Pi session honours: `ask` (every call Nano's extension confirms asks the user),
+ * `acceptEdits` (file tools inside the session folder run without asking), `never` (nothing asks).
+ */
+export const PI_APPROVAL_MODES = ['ask', 'acceptEdits', 'never'] as const;
+export type PiApprovalMode = (typeof PI_APPROVAL_MODES)[number];
+
+/** The mode a session runs in: its settings.approvalMode when Pi knows it, else `ask`. */
+export function piApprovalMode(mode: unknown): PiApprovalMode {
+  return (PI_APPROVAL_MODES as readonly unknown[]).includes(mode) ? (mode as PiApprovalMode) : 'ask';
+}
+
+/** pi's file tools: they touch only the path they name (pi's read, grep, find and ls default to the folder). */
+const FILE_TOOLS = ['read', 'grep', 'find', 'ls', 'write', 'edit'];
+
+/** A tool path the way pi resolves it (pi path-utils resolveToCwd): `@` prefix dropped, `~` expanded. */
+function toolPath(file: string, cwd: string): string {
+  let p = file.replace(/[  -   　]/g, ' ');
+  if (p.startsWith('@')) p = p.slice(1);
+  if (p === '~') p = homedir();
+  else if (p.startsWith('~/')) p = path.join(homedir(), p.slice(2));
+  return path.resolve(cwd, p);
+}
+
+const within = (root: string, target: string): boolean => {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+/** The real path of `target`, through its deepest existing ancestor (a file to be written does not exist yet). */
+function realTarget(target: string): string {
+  let dir = target;
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync(dir), ...rest.reverse());
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return target;
+      rest.push(path.basename(dir));
+      dir = parent;
+    }
+  }
+}
+
+function realOrSelf(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+
+/**
+ * True when `file` (a tool's path argument, relative to the folder pi runs in) stays inside the session
+ * folder, also after symlinks: a link inside the folder that points out of it is outside.
+ */
+export function insideFolder(file: string, sessionCwd: string, piCwd = ''): boolean {
+  const roots = [sessionCwd, piCwd].filter((r) => r !== '');
+  if (roots.length === 0) return false;
+  const target = toolPath(file, piCwd || sessionCwd);
+  if (!roots.some((root) => within(root, target))) return false;
+  const real = realTarget(target);
+  return roots.some((root) => within(realOrSelf(root), real));
+}
+
+/**
+ * Whether the session's approval mode lets a call Nano's extension asks about run without asking the user:
+ * `never` lets every call run; `acceptEdits` lets pi's file tools (read, grep, find, ls, write, edit) run
+ * when their path stays inside the session folder, and asks for bash and every other tool (they can reach
+ * outside the folder or the network); `ask` asks for every call.
+ */
+export function autoApproves(mode: PiApprovalMode, call: { toolName: string; input: Json; cwd: string }, sessionCwd: string): boolean {
+  if (mode === 'never') return true;
+  if (mode !== 'acceptEdits' || !FILE_TOOLS.includes(call.toolName)) return false;
+  const file = call.input.path;
+  // read, write and edit name a path; the search tools default to the folder pi runs in.
+  if (file === undefined && call.toolName !== 'read' && call.toolName !== 'write' && call.toolName !== 'edit') return true;
+  return typeof file === 'string' && file !== '' && insideFolder(file, sessionCwd, call.cwd);
 }
 
 /** pi's answer to a Nano approval. */

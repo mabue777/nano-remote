@@ -4,6 +4,7 @@ import { exampleMessage } from '../../test/fixtures';
 import { FakeTransport, rpcError, settle } from '../../test/replica-doubles';
 import type { SessionStartParams } from '../generated/methods';
 import {
+  acceptEditsKey,
   bypassKey,
   effortKey,
   effortLabel,
@@ -287,6 +288,29 @@ describe('NewSessionModel', () => {
     // A "1" remembered from before capabilities existed never reaches session/start for pi.
     await model.submit();
     expect(started[0]).not.toHaveProperty('settings.approvalMode');
+  });
+
+  it('pi with approval modes: Accept edits and Bypass are offered, exclude each other, and reach session/start', async () => {
+    const pi = { id: 'pi', name: 'Pi', status: 'ready', capabilities: { steer: true, diff: true, approvalModes: ['ask', 'acceptEdits', 'never'] } };
+    const storage = memoryStorage({});
+    const { client, model, started } = setup(storage);
+    standardRules(client);
+    client.rule('agent/list', () => ({ agents: [...AGENTS, pi] }));
+    await model.load();
+    // Codex lists no acceptEdits: no switch.
+    expect(model.acceptEditsOffered).toBe(false);
+    await model.selectAgent('pi');
+    expect([model.acceptEditsOffered, model.bypassOffered]).toEqual([true, true]);
+    model.setAcceptEdits(true);
+    model.setBypass(true);
+    expect([model.acceptEdits, model.bypass]).toEqual([false, true]);
+    model.setAcceptEdits(true);
+    expect([model.acceptEdits, model.bypass]).toEqual([true, false]);
+    await model.submit();
+    expect(started[0]).toMatchObject({ agentId: 'pi', settings: { approvalMode: 'acceptEdits' } });
+    // Remembered per agent.
+    expect(storage.getItem(acceptEditsKey('pi'))).toBe('1');
+    expect(storage.getItem(bypassKey('pi'))).toBe('0');
   });
 
   it('offers Bypass for every agent when an older host sends no capabilities', async () => {

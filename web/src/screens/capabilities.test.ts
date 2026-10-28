@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Agent } from '../generated/common';import { attachmentsFor, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys } from './capabilities';
+import type { Agent } from '../generated/common';import { attachmentsFor, canAcceptEdits, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys } from './capabilities';
 
 const agent = (capabilities?: { steer: boolean; diff: boolean; approvalModes: string[] }) => ({
   id: 'a',
@@ -17,6 +17,14 @@ describe('agent capabilities', () => {
     expect([canBypass(claude), canSteer(claude), hasDiff(claude)]).toEqual([true, false, false]);
     const pi = agent({ steer: true, diff: false, approvalModes: [] });
     expect([canBypass(pi), canSteer(pi), hasDiff(pi)]).toEqual([false, true, false]);
+  });
+
+  it('Accept edits: offered for an agent that lists acceptEdits (Claude Code, Pi), never guessed for an older host', () => {
+    const pi = agent({ steer: true, diff: true, approvalModes: ['ask', 'acceptEdits', 'never'] });
+    expect([canAcceptEdits(pi), canBypass(pi)]).toEqual([true, true]);
+    expect(canAcceptEdits(agent({ steer: true, diff: true, approvalModes: ['untrusted', 'on-failure', 'on-request', 'never'] }))).toBe(false);
+    expect(canAcceptEdits(agent())).toBe(false);
+    expect(canAcceptEdits(undefined)).toBe(false);
   });
 
   it('an agent without capabilities (older host) or no agent at all allows everything', () => {

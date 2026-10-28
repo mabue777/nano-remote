@@ -1046,7 +1046,7 @@ export class SessionManager {
 
 /**
  * `settings` without an `approvalMode` the agent does not honour (spec 5.1): the session then neither
- * stores nor reports a mode its agent ignores (Pi honours none, so a Pi session never shows "Bypass").
+ * stores nor reports a mode its agent ignores (a Claude Code mode in a Pi session, for example).
  */
 function honoured(provider: AgentProvider, settings: Settings): Settings {
   const mode = settings.approvalMode;

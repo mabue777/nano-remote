@@ -35,14 +35,15 @@ const SEGMENT_BYTES = 100 * 1024;
 const SEND_SEGMENT_BYTES = SEGMENT_BYTES - (SEGMENT_BYTES % 3);
 
 /**
- * Pi as initialize and agent/list list it after example 08's agents. Its capabilities honour no
- * approvalMode (spec 4), so the new-session sheet offers no "Bypass approvals" for it.
+ * Pi as initialize and agent/list list it after example 08's agents. It honours the approval modes ask,
+ * acceptEdits and never (spec 4, 5.1), so the new-session sheet offers "Accept edits" and "Bypass
+ * approvals" for it.
  */
 export const PI_AGENT = {
   id: 'pi',
   name: 'Pi',
   status: 'ready',
-  capabilities: { steer: true, diff: true, approvalModes: [] as string[], attachments: { images: true, files: true } },
+  capabilities: { steer: true, diff: true, approvalModes: ['ask', 'acceptEdits', 'never'] as string[], attachments: { images: true, files: true } },
 };
 
 /**
@@ -52,7 +53,7 @@ export const PI_AGENT = {
 function fakeAgents(locked: ReadonlySet<string> = new Set()): Json[] {
   return [...exampleMessage('08').result.agents, PI_AGENT].map((agent: Json) =>
     // Codex, Claude Code and pi change model and effort in an open session (spec 4 settingsUpdate), and
-    // the agents with approval modes (Codex, Claude Code) the approval mode too, unless a test locks an
+    // the agents with approval modes (Codex, Claude Code, pi) the approval mode too, unless a test locks an
     // agent; Kimi (example 08) carries no capabilities, like an agent from an older host.
     agent.capabilities === undefined || locked.has(agent.id)
       ? agent
@@ -685,7 +686,7 @@ export class FakeHost {
         if (params.settings !== undefined) session.settings = { ...session.settings, ...params.settings };
         // Like the real host (spec 5.1): Claude Code and Codex report the mode in effect, their default too
         // (not the template's Codex mode).
-        const defaultMode: Json = { claude: 'default', codex: 'on-request' };
+        const defaultMode: Json = { claude: 'default', codex: 'on-request', pi: 'ask' };
         if (params.settings?.approvalMode === undefined && defaultMode[params.agentId] !== undefined) {
           session.settings = { ...session.settings, approvalMode: defaultMode[params.agentId] };
         }
@@ -712,9 +713,9 @@ export class FakeHost {
         }
         session.settings = { ...session.settings, ...params.settings };
         session.summary.updatedAt = Math.floor(Date.now() / 1000);
-        // Like the real adapters: Claude Code takes a new approval mode at once (also in a running turn),
-        // Codex from its next turn; model and effort always wait for the next turn.
-        const live = mode !== undefined && Object.keys(params.settings).length === 1 && session.summary.agentId === 'claude';
+        // Like the real adapters: Claude Code and pi take a new approval mode at once (also in a running
+        // turn), Codex from its next turn; model and effort always wait for the next turn.
+        const live = mode !== undefined && Object.keys(params.settings).length === 1 && ['claude', 'pi'].includes(session.summary.agentId);
         if (live && session.running) session.running.approvalMode = mode;
         this.emit(params.sessionId, 'session/changed', { session: { ...this.full(session), lastSeq: session.journal.length + 1 } });
         return { result: { session: this.full(session), appliesAt: live ? 'now' : 'nextTurn' } };

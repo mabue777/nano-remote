@@ -3,8 +3,10 @@
 // first message, then session/start (spec 4, 6). With a first message the host starts the first turn
 // in the same round trip. A "Bypass approvals" switch (off by default, remembered per agent) starts the
 // session with settings.approvalMode "never": the agent runs everything without asking (spec 5.1). It is
-// offered only for an agent whose capabilities.approvalModes include "never" (pi has none), or for every
-// agent when an older host sends no capabilities.
+// offered only for an agent whose capabilities.approvalModes include "never", or for every agent when an
+// older host sends no capabilities. An "Accept edits" switch (same rules, for an agent that lists
+// "acceptEdits": Claude Code and Pi) starts it with approvalMode "acceptEdits": file edits in the folder
+// run without asking, commands still ask. The two switches exclude each other.
 // Agents that reach many providers (pi) list hundreds of models, each with a `provider` (spec 4): the
 // picker groups them by provider and offers a search field once the list is long.
 // Effort: the chosen model's `efforts` (spec 4 model/list) are offered under the model, none when it lists
@@ -24,11 +26,14 @@ import type {
   SessionStartResult,
 } from '../generated/methods';
 import { defaultStorage, type StorageLike } from '../replica/storage';
-import { canBypass } from './capabilities';
+import { canAcceptEdits, canBypass } from './capabilities';
 import { errorText, Model } from './model';
 
 /** localStorage key of the agent's last "Bypass approvals" choice. */
 export const bypassKey = (agentId: string): string => `nano-remote/bypass/${agentId}`;
+
+/** localStorage key of the agent's last "Accept edits" choice. */
+export const acceptEditsKey = (agentId: string): string => `nano-remote/accept-edits/${agentId}`;
 
 /** localStorage key of the agent's last effort choice ("" for Auto). */
 export const effortKey = (agentId: string): string => `nano-remote/effort/${agentId}`;
@@ -130,6 +135,7 @@ export function startParams(form: {
   defaultModel: string | undefined;
   message: string;
   bypass?: boolean;
+  acceptEdits?: boolean;
   pinModel?: boolean;
   effort?: string;
 }): SessionStartParams {
@@ -138,6 +144,7 @@ export function startParams(form: {
   if (title !== '') params.title = title;
   if (form.model !== undefined && (form.model !== form.defaultModel || form.pinModel === true)) params.settings = { model: form.model };
   if (form.bypass === true) params.settings = { ...params.settings, approvalMode: 'never' };
+  else if (form.acceptEdits === true) params.settings = { ...params.settings, approvalMode: 'acceptEdits' };
   if (form.effort !== undefined && form.effort !== '') params.settings = { ...params.settings, effort: form.effort };
   const message = form.message.trim();
   if (message !== '') params.input = [{ type: 'text', text: message }];
@@ -169,6 +176,8 @@ export class NewSessionModel extends Model {
   message = '';
   /** "Bypass approvals (full access)": off unless this agent's last session had it on. */
   bypass = false;
+  /** "Accept edits": off unless this agent's last session had it on (and not bypass). */
+  acceptEdits = false;
   loading = false;
   submitting = false;
   error: string | undefined;
@@ -216,6 +225,11 @@ export class NewSessionModel extends Model {
     return canBypass(this.agent);
   }
 
+  /** The "Accept edits" switch is shown: the chosen agent honours approvalMode "acceptEdits". */
+  get acceptEditsOffered(): boolean {
+    return canAcceptEdits(this.agent);
+  }
+
   get canSubmit(): boolean {
     return !this.submitting && this.agent?.status === 'ready' && this.cwd !== undefined;
   }
@@ -249,6 +263,7 @@ export class NewSessionModel extends Model {
     if (agent === undefined || agent.status !== 'ready') return;
     this.agentId = agentId;
     this.bypass = this.readBypass(agentId);
+    this.acceptEdits = !this.bypass && this.readSwitch(acceptEditsKey(agentId));
     this.models = [];
     this.modelId = undefined;
     this.effort = undefined;
@@ -339,19 +354,40 @@ export class NewSessionModel extends Model {
 
   setBypass(on: boolean): void {
     this.bypass = on;
-    if (this.agentId !== undefined) {
-      try {
-        this.storage?.setItem(bypassKey(this.agentId), on ? '1' : '0');
-      } catch {
-        // storage full or disabled: the choice still holds for this sheet
-      }
+    this.remember(bypassKey, on);
+    if (on && this.acceptEdits) {
+      this.acceptEdits = false;
+      this.remember(acceptEditsKey, false);
     }
     this.changed();
   }
 
-  private readBypass(agentId: string): boolean {
+  setAcceptEdits(on: boolean): void {
+    this.acceptEdits = on;
+    this.remember(acceptEditsKey, on);
+    if (on && this.bypass) {
+      this.bypass = false;
+      this.remember(bypassKey, false);
+    }
+    this.changed();
+  }
+
+  private remember(key: (agentId: string) => string, on: boolean): void {
+    if (this.agentId === undefined) return;
     try {
-      return this.storage?.getItem(bypassKey(agentId)) === '1';
+      this.storage?.setItem(key(this.agentId), on ? '1' : '0');
+    } catch {
+      // storage full or disabled: the choice still holds for this sheet
+    }
+  }
+
+  private readBypass(agentId: string): boolean {
+    return this.readSwitch(bypassKey(agentId));
+  }
+
+  private readSwitch(key: string): boolean {
+    try {
+      return this.storage?.getItem(key) === '1';
     } catch {
       return false;
     }
@@ -384,6 +420,7 @@ export class NewSessionModel extends Model {
           defaultModel,
           message: this.message,
           bypass: this.bypass && this.bypassOffered,
+          acceptEdits: this.acceptEdits && this.acceptEditsOffered,
           pinModel: typeof this.model?.provider === 'string',
           effort: this.efforts.length > 0 ? this.effort : undefined,
         }),

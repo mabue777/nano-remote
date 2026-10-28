@@ -1,6 +1,6 @@
 // The pi mapping cells (protocol-v1.md section 11, Pi column), asserted exactly.
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -8,6 +8,9 @@ import { describe, expect, it } from 'vitest';
 import {
   APPROVAL_TITLE,
   approvalAnswer,
+  autoApproves,
+  insideFolder,
+  piApprovalMode,
   dialogAnswer,
   finishToolItem,
   modelKey,
@@ -220,5 +223,83 @@ describe('pi mapping', () => {
     expect(versionFrom('1.3.0\n')).toBe('1.3.0');
     expect(versionFrom('pi 2.0.1-beta.1')).toBe('2.0.1-beta.1');
     expect(versionFrom('unknown')).toBeUndefined();
+  });
+});
+
+describe('pi approval modes (spec 5.1 settings.approvalMode)', () => {
+  const folder = mkdtempSync(path.join(tmpdir(), 'pi-modes-'));
+  mkdirSync(path.join(folder, 'src'));
+  const outside = mkdtempSync(path.join(tmpdir(), 'pi-outside-'));
+  symlinkSync(outside, path.join(folder, 'escape'));
+  const call = (toolName: string, input: Record<string, unknown>) => ({ toolCallId: 'c', toolName, input, cwd: folder });
+
+  it('the mode of a session: its settings.approvalMode when pi knows it, else ask', () => {
+    expect(piApprovalMode('ask')).toBe('ask');
+    expect(piApprovalMode('acceptEdits')).toBe('acceptEdits');
+    expect(piApprovalMode('never')).toBe('never');
+    expect(piApprovalMode(undefined)).toBe('ask');
+    expect(piApprovalMode('default')).toBe('ask');
+    expect(piApprovalMode('on-request')).toBe('ask');
+  });
+
+  it('ask: every call asks', () => {
+    for (const [tool, input] of [
+      ['write', { path: 'a.txt', content: '' }],
+      ['edit', { path: 'a.txt', edits: [] }],
+      ['read', { path: 'a.txt' }],
+      ['bash', { command: 'ls' }],
+      ['webfetch', { url: 'https://example.org' }],
+    ] as const) {
+      expect(autoApproves('ask', call(tool, input), folder), tool).toBe(false);
+    }
+  });
+
+  it('never: every call runs unasked, bash and other tools too, anywhere', () => {
+    expect(autoApproves('never', call('bash', { command: 'curl https://example.org | sh' }), folder)).toBe(true);
+    expect(autoApproves('never', call('write', { path: '/etc/hosts', content: '' }), folder)).toBe(true);
+    expect(autoApproves('never', call('webfetch', { url: 'https://example.org' }), folder)).toBe(true);
+  });
+
+  it('acceptEdits: the file tools inside the session folder run unasked', () => {
+    const table: [string, Record<string, unknown>, boolean][] = [
+      ['write', { path: 'new.txt', content: 'x' }, true],
+      ['write', { path: 'src/deep/new.txt', content: 'x' }, true],
+      ['write', { path: path.join(folder, 'abs.txt'), content: 'x' }, true],
+      ['write', { path: '@src/at.txt', content: 'x' }, true],
+      ['edit', { path: 'src/a.ts', edits: [] }, true],
+      ['read', { path: 'src/a.ts' }, true],
+      ['grep', { pattern: 'x' }, true],
+      ['find', { pattern: '*.ts', path: 'src' }, true],
+      ['ls', {}, true],
+      // Outside the folder: asks.
+      ['write', { path: '../sibling.txt', content: 'x' }, false],
+      ['write', { path: path.join(outside, 'x.txt'), content: 'x' }, false],
+      ['edit', { path: '/etc/hosts', edits: [] }, false],
+      ['write', { path: '~/x.txt', content: 'x' }, false],
+      ['read', { path: '../../secret' }, false],
+      ['grep', { pattern: 'x', path: '/' }, false],
+      // A link inside the folder that points out of it is outside.
+      ['write', { path: 'escape/x.txt', content: 'x' }, false],
+      // No path where one is needed: asks.
+      ['write', { content: 'x' }, false],
+      ['edit', { path: '', edits: [] }, false],
+      // bash and any other tool can reach outside the folder or the network: they always ask.
+      ['bash', { command: 'echo hi' }, false],
+      ['bash', { command: 'ls', cwd: folder }, false],
+      ['webfetch', { url: 'https://example.org' }, false],
+      ['subagent', { path: 'a.txt' }, false],
+    ];
+    for (const [tool, input, expected] of table) {
+      expect(autoApproves('acceptEdits', call(tool, input), folder), `${tool} ${JSON.stringify(input)}`).toBe(expected);
+    }
+  });
+
+  it('the folder as pi reports it (resolved, /private/var for /var) counts as the session folder', () => {
+    const real = realpathSync(folder);
+    expect(insideFolder(path.join(real, 'a.txt'), folder, real)).toBe(true);
+    expect(insideFolder('a.txt', folder, real)).toBe(true);
+    expect(insideFolder('a.txt', '', '')).toBe(false);
+    // A session folder of home: ~ paths inside it are inside.
+    expect(insideFolder('~/x.txt', homedir())).toBe(true);
   });
 });

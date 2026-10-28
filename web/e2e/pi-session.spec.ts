@@ -5,8 +5,8 @@ import { expectSettings } from './sheets';
 // Pi on the new-session sheet at 390 x 844 (Phase 5b): the fake host lists agent "pi" with models from two
 // providers (llamacpp, openrouter). The picker groups them by provider; choosing one starts the session on it
 // (settings.model is the provider/model id); pi's approval card is the usual one with accept, decline and
-// cancel; the session's ⋯ details sheet and the session row name the model and its provider. Pi's capabilities honour
-// no approvalMode (approvalModes []), so the sheet offers no "Bypass approvals" switch for it.
+// cancel; the session's ⋯ details sheet and the session row name the model and its provider. Pi honours the
+// approval modes ask, acceptEdits and never, so the sheet offers "Accept edits" and "Bypass approvals" for it.
 
 test.beforeEach(async ({ request }) => {
   await request.post('/test/reset');
@@ -33,7 +33,8 @@ test('pick Pi and a model, start, accept the approval; header and row show the m
 
   await sheet.getByRole('radio', { name: 'Pi' }).click();
   await expect(sheet.getByRole('radio', { name: 'Pi' })).toHaveAttribute('aria-checked', 'true');
-  await expect(bypass).toHaveCount(0);
+  await expect(bypass).toBeVisible();
+  await expect(sheet.getByRole('switch', { name: 'Accept edits' })).toBeVisible();
   const picker = sheet.getByRole('combobox', { name: 'Model' });
   await expect(picker).toHaveValue('llamacpp/bonsai-27b'); // pi's default
   await expect(sheet.getByText('via llamacpp', { exact: true })).toBeVisible();
