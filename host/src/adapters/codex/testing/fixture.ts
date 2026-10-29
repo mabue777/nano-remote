@@ -27,6 +27,8 @@ export type FakeStep =
   | { withdrawn: true }
   /** Waits for `turn/steer` (then plays on) or `turn/interrupt`. */
   | { hold: true }
+  /** An mcpToolCall item whose result holds this many image blocks (a screenshot tool). */
+  | { images: number }
   /** Ends the turn failed. */
   | { fail: string; info?: unknown }
   /** The engine process exits with this code. */
@@ -68,6 +70,12 @@ export interface FakeFixture {
   exitOn?: string;
   /** Write the turn/start reply and the notifications that follow it in one stdout write (one chunk). */
   oneChunkTurnStart?: boolean;
+  /**
+   * How `thread/compact/start` goes. By default the fake runs a compaction turn (turn/started, a
+   * contextCompaction item, thread/compacted, turn/completed). `fail` ends that turn failed with this
+   * message (the provider rejecting the compaction request); `hang` starts nothing after the reply.
+   */
+  compact?: { fail: string } | 'hang';
   /** Write junk to stdout and stderr on boot (the engine must survive it). */
   noise?: boolean;
 }

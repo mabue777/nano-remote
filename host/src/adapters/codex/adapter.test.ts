@@ -7,7 +7,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdapterEvent } from '../../core/adapter.js';
 import { codexConfig } from '../../config/codex.js';
-import { CodexAdapter, RESUME_TURNS, sandboxPolicy, sessionPolicy } from './adapter.js';
+import {
+  COMPACTED_NOTE,
+  CONTINUE_TEXT,
+  CodexAdapter,
+  IMAGE_COMPACT_THRESHOLD,
+  IMAGE_LIMIT_ERROR,
+  RESUME_TURNS,
+  isImageLimitError,
+  sandboxPolicy,
+  sessionPolicy,
+} from './adapter.js';
 import { attachmentFixture } from '../shared/testing/attachments.js';
 import { fakeCodex, until, type FakeCodex } from './testing/fake-codex.js';
 import type { FakeFixture } from './testing/fixture.js';
@@ -29,10 +39,18 @@ interface Rig {
   next<M extends AdapterEvent['method']>(method: M, match?: (e: Extract<AdapterEvent, { method: M }>) => boolean): Promise<Extract<AdapterEvent, { method: M }>>;
 }
 
-function rig(fixture: FakeFixture = {}, options: { defaultModel?: () => string | undefined; fake?: FakeCodex } = {}): Rig {
+function rig(
+  fixture: FakeFixture = {},
+  options: { defaultModel?: () => string | undefined; fake?: FakeCodex; compactTimeoutMs?: number; logs?: string[] } = {},
+): Rig {
   const fake = options.fake ?? fakeCodex(fixture);
-  const logs: string[] = [];
-  const adapter = new CodexAdapter({ config: fake.config, defaultModel: options.defaultModel, log: (m) => logs.push(m) });
+  const logs = options.logs ?? [];
+  const adapter = new CodexAdapter({
+    config: fake.config,
+    defaultModel: options.defaultModel,
+    compactTimeoutMs: options.compactTimeoutMs,
+    log: (m) => logs.push(m),
+  });
   adapters.push(adapter);
   const events: AdapterEvent[] = [];
   adapter.onEvent((e) => events.push(e));
@@ -843,6 +861,120 @@ describe('CodexAdapter', { timeout: 30_000 }, () => {
     expect(r.events).toEqual([]);
   });
 
+  describe("the provider's image limit (60 images per conversation)", () => {
+    // The live message (session "wow-forever-gmaddon", Ollama Cloud behind Codex), verbatim.
+    const LIVE =
+      'stream disconnected before completion: Too many images were provided, we currently limit the number of images per conversation to 60 (ref: 7f3c2a9e-1b4d-4e8a-9c61-0d2e5f8a7b13)';
+    const completedTurns = (r: Rig) => r.events.filter((e) => e.method === 'turn/completed');
+    const waitTurns = (r: Rig, n: number) => until(() => (completedTurns(r).length === n ? true : undefined), `${n} completed turns`);
+    /** Methods the host sent the fake, the handshake left out. */
+    const calls = (r: Rig) =>
+      r.fake
+        .log()
+        .map((e) => e.message.method)
+        .filter((m): m is string => m === 'turn/start' || m === 'thread/compact/start');
+
+    it('isImageLimitError knows the live message and nothing else', () => {
+      expect(isImageLimitError(LIVE)).toBe(true);
+      expect(isImageLimitError('TOO MANY IMAGES')).toBe(true);
+      expect(isImageLimitError('stream disconnected before completion: stream closed before response.completed')).toBe(false);
+      expect(isImageLimitError(undefined)).toBe(false);
+    });
+
+    it('a turn failing on it is compacted and continued as the same host turn', async () => {
+      const logs: string[] = [];
+      const r = rig({ turns: [[{ images: 19 }, { fail: LIVE }], [{ reply: 'Continued and finished.' }]] }, { logs });
+      await r.adapter.start(cwd(), {});
+      await r.adapter.turnStart(text('take screenshots'), 'cm-1');
+      await r.next('turn/completed');
+      expect(calls(r)).toEqual(['turn/start', 'thread/compact/start', 'turn/start']);
+      expect(r.fake.sent('thread/compact/start')[0]).toEqual({ threadId: r.adapter.engineSessionId });
+      const continuation = r.fake.sent('turn/start')[1]!;
+      expect(continuation).toMatchObject({ threadId: r.adapter.engineSessionId, model: 'gpt-fake-luna', input: [{ type: 'text', text: CONTINUE_TEXT }] });
+      expect(continuation).not.toHaveProperty('clientUserMessageId');
+      // One host turn: it ends completed with the continuation's reply, the note in between.
+      expect(completedTurns(r)).toEqual([{ method: 'turn/completed', params: { status: 'completed' } }]);
+      const texts = r.events.flatMap((e) => (e.method === 'item/completed' && e.params.item.type === 'agentMessage' ? [e.params.item.text] : []));
+      expect(texts).toEqual([COMPACTED_NOTE, 'Continued and finished.']);
+      // Nothing of the compaction turn reaches the host.
+      expect(r.events.some((e) => e.method === 'item/completed' && e.params.item.type === 'other')).toBe(false);
+      expect(logs.filter((l) => l.startsWith('codex: image limit hit, compacting'))).toHaveLength(1);
+    });
+
+    it('a second failure in the same host turn ends it with image_limit; the next turn starts fresh', async () => {
+      const r = rig({ turns: [[{ fail: LIVE }], [{ fail: LIVE }], [{ reply: 'next' }]] });
+      await r.adapter.start(cwd(), {});
+      await r.adapter.turnStart(text('go'), 'cm-1');
+      await r.next('turn/completed');
+      expect(calls(r)).toEqual(['turn/start', 'thread/compact/start', 'turn/start']);
+      expect(completedTurns(r)).toEqual([{ method: 'turn/completed', params: { status: 'failed', error: IMAGE_LIMIT_ERROR } }]);
+      await r.adapter.turnStart(text('again'), 'cm-2');
+      await waitTurns(r, 2);
+      expect(completedTurns(r)[1]).toEqual({ method: 'turn/completed', params: { status: 'completed' } });
+    });
+
+    it.each([
+      ['the provider rejects the compaction turn', { compact: { fail: LIVE } }, undefined],
+      ['thread/compact/start errors', { fail: { 'thread/compact/start': 'no compaction today' } }, undefined],
+      ['the compaction times out', { compact: 'hang' as const }, 300],
+    ])('%s: the turn fails with image_limit and the adapter takes the next turn', async (_name, fixture, compactTimeoutMs) => {
+      const r = rig({ ...fixture, turns: [[{ fail: LIVE }], [{ reply: 'fresh start' }]] }, { compactTimeoutMs });
+      await r.adapter.start(cwd(), {});
+      await r.adapter.turnStart(text('go'), 'cm-1');
+      await r.next('turn/completed');
+      expect(completedTurns(r)).toEqual([{ method: 'turn/completed', params: { status: 'failed', error: IMAGE_LIMIT_ERROR } }]);
+      expect(calls(r)).toEqual(['turn/start', 'thread/compact/start']);
+      await r.adapter.turnStart(text('again'), 'cm-2');
+      await waitTurns(r, 2);
+      expect(completedTurns(r)[1]).toEqual({ method: 'turn/completed', params: { status: 'completed' } });
+      expect(r.events.find((e) => e.method === 'item/completed' && e.params.item.type === 'agentMessage')).toMatchObject({
+        params: { item: { text: 'fresh start' } },
+      });
+    });
+
+    it(`${IMAGE_COMPACT_THRESHOLD} images gathered across turns compact the thread before the next turn; the count starts over`, async () => {
+      const logs: string[] = [];
+      const r = rig(
+        { turns: [[{ images: 19 }], [{ images: 19 }], [{ images: 11 }], [{ reply: 'four' }], [{ images: 30 }], [{ reply: 'six' }]] },
+        { logs },
+      );
+      await r.adapter.start(cwd(), {});
+      const image = { type: 'image' as const, url: 'data:image/png;base64,iVBORw0KGgo=' };
+      // 19 + 19 + (1 attached + 11) = 50.
+      for (const [n, input] of [text('one'), text('two'), [...text('three'), image]].entries()) {
+        await r.adapter.turnStart(input, `cm-${n}`);
+        await waitTurns(r, n + 1);
+      }
+      expect(calls(r)).toEqual(['turn/start', 'turn/start', 'turn/start']);
+      await r.adapter.turnStart(text('four'), 'cm-4');
+      await waitTurns(r, 4);
+      expect(calls(r)).toEqual(['turn/start', 'turn/start', 'turn/start', 'thread/compact/start', 'turn/start']);
+      expect(r.fake.sent('turn/start')[3]).toMatchObject({ input: [{ type: 'text', text: 'four' }], clientUserMessageId: 'cm-4' });
+      expect(completedTurns(r)[3]).toEqual({ method: 'turn/completed', params: { status: 'completed' } });
+      expect(logs.filter((l) => l.startsWith('codex: compacting thread'))).toEqual([
+        `codex: compacting thread ${r.adapter.engineSessionId} before the turn (50 images)`,
+      ]);
+      // 30 since the compaction: below the threshold, so no compaction before the sixth turn.
+      await r.adapter.turnStart(text('five'), 'cm-5');
+      await waitTurns(r, 5);
+      await r.adapter.turnStart(text('six'), 'cm-6');
+      await waitTurns(r, 6);
+      expect(r.fake.sent('thread/compact/start')).toHaveLength(1);
+    });
+
+    it('an interrupt while the thread compacts before a turn ends the turn interrupted', async () => {
+      const r = rig({ compact: 'hang', turns: [[{ images: 50 }]] }, { compactTimeoutMs: 2_000 });
+      await r.adapter.start(cwd(), {});
+      await r.adapter.turnStart(text('one'), 'cm-1');
+      await waitTurns(r, 1);
+      await r.adapter.turnStart(text('two'), 'cm-2');
+      await until(() => (r.fake.sent('thread/compact/start').length === 1 ? true : undefined), 'compaction requested');
+      await r.adapter.interrupt();
+      await waitTurns(r, 2);
+      expect(completedTurns(r)[1]).toEqual({ method: 'turn/completed', params: { status: 'interrupted' } });
+      expect(r.fake.sent('turn/start')).toHaveLength(1);
+    });
+  });
 });
 
 function alive(pid: number): boolean {

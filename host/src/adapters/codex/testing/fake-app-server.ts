@@ -263,6 +263,13 @@ function playStep(step: FakeStep): 'stop' | void {
     notify('serverRequest/resolved', { threadId: running!.thread.id, requestId: rpcId });
   } else if ('hold' in step) {
     running!.holding = true;
+  } else if ('images' in step) {
+    const id = itemId();
+    const item = { type: 'mcpToolCall', id, server: 'cua_repl', tool: 'js', arguments: { code: 'screenshot()' } };
+    itemStarted({ ...item, status: 'inProgress' });
+    const image = { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' };
+    const content = Array.from({ length: step.images }, () => image);
+    itemCompleted({ ...item, status: 'completed', result: { content, structuredContent: null }, durationMs: 3 });
   } else if ('fail' in step) {
     finish('failed', { message: step.fail, codexErrorInfo: step.info ?? null, additionalDetails: 'from the fake' });
     return 'stop';
@@ -321,6 +328,27 @@ function onResponse(id: Id, result: Json | undefined): void {
     itemCompleted({ ...waiting.item, status: 'completed' });
   }
   play();
+}
+
+/** A compaction as Codex runs one: a turn of its own that carries a contextCompaction item. */
+function compactTurn(record: ThreadRecord): void {
+  const turnId = randomUUID();
+  const ids = { threadId: record.id, turnId };
+  notify('turn/started', { threadId: record.id, turn: { id: turnId, status: 'inProgress', items: [] } });
+  notify('thread/status/changed', { threadId: record.id, status: { type: 'active', activeFlags: [] } });
+  const failure = typeof fixture.compact === 'object' ? fixture.compact.fail : undefined;
+  if (failure === undefined) {
+    const item = { type: 'contextCompaction', id: itemId() };
+    notify('item/started', { ...ids, item, startedAtMs: Date.now() });
+    notify('item/completed', { ...ids, item, completedAtMs: Date.now() });
+    notify('thread/compacted', ids);
+  }
+  const error = failure === undefined ? null : { message: failure, codexErrorInfo: null, additionalDetails: null };
+  notify('turn/completed', {
+    threadId: record.id,
+    turn: { id: turnId, status: failure === undefined ? 'completed' : 'failed', items: [], error, completedAt: Math.floor(Date.now() / 1000) },
+  });
+  notify('thread/status/changed', { threadId: record.id, status: { type: 'idle' } });
 }
 
 // ---- requests from the host ------------------------------------------------------------------------
@@ -408,6 +436,12 @@ function handle(method: string, params: Json): Json {
         }
       });
       return { turnId: run.turn.id };
+    }
+    case 'thread/compact/start': {
+      if (running) throw new Error('a turn is already running');
+      const record = thread(params);
+      if (fixture.compact !== 'hang') queueMicrotask(() => compactTurn(record));
+      return {};
     }
     case 'turn/interrupt': {
       if (running && params.turnId === running.turn.id) {
