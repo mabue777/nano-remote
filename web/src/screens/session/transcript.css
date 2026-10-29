@@ -57,6 +57,51 @@ button.previous-toggle:active {
   color: var(--error);
 }
 
+/* A row whose path is a link: a full-size toggle button behind the line, the content above it lets taps through
+   except on the link. */
+.row-line.linked {
+  position: relative;
+}
+
+.row-hit {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.row-hit:active {
+  transform: none;
+}
+
+.row-line.linked:has(> .row-hit:active) {
+  opacity: 0.7;
+}
+
+.row-line.linked > :not(.row-hit) {
+  position: relative;
+  pointer-events: none;
+}
+
+.row-line.linked .file-link {
+  pointer-events: auto;
+}
+
+/* A tappable file path inside a row or an agent message: ink with an underline, inline text links only dim. */
+.file-link {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.file-link:active {
+  opacity: 0.7;
+}
 
 .row-line .chevron,
 .previous-toggle .chevron {

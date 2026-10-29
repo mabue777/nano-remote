@@ -12,9 +12,11 @@ export interface ChangesSheetProps {
   turnId: string;
   replica: ChangesReplica;
   onClose: () => void;
+  /** Opens the selected file in the file viewer and closes this sheet. */
+  onOpenFile?: (path: string) => void;
 }
 
-export function ChangesSheet({ sessionId, turnId, replica, onClose }: ChangesSheetProps) {
+export function ChangesSheet({ sessionId, turnId, replica, onClose, onOpenFile }: ChangesSheetProps) {
   const model = useModel(useMemo(() => new ChangesModel({ sessionId, turnId, replica }), [sessionId, turnId, replica]));
   useEffect(() => {
     model.start();
@@ -25,7 +27,7 @@ export function ChangesSheet({ sessionId, turnId, replica, onClose }: ChangesShe
     <Sheet labelledBy="changes-title" class="detail-sheet" onClose={onClose}>
       <SheetHeader titleId="changes-title" title="Changes" subtitle={model.summary} actionLabel="Close" onAction={onClose} />
       <div id="detail-panel">
-        <ChangesView model={model} summary={false} />
+        <ChangesView model={model} summary={false} onOpenFile={onOpenFile} />
       </div>
     </Sheet>
   );

@@ -89,7 +89,8 @@ test('every transcript item kind wraps a 120-character unbroken token inside its
   }
   for (const kind of ['reasoning', 'command', 'fileChange', 'tool', 'plan']) {
     const row = conversation.locator(`[data-item="${kind}"]`);
-    await row.getByRole('button', { expanded: false }).click();
+    // At the row's leading icon: the middle of an Edited row is its path, a link to the file viewer.
+    await row.getByRole('button', { expanded: false }).click({ position: { x: 4, y: 4 } });
     await expect(row.locator('.row-body')).toContainText(TOKEN.slice(0, 40));
   }
   await expect(conversation.locator('[data-item="agent"]')).toContainText(TOKEN.slice(0, 40));

@@ -17,9 +17,11 @@ export interface ItemDetailSheetProps {
   /** False when the session's agent provides no diffs: no Changes view. */
   diffs?: boolean;
   onClose: () => void;
+  /** Opens the selected file in the file viewer and closes this sheet. */
+  onOpenFile?: (path: string) => void;
 }
 
-export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onClose }: ItemDetailSheetProps) {
+export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onClose, onOpenFile }: ItemDetailSheetProps) {
   const model = useModel(
     useMemo(
       () =>
@@ -65,9 +67,9 @@ export function ItemDetailSheet({ sessionId, itemId, replica, diffs = true, onCl
         {model.tab === 'output' ? (
           <OutputView model={model} />
         ) : model.ownChanges.length > 0 ? (
-          <AgentChanges files={model.ownChanges} />
+          <AgentChanges files={model.ownChanges} onOpenFile={onOpenFile} />
         ) : (
-          <ChangesView model={model.changes} />
+          <ChangesView model={model.changes} onOpenFile={onOpenFile} />
         )}
       </div>
     </Sheet>

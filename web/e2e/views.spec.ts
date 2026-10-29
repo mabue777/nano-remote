@@ -319,7 +319,8 @@ test("a folder outside git: a file change row shows the agent's own diff, and th
 
   // The row's sheet: the edit's own diff with its line numbers.
   const fileChange = conversation.locator('[data-item="fileChange"]');
-  await fileChange.getByRole('button').first().click();
+  // At the row's leading icon: the path in the middle is a link to the file viewer.
+  await fileChange.getByRole('button').first().click({ position: { x: 4, y: 4 } });
   await fileChange.getByRole('button', { name: 'Show changes' }).click();
   const own = page.getByRole('dialog', { name: 'File change' });
   const body = own.getByRole('region', { name: `Diff of ${FOLDER}/notes.md` });

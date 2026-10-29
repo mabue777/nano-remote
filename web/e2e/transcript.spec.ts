@@ -183,7 +183,7 @@ test('background tasks and thinking rows are flat rows that open under themselve
   await expect(thought).toHaveText('Thought Reading the tokenizer');
   await thought.click();
   await expect(conversation.locator('.reasoning-text')).toHaveText('The tokenizer drops the last character.');
-  await expect(conversation.locator('[data-item="fileChange"]').getByRole('button').first()).toHaveText('Edited src/parser.ts');
+  await expect(conversation.locator('[data-item="fileChange"]').getByRole('button').first()).toHaveAccessibleName('Edited src/parser.ts');
 });
 
 // ---- screenshots, light and dark -----------------------------------------------------------------

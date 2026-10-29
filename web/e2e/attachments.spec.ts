@@ -108,7 +108,8 @@ test('pick a photo and a file, preview, remove, send; the transcript shows the t
   await expect.poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(2048);
   const chip = message.getByRole('link', { name: /build\.log/ });
   await expect(chip).toBeVisible();
-  await expect(chip).toHaveAttribute('href', params.input[2]!.url!);
+  // A text file opens in the file viewer (docs/plan/file-viewer.md P4), read from its /v1/blob URL.
+  await expect(chip).toHaveAttribute('href', `/s/${encodeURIComponent(SESSION)}/file?path=${encodeURIComponent(params.input[2]!.url!)}`);
   await expect(message).not.toContainText('attachment');
   await page.screenshot({ path: `${SHOTS}/3-sent-390.png` });
 

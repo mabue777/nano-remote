@@ -31,6 +31,7 @@ import { PairScreen } from './screens/PairScreen';
 import { DeviceNames } from './screens/session/approvals/devices';
 import { browserResize } from './screens/session/attachments/resize';
 import { xhrUploader } from './screens/session/attachments/upload';
+import { BlobFileReader } from './screens/session/files/BlobFileReader';
 import type { AttachmentServices } from './screens/session/session-model';
 import { SessionScreen } from './screens/session/SessionScreen';
 import { FileRoute, preloadFileViewer } from './screens/session/files/FileRoute';
@@ -268,11 +269,17 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
             link={services.client}
             onBack={() => router.back('/')}
             onOpenFiles={() => openFiles(route.sessionId)}
+            onOpenFile={(path, line) =>
+              router.navigate({ name: 'file', sessionId: route.sessionId, path, ...(line !== undefined ? { line } : {}) })
+            }
           />
         );
       case 'file': {
         const { replica } = services;
         const sessionId = route.sessionId;
+        const path = route.path;
+        const blobUrl = path.startsWith('/v1/blob/') ? path : undefined;
+        const reader = blobUrl !== undefined ? new BlobFileReader(blobUrl) : services.client;
         const sessionFolder = {
           name: () => {
             const cwd = replica.session(sessionId)?.session?.cwd ?? [...replica.sessions, ...replica.archivedSessions].find((s) => s.sessionId === sessionId)?.cwd;
@@ -286,7 +293,7 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
             sessionId={route.sessionId}
             path={route.path}
             {...(route.line !== undefined ? { line: route.line } : {})}
-            reader={services.client}
+            reader={reader}
             storage={storage}
             sessionFolder={sessionFolder}
             onBack={() => router.back({ name: 'session', sessionId: route.sessionId })}

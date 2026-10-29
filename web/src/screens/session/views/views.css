@@ -162,6 +162,13 @@
   gap: var(--space-4);
 }
 
+.diff-view-file {
+  margin-left: auto;
+  padding: 0;
+  font: var(--type-caption);
+  font-weight: 500;
+}
+
 .diff-file-view > p {
   margin: 0;
 }

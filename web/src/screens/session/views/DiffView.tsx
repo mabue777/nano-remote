@@ -8,7 +8,15 @@ import type { ChangedFile, ChangesModel } from './changes-model';
 import { FROM_AGENT_TEXT, NOT_A_REPOSITORY_TEXT, NOT_SUPPORTED_TEXT, UNNUMBERED_TEXT } from './changes-model';
 
 /** `summary`: show "N files changed" above the list (off where the sheet's header already says it). */
-export function ChangesView({ model, summary = true }: { model: ChangesModel; summary?: boolean }) {
+export function ChangesView({
+  model,
+  summary = true,
+  onOpenFile,
+}: {
+  model: ChangesModel;
+  summary?: boolean;
+  onOpenFile?: (path: string) => void;
+}) {
   const state = model.state;
   switch (state.state) {
     case 'idle':
@@ -31,7 +39,7 @@ export function ChangesView({ model, summary = true }: { model: ChangesModel; su
       );
     case 'ready': {
       const file = model.file;
-      if (file !== undefined) return <FileDiff file={file} onBack={() => model.back()} />;
+      if (file !== undefined) return <FileDiff file={file} onBack={() => model.back()} onOpenFile={onOpenFile} />;
       return (
         <div class="changes">
           {state.note !== undefined && <p class="changes-note small">{state.note}</p>}
@@ -86,7 +94,13 @@ function Counts({ file }: { file: ChangedFile }) {
 
 const SIGN: Record<string, string> = { add: '+', remove: '−' };
 
-function FileHead({ file }: { file: ChangedFile }) {
+function FileHead({
+  file,
+  onOpenFile,
+}: {
+  file: ChangedFile;
+  onOpenFile?: (path: string) => void;
+}) {
   return (
     <div class="diff-file-head">
       <KindBadge file={file} />
@@ -95,6 +109,15 @@ function FileHead({ file }: { file: ChangedFile }) {
         {file.path}
       </code>
       <Counts file={file} />
+      {onOpenFile !== undefined && file.kind !== 'deleted' && (
+        <button
+          type="button"
+          class="link diff-view-file"
+          onClick={() => onOpenFile(file.path)}
+        >
+          View file
+        </button>
+      )}
     </div>
   );
 }
@@ -131,14 +154,22 @@ function FileBody({ file }: { file: ChangedFile }) {
   );
 }
 
-function FileDiff({ file, onBack }: { file: ChangedFile; onBack: () => void }) {
+function FileDiff({
+  file,
+  onBack,
+  onOpenFile,
+}: {
+  file: ChangedFile;
+  onBack: () => void;
+  onOpenFile?: (path: string) => void;
+}) {
   return (
     <div class="diff-file-view" data-file-kind={file.kind}>
       <button type="button" class="link small diff-back" onClick={onBack}>
         <Icon name="back" size={18} />
         All files
       </button>
-      <FileHead file={file} />
+      <FileHead file={file} onOpenFile={onOpenFile} />
       {file.fromAgent === true && <p class="muted small diff-source">{FROM_AGENT_TEXT}</p>}
       <FileBody file={file} />
     </div>
@@ -146,12 +177,18 @@ function FileDiff({ file, onBack }: { file: ChangedFile; onBack: () => void }) {
 }
 
 /** The changes of one fileChange item, from its own diff: one section per file, path as the title. */
-export function AgentChanges({ files }: { files: readonly ChangedFile[] }) {
+export function AgentChanges({
+  files,
+  onOpenFile,
+}: {
+  files: readonly ChangedFile[];
+  onOpenFile?: (path: string) => void;
+}) {
   return (
     <div class="agent-changes">
       {files.map((file, i) => (
         <section key={i} class="diff-file-view" data-file-kind={file.kind} aria-label={file.path}>
-          <FileHead file={file} />
+          <FileHead file={file} onOpenFile={onOpenFile} />
           <FileBody file={file} />
         </section>
       ))}

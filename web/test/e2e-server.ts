@@ -367,7 +367,12 @@ export async function startE2eHost(port: number): Promise<{ url: string; close: 
       if (!paired(request)) return json(401, { error: { code: 'unauthorized', message: 'device token missing, unknown or revoked' } });
       const blob = blobs.get(url.pathname.slice('/v1/blob/'.length));
       if (blob === undefined) return json(404, { error: { code: 'not_found', message: 'no such attachment' } });
-      response.writeHead(200, { 'content-type': blob.mediaType, 'content-length': String(blob.bytes.length), 'x-content-type-options': 'nosniff' });
+      response.writeHead(200, {
+        'content-type': blob.mediaType,
+        'content-length': String(blob.bytes.length),
+        'x-content-type-options': 'nosniff',
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(blob.name)}`,
+      });
       return void response.end(request.method === 'HEAD' ? undefined : blob.bytes);
     }
     if (url.pathname === '/v1/file') {

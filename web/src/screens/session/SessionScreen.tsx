@@ -32,6 +32,7 @@ import { SessionDetailsSheet } from './SessionDetailsSheet';
 import { PermissionsSheet } from './PermissionsSheet';
 import { SessionSettingsSheet } from './SessionSettingsSheet';
 import { AgentMessage, FlatRow, JumpPill, PreviousToggle, Thinking, WorkedFor } from './TranscriptRows';
+import { fileHref } from './files/file-link';
 import { layoutTurn, rowLine } from './transcript';
 import { cleanOutput } from './views/ansi';
 import { ChangesSheet } from './views/ChangesSheet';
@@ -63,9 +64,24 @@ export interface SessionScreenProps {
   link?: ConnectionSource;
   /** Opens the Files page for this session. */
   onOpenFiles?: () => void;
+  /** Open a session file (or blob attachment) in the file viewer. */
+  onOpenFile?: (path: string, line?: number) => void;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared, link, onOpenFiles }: SessionScreenProps) {
+export function SessionScreen({
+  sessionId,
+  replica,
+  onBack,
+  clientId,
+  deviceName,
+  onOpened,
+  agents,
+  attachments,
+  actions: shared,
+  link,
+  onOpenFiles,
+  onOpenFile,
+}: SessionScreenProps) {
   const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
   useEffect(() => () => own?.dispose(), [own]);
   const actions = useModel((shared ?? own)!);
@@ -176,6 +192,9 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
   const answered = placeByTurn(requests.answered, new Set(turns.map((t) => t.turnId)));
   const steers = model.steerRows;
   const running = model.runningTurnId !== undefined;
+  // Entry points to the file viewer are shown only when the host advertises file reading (spec 4.1).
+  const openFile = link?.host?.files?.read === true ? onOpenFile : undefined;
+  const filesEnabled = openFile !== undefined;
   // Sending (technique 6): the message rises out of the composer, the field clears in the same frame, and the
   // older rows glide up as the view pins to the new bottom.
   const archived = replica.archivedSessions.some((s) => s.sessionId === sessionId);
@@ -238,14 +257,31 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
         ) : (
           <ol class="turns" aria-label="Turns">
             {turns.map((turn) => (
-              <Turn key={turn.turnId} turn={turn} model={model} flip={flip} scroller={scroller} answered={answered.byTurn.get(turn.turnId) ?? NO_ROWS} />
+              <Turn
+                key={turn.turnId}
+                turn={turn}
+                model={model}
+                flip={flip}
+                scroller={scroller}
+                answered={answered.byTurn.get(turn.turnId) ?? NO_ROWS}
+                sessionId={sessionId}
+                filesEnabled={filesEnabled}
+                onOpenFile={openFile ?? NO_OPEN}
+              />
             ))}
           </ol>
         )}
         {steers.length > 0 && (
           <ul class="steers" aria-label="Steering messages">
             {steers.map((steer) => (
-              <Steer key={steer.clientMessageId} steer={steer} model={model} />
+              <Steer
+                key={steer.clientMessageId}
+                steer={steer}
+                model={model}
+                sessionId={sessionId}
+                filesEnabled={filesEnabled}
+                onOpenFile={openFile ?? NO_OPEN}
+              />
             ))}
           </ul>
         )}
@@ -257,10 +293,29 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
 
       <SessionComposer model={model} running={running} onSend={send} above={<PinnedQuestions model={requests} />} />
       {model.detailItemId !== undefined && (
-        <ItemDetailSheet sessionId={sessionId} itemId={model.detailItemId} replica={replica} diffs={model.diffs} onClose={() => model.closeItem()} />
+        <ItemDetailSheet
+          sessionId={sessionId}
+          itemId={model.detailItemId}
+          replica={replica}
+          diffs={model.diffs}
+          onClose={() => model.closeItem()}
+          onOpenFile={filesEnabled ? (path) => {
+            model.closeItem();
+            openFile!(path);
+          } : undefined}
+        />
       )}
       {model.changesTurnId !== undefined && (
-        <ChangesSheet sessionId={sessionId} turnId={model.changesTurnId} replica={replica} onClose={() => model.closeChanges()} />
+        <ChangesSheet
+          sessionId={sessionId}
+          turnId={model.changesTurnId}
+          replica={replica}
+          onClose={() => model.closeChanges()}
+          onOpenFile={filesEnabled ? (path) => {
+            model.closeChanges();
+            openFile!(path);
+          } : undefined}
+        />
       )}
       {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
       {model.permissionsOpen && <PermissionsSheet create={() => model.permissionsSheet()} onClose={() => model.closePermissions()} />}
@@ -405,18 +460,22 @@ interface TurnProps {
   scroller: { current: HTMLElement | null };
   /** The turn's answered approvals and questions, each placed after its item. */
   answered: readonly AnsweredRow[];
+  sessionId: string;
+  filesEnabled: boolean;
+  onOpenFile: (path: string, line?: number) => void;
 }
 
 const NO_ROWS: readonly AnsweredRow[] = [];
+const NO_OPEN = (): void => undefined;
 
-function Turn({ turn, model, flip, scroller, answered }: TurnProps) {
+function Turn({ turn, model, flip, scroller, answered, sessionId, filesEnabled, onOpenFile }: TurnProps) {
   const layout = layoutTurn(turn.items, turn.final);
   const foldable = turn.final && layout.work.length > 0;
   const visible = [...layout.lead, ...(!foldable || turn.unfolded ? layout.work : []), ...(layout.answer !== undefined ? [layout.answer] : [])];
   const lines = placeInTurn(answered, new Set(visible.map((item) => item.itemId)));
   const shown = (item: ItemRow) => (
     <Fragment key={item.itemId}>
-      <ItemView item={item} model={model} flip={flip} scroller={scroller} />
+      <ItemView item={item} model={model} flip={flip} scroller={scroller} sessionId={sessionId} filesEnabled={filesEnabled} onOpenFile={onOpenFile} />
       <AnsweredLines rows={lines.after.get(item.itemId) ?? NO_ROWS} />
     </Fragment>
   );
@@ -474,18 +533,34 @@ function outputTail(output: string, max = OUTPUT_LINES): string {
 }
 
 /** One item of a turn: a message, or a flat row that opens its content under it. */
-function ItemView({ item, model, flip, scroller }: { item: ItemRow; model: SessionModel; flip: Flip; scroller: { current: HTMLElement | null } }) {
+function ItemView({
+  item,
+  model,
+  flip,
+  scroller,
+  sessionId,
+  filesEnabled,
+  onOpenFile,
+}: {
+  item: ItemRow;
+  model: SessionModel;
+  flip: Flip;
+  scroller: { current: HTMLElement | null };
+  sessionId: string;
+  filesEnabled: boolean;
+  onOpenFile: (path: string, line?: number) => void;
+}) {
   if (item.kind === 'user') {
     return (
       <div class="item-row user" data-item-id={item.itemId} data-flip-key={item.itemId}>
         <div class="msg user" data-item="user">
-          <SentAttachments images={item.images} files={item.files} />
+          <SentAttachments images={item.images} files={item.files} sessionId={sessionId} filesEnabled={filesEnabled} onOpenFile={onOpenFile} />
           {item.text !== '' && <p>{item.text}</p>}
         </div>
       </div>
     );
   }
-  if (item.kind === 'agent') return <AgentMessage itemId={item.itemId} text={item.text} streaming={item.streaming} />;
+  if (item.kind === 'agent') return <AgentMessage itemId={item.itemId} text={item.text} streaming={item.streaming} sessionId={filesEnabled ? sessionId : undefined} onOpenFile={filesEnabled ? onOpenFile : undefined} />;
   const open = item.kind === 'other' ? false : item.expanded;
   const toggle = () => {
     if (!open) flip(() => model.toggleItem(item.itemId));
@@ -507,19 +582,46 @@ function ItemView({ item, model, flip, scroller }: { item: ItemRow; model: Sessi
           {detail('Full output')}
         </FlatRow>
       );
-    case 'fileChange':
+    case 'fileChange': {
+      const single = item.files.length === 1 ? item.files[0] : undefined;
+      const targetHref = filesEnabled && single !== undefined ? fileHref(sessionId, single.path) : undefined;
+      const onTargetClick = filesEnabled && single !== undefined ? () => onOpenFile(single!.path) : undefined;
       return (
-        <FlatRow line={line} rowKey={item.itemId} kind="fileChange" expandable open={open} onToggle={toggle}>
+        <FlatRow
+          line={line}
+          rowKey={item.itemId}
+          kind="fileChange"
+          expandable
+          open={open}
+          onToggle={toggle}
+          targetHref={targetHref}
+          onTargetClick={onTargetClick}
+        >
           <ul class="paths" aria-label="Changed files">
             {item.files.map((file) => (
               <li key={file.path}>
-                <span class={`kind ${file.kind}`}>{file.kind === 'add' ? '+' : file.kind === 'delete' ? '−' : '~'}</span> <code>{file.path}</code>
+                <span class={`kind ${file.kind}`}>{file.kind === 'add' ? '+' : file.kind === 'delete' ? '−' : '~'}</span>{' '}
+                {filesEnabled ? (
+                  <a
+                    class="file-link"
+                    href={fileHref(sessionId, file.path)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenFile(file.path);
+                    }}
+                  >
+                    <code>{file.path}</code>
+                  </a>
+                ) : (
+                  <code>{file.path}</code>
+                )}
               </li>
             ))}
           </ul>
           {detail('Show changes')}
         </FlatRow>
       );
+    }
     case 'tool':
       return (
         <FlatRow line={line} rowKey={item.itemId} kind="tool" expandable={item.error !== undefined || model.diffs} open={open} onToggle={toggle}>
@@ -547,10 +649,22 @@ function ItemView({ item, model, flip, scroller }: { item: ItemRow; model: Sessi
   }
 }
 
-function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
+function Steer({
+  steer,
+  model,
+  sessionId,
+  filesEnabled,
+  onOpenFile,
+}: {
+  steer: SteerRow;
+  model: SessionModel;
+  sessionId: string;
+  filesEnabled: boolean;
+  onOpenFile: (path: string, line?: number) => void;
+}) {
   return (
     <li class={`msg user steer ${steer.state}`} data-steer-state={steer.state} data-flip-key={`steer/${steer.clientMessageId}`}>
-      <SentAttachments images={steer.images} files={steer.files} />
+      <SentAttachments images={steer.images} files={steer.files} sessionId={sessionId} filesEnabled={filesEnabled} onOpenFile={onOpenFile} />
       {steer.text !== '' && <p>{steer.text}</p>}
       <p class="muted small">{steer.label}</p>
       {steer.state === 'failed' && (
@@ -570,8 +684,20 @@ function Steer({ steer, model }: { steer: SteerRow; model: SessionModel }) {
   );
 }
 
-/** A sent message's images (thumbnails that open the image viewer) and files (chips that download them). */
-function SentAttachments({ images, files }: { images: AttachmentView[]; files: AttachmentView[] }) {
+/** A sent message's images (thumbnails that open the image viewer) and files (text chips open the file viewer; others download). */
+function SentAttachments({
+  images,
+  files,
+  sessionId,
+  filesEnabled,
+  onOpenFile,
+}: {
+  images: AttachmentView[];
+  files: AttachmentView[];
+  sessionId: string;
+  filesEnabled: boolean;
+  onOpenFile: (path: string, line?: number) => void;
+}) {
   const list = useRef<HTMLUListElement>(null);
   const hasImages = images.length > 0;
   // The viewer's chunk loads while the thumbnails are on screen, so the first tap does not wait for it.
@@ -596,20 +722,44 @@ function SentAttachments({ images, files }: { images: AttachmentView[]; files: A
       )}
       {files.length > 0 && (
         <ul class="file-chips" aria-label="Attached files">
-          {files.map((file, index) => (
-            <li key={`${file.url}-${index}`}>
-              <a class="file-chip" href={file.url} download={file.name} title={file.mediaType}>
-                <span class="file-icon" aria-hidden="true">
-                  ▤
-                </span>
-                <span class="file-name">{file.name}</span>
-              </a>
-            </li>
-          ))}
+          {files.map((file, index) => {
+            const textFile = filesEnabled && isTextAttachment(file);
+            return (
+              <li key={`${file.url}-${index}`}>
+                {textFile ? (
+                  <a
+                    class="file-chip"
+                    href={fileHref(sessionId, file.url)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenFile(file.url);
+                    }}
+                  >
+                    <span class="file-icon" aria-hidden="true">
+                      ▤
+                    </span>
+                    <span class="file-name">{file.name}</span>
+                  </a>
+                ) : (
+                  <a class="file-chip" href={file.url} download={file.name} title={file.mediaType}>
+                    <span class="file-icon" aria-hidden="true">
+                      ▤
+                    </span>
+                    <span class="file-name">{file.name}</span>
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
+}
+
+function isTextAttachment(file: AttachmentView): boolean {
+  const mediaType = file.mediaType ?? '';
+  return mediaType.startsWith('text/') || mediaType === 'application/json' || mediaType === 'application/javascript';
 }
 
 /**
