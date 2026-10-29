@@ -10,7 +10,7 @@ import { expect, test, type APIRequestContext, type Page } from './worker-host';
 // path:line jump that scrolls to and tints the line. Screenshots at 390 x 844, light and dark, go to
 // /tmp/brocode-rvc.3-shots/.
 
-const SHOTS = '/tmp/brocode-rvc.3-shots';
+const SHOTS = '/tmp/brocode-rvc.5-shots';
 const SESSION = 'ses_fake_1';
 
 test.beforeEach(async ({ request }) => {
@@ -270,6 +270,25 @@ test('a missing file or a path outside the session folder says so; an empty file
   await expect(page.getByText('This file is empty.')).toBeVisible();
 });
 
+test('a code file gets Prism syntax colours from a lazy chunk; prose and oversized files stay plain', async ({ page, request }) => {
+  await pair(page, request);
+  await openFile(page, 'src/parser.ts');
+  // The Prism chunk loads asynchronously; wait for a token to appear.
+  await expect(page.locator('[data-line="1"] .token.keyword').filter({ hasText: 'import' })).toBeVisible();
+  await expect(page.locator('[data-line="4"] .token.function')).toHaveText('parse5');
+  const keywordColor = await page.locator('[data-line="1"] .token.keyword').filter({ hasText: 'import' }).evaluate((el) => getComputedStyle(el).color);
+  expect(keywordColor).not.toBe('rgb(26, 25, 23)'); // not the plain text colour
+
+  // Plain text has no token spans.
+  await openFile(page, 'notes.txt');
+  await expect(page.locator('.file-code .token')).toHaveCount(0);
+
+  // A file over the line cap (or byte cap) stays plain too: big.log is a log, so it also has no grammar,
+  // but the cap is enforced for any path with a grammar.
+  await openFile(page, 'logs/big.log');
+  await expect(page.locator('.file-code .token')).toHaveCount(0);
+});
+
 test('the header does not move when the file finishes loading', async ({ page, request }) => {
   await pair(page, request);
   await request.post('/test/delay', { data: { method: 'fs/readFile', ms: 600 } });
@@ -288,10 +307,13 @@ test('screenshots: code with find, rendered markdown, the menu and a binary card
     await page.emulateMedia({ colorScheme: scheme });
     await openFile(page, 'src/parser.ts', 20);
     await expect.poll(() => lineInView(page, 19)).toBe(true);
+    // Wait for the Prism chunk so the syntax-colour screenshot is meaningful.
+    await expect(page.locator('[data-line="1"] .token.keyword').filter({ hasText: 'import' })).toBeVisible();
     await page.getByRole('button', { name: 'Find in file' }).click();
     await page.getByRole('searchbox', { name: 'Find in file' }).fill('input');
     await expect(page.locator('.find-count')).toHaveText(/ of /);
     await page.screenshot({ path: `${SHOTS}/code-find-${scheme}.png` });
+    await page.screenshot({ path: `${SHOTS}/syntax-${scheme}.png` });
 
     await openFile(page, 'README.md');
     await expect(page.getByRole('article', { name: 'Rendered markdown' })).toBeVisible();

@@ -7,6 +7,7 @@ import {
   binaryKindLabel,
   blockCount,
   blockOf,
+  canHighlight,
   estimateBlockHeight,
   extensionOf,
   fileName,
@@ -15,6 +16,8 @@ import {
   findMatches,
   folderOf,
   formatBytes,
+  HIGHLIGHT_MAX_BYTES,
+  HIGHLIGHT_MAX_LINES,
   lineSegments,
   matchFrom,
   MAX_AUTO_RANGES,
@@ -22,6 +25,7 @@ import {
   readErrorText,
   splitLines,
   stepMatch,
+  syntaxLanguage,
   textKindOf,
   visibleBlocks,
   WRAP_KEY,
@@ -86,6 +90,28 @@ describe('kinds, names and sizes', () => {
 
   it('wraps prose by default, not code', () => {
     expect([wrapDefault('markdown'), wrapDefault('text'), wrapDefault('code')]).toEqual([true, true, false]);
+  });
+
+  it('maps a path to its Prism language (P5)', () => {
+    expect(syntaxLanguage('src/a.ts')).toBe('typescript');
+    expect(syntaxLanguage('x.js')).toBe('javascript');
+    expect(syntaxLanguage('data.json')).toBe('json');
+    expect(syntaxLanguage('styles.css')).toBe('css');
+    expect(syntaxLanguage('index.html')).toBe('markup');
+    expect(syntaxLanguage('page.htm')).toBe('markup');
+    expect(syntaxLanguage('README.md')).toBe('markdown');
+    expect(syntaxLanguage('deploy.sh')).toBe('bash');
+    expect(syntaxLanguage('main.py')).toBe('python');
+    expect(syntaxLanguage('config.yml')).toBe('yaml');
+    expect(syntaxLanguage('fix.diff')).toBe('diff');
+    expect(syntaxLanguage('plain.txt')).toBeUndefined();
+    expect(syntaxLanguage('noext', 'application/json')).toBe('json');
+  });
+
+  it('highlights only files below the size and line caps (P5)', () => {
+    expect(canHighlight(HIGHLIGHT_MAX_BYTES, HIGHLIGHT_MAX_LINES)).toBe(true);
+    expect(canHighlight(HIGHLIGHT_MAX_BYTES + 1, HIGHLIGHT_MAX_LINES)).toBe(false);
+    expect(canHighlight(HIGHLIGHT_MAX_BYTES, HIGHLIGHT_MAX_LINES + 1)).toBe(false);
   });
 
   it('names and folders', () => {

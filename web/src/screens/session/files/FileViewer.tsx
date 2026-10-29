@@ -10,6 +10,7 @@
 // from each block's measured height, or an estimate before it was shown (file-model.ts visibleBlocks).
 // Styles: files.css.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import type { VNode } from 'preact';
 
 import type { StorageLike } from '../../../replica/storage';
 import { GroupList, type GroupRow } from '../../../ui/GroupList';
@@ -24,6 +25,7 @@ import {
   BLOCK_LINES,
   blockCount,
   blockOf,
+  canHighlight,
   estimateBlockHeight,
   fileName,
   fileUrl,
@@ -31,11 +33,13 @@ import {
   folderOf,
   formatBytes,
   lineSegments,
+  syntaxLanguage,
   visibleBlocks,
   type FileInfo,
   type FileReader,
   type Match,
 } from './file-model';
+import type { CodeLine, CodeRole } from './syntax';
 import './files.css';
 
 /** --type-code's line height. */
@@ -109,6 +113,28 @@ export function FileViewer({ sessionId, path, line, reader, storage, sessionFold
   const info = state.state === 'text' || state.state === 'binary' ? state.info : undefined;
   const shownPath = info?.path ?? model.path;
   const folder = folderOf(shownPath);
+
+  // P5: load the Prism syntax-colouring chunk lazily for small code/markdown files.
+  const [codeLines, setCodeLines] = useState<CodeLine[] | undefined>(undefined);
+  useEffect(() => {
+    if (state.state !== 'text') {
+      setCodeLines(undefined);
+      return;
+    }
+    const language = syntaxLanguage(model.path, info?.mediaType);
+    if (language === undefined || !canHighlight(info!.size, model.lines.length)) {
+      setCodeLines(undefined);
+      return;
+    }
+    let live = true;
+    void import('./syntax').then((module) => {
+      if (!live) return;
+      setCodeLines(module.highlight(model.loadedText, language));
+    });
+    return () => {
+      live = false;
+    };
+  }, [state.state, info, model.path, model.loadedText, model.lines.length]);
   const copy = async (text: string, done: string) => {
     setMenuOpen(false);
     try {
@@ -160,7 +186,7 @@ export function FileViewer({ sessionId, path, line, reader, storage, sessionFold
         </div>
       )}
       {state.state === 'binary' && <BinaryCard sessionId={sessionId} info={state.info} kindLabel={state.kindLabel} />}
-      {state.state === 'text' && (model.rendered ? <RenderedMarkdown text={model.loadedText} /> : <TextLines model={model} />)}
+      {state.state === 'text' && (model.rendered ? <RenderedMarkdown text={model.loadedText} /> : <TextLines model={model} codeLines={codeLines} />)}
       {state.state === 'text' && <MoreFooter model={model} info={state.info} />}
       {menuOpen && (
         <FileMenu
@@ -199,7 +225,7 @@ interface Viewport {
 }
 
 /** The lines, windowed: only the blocks near the viewport are rendered. */
-function TextLines({ model }: { model: FileViewerModel }) {
+function TextLines({ model, codeLines }: { model: FileViewerModel; codeLines: CodeLine[] | undefined }) {
   const lines = model.lines;
   const scroller = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -334,15 +360,24 @@ function TextLines({ model }: { model: FileViewerModel }) {
             {i + 1}
           </span>
           <span class="file-code">
-            {lineSegments(lines[i]!, byLine.get(i) ?? []).map((segment, k) =>
-              segment.mark === undefined ? (
-                segment.text
-              ) : (
-                <mark key={k} class={segment.mark === 'current' ? 'find-hit current' : 'find-hit'}>
-                  {segment.text}
-                </mark>
-              ),
-            )}
+            {renderCodeLine(lines[i]!, codeLines?.[i], byLine.get(i) ?? []).map((segment, k) => {
+              let node: VNode | string = segment.text;
+              if (segment.role !== undefined) {
+                node = (
+                  <span key={k} class={`token ${segment.role}`}>
+                    {node}
+                  </span>
+                );
+              }
+              if (segment.mark !== undefined) {
+                node = (
+                  <mark key={k} class={segment.mark === 'current' ? 'find-hit current' : 'find-hit'}>
+                    {node}
+                  </mark>
+                );
+              }
+              return node;
+            })}
             {'\n'}
           </span>
         </div>,
@@ -382,6 +417,43 @@ function charWidth(near: HTMLElement): number {
 /** The gutter's width: the page margin, the digits and the gap after them (files.css --gutter). */
 function gutterWidth(lineCount: number, char: number): number {
   return 20 + String(lineCount).length * char + 12;
+}
+
+interface RenderSegment {
+  text: string;
+  role?: CodeRole;
+  mark?: 'match' | 'current';
+}
+
+/** Render one line as segments that combine syntax roles (P5) and find-match highlights. */
+function renderCodeLine(text: string, line: CodeLine | undefined, ranges: { start: number; end: number; current: boolean }[]): RenderSegment[] {
+  if (line === undefined || line.tokens.length === 0) {
+    return lineSegments(text, ranges).map((s) => ({ text: s.text, mark: s.mark }));
+  }
+  const boundaries = new Set<number>([0, text.length]);
+  for (const token of line.tokens) {
+    boundaries.add(token.start);
+    boundaries.add(token.end);
+  }
+  for (const range of ranges) {
+    boundaries.add(range.start);
+    boundaries.add(range.end);
+  }
+  const sorted = [...boundaries].sort((a, b) => a - b);
+  const segments: RenderSegment[] = [];
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const start = sorted[i]!;
+    const end = sorted[i + 1]!;
+    if (start === end) continue;
+    const token = line.tokens.find((t) => t.start <= start && t.end >= end);
+    const range = ranges.find((r) => r.start <= start && r.end >= end);
+    segments.push({
+      text: text.slice(start, end),
+      role: token?.role,
+      mark: range ? (range.current ? 'current' : 'match') : undefined,
+    });
+  }
+  return segments;
 }
 
 // ---- find ---------------------------------------------------------------------------------------------

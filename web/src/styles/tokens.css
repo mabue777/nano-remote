@@ -27,6 +27,13 @@
   --off: #9a9a94;
   --error: #cf2a26; /* error text 5.01:1 on --bg, 4.63:1 on --fill; --primary-text on it 5.23:1 */
   --busy: var(--accent);
+  /* Code tokens (P5): six roles tuned from the GitHub Light/Dark pairs to our warm neutrals. */
+  --code-keyword: #c23b32; /* 5.07:1 on --bg, 4.69:1 on --fill */
+  --code-string: #2a4d6e; /* 8.42:1 on --bg, 7.79:1 on --fill */
+  --code-comment: #5e5a52; /* 6.57:1 on --bg, 6.08:1 on --fill */
+  --code-number: #1a5f8f; /* 6.53:1 on --bg, 6.04:1 on --fill */
+  --code-function: #6e4bc0; /* 5.86:1 on --bg, 5.42:1 on --fill */
+  --code-variable: #7a3f00; /* 7.92:1 on --bg, 7.32:1 on --fill */
   /* Diffs (the Codex values): signs and counts, and the line tints. */
   --diff-add: #007a33; /* signs and counts as text: 5.24:1 on --bg, 4.85:1 on --fill, 4.60:1 on its tint (the Codex #00a240 is 3.22:1) */
   --diff-del: #ba2623; /* 5.93:1 on --bg, 4.83:1 on its tint */
@@ -152,6 +159,12 @@
     --warn: #f1a275;
     --warn-text: #f1a275;
     --warn-bg: #45240d;
+    --code-keyword: #ff8a82; /* 8.52:1 on --bg, 5.79:1 on --fill */
+    --code-string: #a5d6ff; /* 12.64:1 on --bg, 8.59:1 on --fill */
+    --code-comment: #a5a08f; /* 7.43:1 on --bg, 5.04:1 on --fill */
+    --code-number: #79c0ff; /* 9.99:1 on --bg, 6.79:1 on --fill */
+    --code-function: #d2a8ff; /* 9.98:1 on --bg, 6.78:1 on --fill */
+    --code-variable: #ffa657; /* 10.04:1 on --bg, 6.82:1 on --fill */
     --diff-add: #40c977;
     --diff-del: #ff7a75; /* 5.21:1 on --fill, 4.83:1 on its tint (the Codex #fa423e is 3.72:1 on --fill) */
     --diff-add-bg: rgb(64 201 119 / 0.23);

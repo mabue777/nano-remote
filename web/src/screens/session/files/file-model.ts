@@ -37,6 +37,41 @@ export type TextKind = 'markdown' | 'text' | 'code';
 const MARKDOWN_EXT = new Set(['md', 'markdown', 'mdx', 'mdown']);
 const TEXT_EXT = new Set(['txt', 'text', 'log', 'csv', 'tsv', 'rst', 'adoc']);
 
+const SYNTAX_LANG: Readonly<Record<string, string>> = {
+  ts: 'typescript',
+  mts: 'typescript',
+  cts: 'typescript',
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  json: 'json',
+  css: 'css',
+  scss: 'css',
+  sass: 'css',
+  less: 'css',
+  stylus: 'css',
+  html: 'markup',
+  htm: 'markup',
+  xml: 'markup',
+  svg: 'markup',
+  md: 'markdown',
+  markdown: 'markdown',
+  mdx: 'markdown',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  py: 'python',
+  pyi: 'python',
+  yml: 'yaml',
+  yaml: 'yaml',
+  diff: 'diff',
+  patch: 'diff',
+};
+
+/** Syntax highlighting is switched off above these limits (docs/plan/file-viewer.md item P5). */
+export const HIGHLIGHT_MAX_BYTES = 256 * 1024;
+export const HIGHLIGHT_MAX_LINES = 5000;
+
 /** The extension of a path, lower case, without the dot; '' for none (a dot-file such as `.env` has none). */
 export function extensionOf(path: string): string {
   const name = fileName(path);
@@ -51,6 +86,23 @@ export function textKindOf(path: string, mediaType = ''): TextKind {
   if (TEXT_EXT.has(ext)) return 'text';
   if (ext === '' && (mediaType === 'text/plain' || mediaType === '')) return /^(readme|license|licence|changelog|notice|authors|copying)$/i.test(fileName(path)) ? 'text' : 'code';
   return 'code';
+}
+
+/** The Prism language id for a path, or undefined for plain text / unsupported. */
+export function syntaxLanguage(path: string, mediaType = ''): string | undefined {
+  const ext = extensionOf(path);
+  const fromExt = SYNTAX_LANG[ext];
+  if (fromExt !== undefined) return fromExt;
+  if (mediaType === 'text/markdown') return 'markdown';
+  if (mediaType === 'application/json') return 'json';
+  if (mediaType === 'text/css') return 'css';
+  if (mediaType === 'text/html') return 'markup';
+  return undefined;
+}
+
+/** Whether a file is small enough to syntax-highlight (P5: off above 256 KiB or 5 000 lines). */
+export function canHighlight(size: number, lineCount: number): boolean {
+  return size <= HIGHLIGHT_MAX_BYTES && lineCount <= HIGHLIGHT_MAX_LINES;
 }
 
 /** Wrap is on by default for prose, off for code. */

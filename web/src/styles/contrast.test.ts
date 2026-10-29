@@ -36,6 +36,19 @@ const TEXT_PAIRS: [text: string, surface: string][] = [
   ['--warn-text', '--warn-bg'], // a warn word on its tint
   ['--warn-text', '--bg'], // "Needs approval" / "Needs your answer" at the end of a Home row (look step 6)
   ['--warn-text', '--surface'], // the same on a row whose swipe actions show (a raised band)
+  // Code tokens (P5) on the page background and on code-block fills.
+  ['--code-keyword', '--bg'],
+  ['--code-keyword', '--fill'],
+  ['--code-string', '--bg'],
+  ['--code-string', '--fill'],
+  ['--code-comment', '--bg'],
+  ['--code-comment', '--fill'],
+  ['--code-number', '--bg'],
+  ['--code-number', '--fill'],
+  ['--code-function', '--bg'],
+  ['--code-function', '--fill'],
+  ['--code-variable', '--bg'],
+  ['--code-variable', '--fill'],
 ];
 
 const { light, dark } = palettes(tokensCss);
