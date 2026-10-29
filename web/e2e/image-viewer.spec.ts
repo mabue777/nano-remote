@@ -353,7 +353,7 @@ test('a picture that does not load says so and tries again', async ({ page, requ
   expect(await box(viewerImage(page, 1))).toEqual({ x: 0, y: 32, width: 390, height: 780 });
 });
 
-test('a photo in the composer tray opens in the viewer too', async ({ page, request }) => {
+test('a photo in the composer tray opens the markup cover, not the viewer', async ({ page, request }) => {
   await openSession(page, request);
   await page.locator('input.composer-file').setInputFiles([
     { name: 'whiteboard.png', mimeType: 'image/png', buffer: await pngOf(page, 1200, 900, 'Tray') },
@@ -364,15 +364,13 @@ test('a photo in the composer tray opens in the viewer too', async ({ page, requ
   // No border on the tile any more (look rules: no borders).
   expect(await tray.locator('img.tray-thumb').evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
   await page.screenshot({ path: `${SHOTS}/light-8-tray.png` });
-  await tray.getByRole('button', { name: 'whiteboard.png', exact: true }).click();
-  const viewer = page.getByRole('dialog', { name: 'Image' });
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByRole('img', { name: 'whiteboard.png' })).toBeVisible();
-  await expect(page.locator(`${VIEWER} .iv-count`)).toHaveCount(0);
-  await settled(page);
-  await page.screenshot({ path: `${SHOTS}/light-9-tray-viewer.png` });
-  await viewer.getByRole('button', { name: 'Close' }).click();
+  // Since image markup (docs/plan/image-markup.md, ticket 4) a tray photo opens the markup cover.
+  await tray.getByRole('button', { name: 'Mark up whiteboard.png' }).click();
+  const cover = page.getByRole('dialog', { name: 'Mark up' });
+  await expect(cover).toBeVisible();
   await expect(page.locator(VIEWER)).toHaveCount(0);
+  await cover.getByRole('button', { name: 'Cancel' }).click();
+  await expect(cover).toHaveCount(0);
   await expect(tray.locator('li')).toHaveCount(2);
 });
 

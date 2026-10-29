@@ -13,10 +13,15 @@
 // a mark's new pin sits at its top-right corner (comments.ts). Pins number 1, 2, 3 in the order made and
 // renumber when one is deleted. On screen a pin keeps one size at any zoom; the export burns it in at its own
 // size. A visually hidden list of the pins ("Comment 2: wrong colour here") lets VoiceOver read and edit them.
-// Cancel asks before it throws marks away.
+// Cancel asks before it throws marks away. While the comment sheet is open, a pin it (and the keyboard) would hide
+// is lifted above it: the picture moves up, and back when the sheet closes.
+//
+// Ticket 4: the composer's tray opens the cover with the photo's earlier marks (`initialMarks`), still editable;
+// Cancel then asks only when something changed since it opened.
 import type { JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
+import { watchViewport } from '../../../lab/viewport';
 import { Icon } from '../../../ui/Icon';
 import { hapticTick } from '../../../ui/motion/haptic';
 import { motionOf, prefersReducedMotion } from '../../../ui/motion/motion';
@@ -31,6 +36,8 @@ import './markup.css';
 
 /** The comment lines for the sent text, for owners that load this chunk (the lab, the composer). */
 export { composeCommentLines } from './marks';
+/** The composer's export of a marked photo (ticket 4). */
+export { markedPhoto } from './burn';
 
 export type MarkupTool = 'pen' | 'highlighter' | 'rectangle' | 'arrow' | 'comment';
 
@@ -39,6 +46,8 @@ export interface MarkupScreenProps {
   src: string;
   /** What the picture is, for VoiceOver ("Screenshot"). */
   label?: string;
+  /** Marks of an earlier visit, still editable (the composer's tray re-opens a marked photo). */
+  initialMarks?: readonly Mark[];
   /** Done: the cover has left the screen; `marks` are in image pixels. */
   onDone: (marks: readonly Mark[], size: Size) => void;
   /** Cancel (or Escape), confirmed when there were marks: the cover has left the screen; nothing changed. */
@@ -116,11 +125,12 @@ function Glyph({ name }: { name: keyof typeof GLYPHS }) {
 
 const LINEAR_EASING = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('transition-timing-function', 'linear(0, 1)');
 
-export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: MarkupScreenProps) {
+export function MarkupScreen({ src, label = 'Picture', initialMarks, onDone, onCancel }: MarkupScreenProps) {
   const root = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [model] = useState(() => new MarkupState());
+  const [model] = useState(() => new MarkupState(initialMarks));
+  const [start] = useState(() => model.marks);
   const [, setVersion] = useState(0);
   const [tool, setTool] = useState<MarkupTool>('pen');
   const [colors, setColors] = useState(DEFAULT_COLORS);
@@ -179,6 +189,27 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
     closeComment();
   };
 
+  // A pin the comment sheet and the keyboard would cover moves up above the sheet while it is open.
+  useEffect(() => {
+    if (editing === null) return;
+    const at = { x: editing.x, y: editing.y };
+    const place = () => {
+      const sheet = root.current?.querySelector<HTMLElement>('.markup-comment');
+      const box = stage.current?.getBoundingClientRect();
+      if (sheet == null || box === undefined) return;
+      const vv = window.visualViewport;
+      const bottom = vv == null ? window.innerHeight : vv.offsetTop + vv.height;
+      painter.lift(at, bottom - sheet.offsetHeight - box.top - PIN_SCREEN);
+    };
+    const stop = watchViewport(window, place);
+    const frame = requestAnimationFrame(place);
+    return () => {
+      stop();
+      cancelAnimationFrame(frame);
+      painter.drop();
+    };
+  }, [editing, painter]);
+
   // Rise like a sheet; cross-fade with Reduce Motion. Focus moves into the cover for VoiceOver.
   useLayoutEffect(() => {
     const el = root.current!;
@@ -229,7 +260,9 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
 
   const leave = (done: boolean, discard = false) => {
     if (closing) return;
-    if (!done && !discard && model.marks.length > 0) {
+    // Cancel asks when it would throw away something drawn since the cover opened (marks are never mutated).
+    const changedSinceOpen = model.marks.length !== start.length || model.marks.some((m, i) => m !== start[i]);
+    if (!done && !discard && changedSinceOpen) {
       setConfirming(true);
       return;
     }
@@ -343,8 +376,8 @@ export function MarkupScreen({ src, label = 'Picture', onDone, onCancel }: Marku
       )}
       {confirming && (
         <Sheet labelledBy="markup-discard-title" class="markup-sheet confirm-sheet" onClose={() => setConfirming(false)}>
-          <h2 id="markup-discard-title">Discard your marks?</h2>
-          <p class="muted small">{`The ${marksSummary(model.marks)} on this picture will be lost.`}</p>
+          <h2 id="markup-discard-title">{start.length === 0 ? 'Discard your marks?' : 'Discard your changes?'}</h2>
+          <p class="muted small">{start.length === 0 ? `The ${marksSummary(model.marks)} on this picture will be lost.` : 'The picture keeps the marks it had before.'}</p>
           <div class="actions">
             <button type="button" class="small ghost" onClick={() => setConfirming(false)}>
               Keep editing
@@ -385,6 +418,8 @@ class Painter {
   private pinchFrom: View = this.view;
   private frame = 0;
   private fitAnimation = 0;
+  /** The view before the picture was lifted clear of the comment sheet. */
+  private lifted: View | null = null;
   private readonly gestures: GestureTracker;
 
   constructor(private readonly model: MarkupState) {
@@ -479,6 +514,22 @@ class Painter {
       el.removeEventListener('pointercancel', cancel);
       el.removeEventListener('wheel', wheel);
     };
+  }
+
+  /** Moves the picture up (not clamped) so the image point `at` is at most at `limit` (stage CSS px from the top). */
+  lift(at: Point, limit: number): void {
+    const base = this.lifted ?? this.view;
+    const shift = Math.min(0, limit - (base.y + at.y * base.scale));
+    if (shift === 0 && this.lifted === null) return;
+    this.lifted = base;
+    this.setView({ ...base, y: base.y + shift });
+  }
+
+  /** Puts the picture back where it was before `lift`. */
+  drop(): void {
+    if (this.lifted === null) return;
+    this.setView(this.lifted);
+    this.lifted = null;
   }
 
   schedule(): void {

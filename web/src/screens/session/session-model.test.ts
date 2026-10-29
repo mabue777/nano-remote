@@ -939,6 +939,71 @@ describe('SessionModel: attachments (spec 8.1)', () => {
     expect(user).toMatchObject({ kind: 'user', text: 'what broke?', images: [{ name: `blb_${'2'.padStart(22, '0')}` }], files: [{ name: 'log.txt' }] });
   });
 
+  it('a marked photo: the cover opens on it, Done replaces its upload, send appends the comment lines, remove asks', async () => {
+    const { uploader, attachments } = services();
+    const { client, model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    model.attach([picked('shot@100x100.png', 'image/png'), picked('log.txt', 'text/plain')]);
+    await settle();
+    const [photo, file] = model.attachments!.entries.map((e) => e.id);
+    expect(model.markable(photo!)).toBe(true);
+    expect(model.markable(file!)).toBe(false);
+    model.markAttachment(file!);
+    expect(model.markingId).toBeUndefined();
+    model.markAttachment(photo!);
+    expect(model.markingId).toBe(photo);
+    model.closeMarkup();
+    expect(model.markingId).toBeUndefined();
+    model.markAttachment(photo!);
+    const marked = { blob: new Blob([new Uint8Array(20)], { type: 'image/png' }), name: 'shot.png', type: 'image/png', width: 100, height: 100 };
+    const lines = ['Marks on the attached image (the numbers match the pins):', '1. too tight (at 1% across, 1% down)', '2. wrong colour (at 50% across, 50% down)'];
+    model.finishMarkup(Promise.resolve({ image: marked, markup: { marks: [{ kind: 'pin', id: 'p', x: 1, y: 1, comment: 'too tight' }], comments: 2, lines: () => lines } }));
+    expect(model.canSend).toBe(false); // the marks are being drawn
+    await settle();
+    expect(model.markingId).toBeUndefined();
+    for (const upload of uploader.uploads) if (!upload.aborted) upload.resolve();
+    await settle();
+    expect(model.canSend).toBe(true);
+
+    // Remove of the marked photo asks; No keeps it, the file goes without asking.
+    model.removeAttachment(photo!);
+    expect(model.removing?.id).toBe(photo);
+    expect(model.attachments!.entries).toHaveLength(2);
+    model.cancelRemove();
+    expect(model.removing).toBeUndefined();
+    model.removeAttachment(file!);
+    expect(model.attachments!.entries).toHaveLength(1);
+
+    model.setDraft('  fix these  ');
+    model.send();
+    expect(client.last('turn/start').params.input).toEqual([
+      { type: 'text', text: ['fix these', '', ...lines].join('\n') },
+      { type: 'image', url: expect.stringMatching(/^\/v1\/blob\/blb_/) },
+    ]);
+    expect(model.turns.at(-1)!.items[0]).toMatchObject({ kind: 'user', text: ['fix these', '', ...lines].join('\n') });
+  });
+
+  it('a marked photo with no text sends the lines alone; confirming remove drops it', async () => {
+    const { uploader, attachments } = services();
+    const { client, model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });
+    model.attach([picked('a@10x10.png', 'image/png'), picked('b@10x10.png', 'image/png')]);
+    await settle();
+    const [a, b] = model.attachments!.entries.map((e) => e.id);
+    const marked = { blob: new Blob([new Uint8Array(20)], { type: 'image/png' }), name: 'a.png', type: 'image/png', width: 10, height: 10 };
+    const pin = { kind: 'pin' as const, id: 'p', x: 1, y: 1, comment: 'c' };
+    model.markAttachment(b!);
+    model.finishMarkup(Promise.resolve({ image: marked, markup: { marks: [pin], comments: 1, lines: (i, n) => [`Marks on image ${i} of ${n}:`, '1. c'] } }));
+    model.markAttachment(a!);
+    model.finishMarkup(Promise.resolve({ image: marked, markup: { marks: [pin], comments: 1, lines: () => [] } }));
+    await settle();
+    model.removeAttachment(a!);
+    model.confirmRemove();
+    expect(model.attachments!.entries.map((e) => e.id)).toEqual([b]);
+    for (const upload of uploader.uploads) if (!upload.aborted) upload.resolve();
+    await settle();
+    model.send();
+    expect(client.last('turn/start').params.input[0]).toEqual({ type: 'text', text: 'Marks on image 1 of 1:\n1. c' });
+  });
+
   it('a message may be attachments only; removing the last one leaves an empty draft unsendable', async () => {
     const { uploader, attachments } = services();
     const { client, model } = await setup({ agents: () => [codex({ images: true, files: true })], attachments });

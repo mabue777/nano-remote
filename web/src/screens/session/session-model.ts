@@ -37,7 +37,7 @@ import { attachmentsFor, canBypass, canSteer, changeableApprovalModes, findAgent
 import { backgroundTasksText, connectionOf, folderOf, statusOf, type Connection, type ConnectionSource, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { effortLabel, modelLabel } from '../new-session-model';
-import { ComposerAttachments, type AttachmentRules, type PickedFile } from './attachments/composer';
+import { ComposerAttachments, type AttachmentEntry, type AttachmentRules, type MarkedPhoto, type PickedFile } from './attachments/composer';
 import type { ResizeDeps } from './attachments/resize';
 import type { Uploader } from './attachments/upload';
 import { SessionSettingsModel, type SettingsReplica } from './settings-model';
@@ -471,6 +471,10 @@ export class SessionModel extends Model {
   readonly attachments: ComposerAttachments | undefined;
   /** Stop waits for this confirmation while background tasks run. */
   confirmingStop = false;
+  /** The tray photo open in the markup cover. */
+  markingId: string | undefined;
+  /** Remove of a marked photo waits for this confirmation. */
+  removingId: string | undefined;
   private readonly openTasks = new Set<string>();
   private readonly now: () => number;
   private readonly link: ConnectionSource | undefined;
@@ -897,8 +901,67 @@ export class SessionModel extends Model {
     this.attachments.add(files, rules);
   }
 
+  /** Removes a tray entry; a marked photo asks first (its marks go with it). */
   removeAttachment(id: string): void {
+    if (this.attachments?.entries.find((e) => e.id === id)?.markup !== undefined) {
+      this.removingId = id;
+      this.changed();
+      return;
+    }
     this.attachments?.remove(id);
+  }
+
+  /** The marked photo whose Remove waits for a yes. */
+  get removing(): AttachmentEntry | undefined {
+    const id = this.removingId;
+    return id === undefined ? undefined : this.attachments?.entries.find((e) => e.id === id);
+  }
+
+  confirmRemove(): void {
+    const id = this.removingId;
+    if (id === undefined) return;
+    this.removingId = undefined;
+    this.attachments?.remove(id);
+    this.changed();
+  }
+
+  cancelRemove(): void {
+    if (this.removingId === undefined) return;
+    this.removingId = undefined;
+    this.changed();
+  }
+
+  /** A tray photo that can be marked up: one the browser decoded (others went as files). */
+  markable(id: string): boolean {
+    return this.attachments?.original(id) !== undefined;
+  }
+
+  /** Opens the markup cover on a tray photo. */
+  markAttachment(id: string): void {
+    // Not while a Done is still drawing its marks (the entry is `preparing` again then).
+    const entry = this.attachments?.entries.find((e) => e.id === id);
+    if (!this.markable(id) || this.markingId !== undefined || entry?.state === 'preparing') return;
+    this.markingId = id;
+    this.changed();
+  }
+
+  /**
+   * The cover left with Done: the photo's upload becomes the picture `marked` resolves to (the marks burned in);
+   * undefined: no marks, the original goes up again.
+   */
+  finishMarkup(marked: Promise<MarkedPhoto> | undefined): void {
+    const id = this.markingId;
+    this.markingId = undefined;
+    const rules = this.attachRules;
+    if (id !== undefined && rules !== undefined) this.attachments?.replace(id, marked, rules);
+    this.changed();
+  }
+
+  /** The cover left with Cancel: nothing changed. */
+  closeMarkup(): void {
+    if (this.markingId === undefined) return;
+    this.markingId = undefined;
+    this.changed();
   }
 
   retryAttachment(id: string): void {
@@ -909,7 +972,8 @@ export class SessionModel extends Model {
   /** Sends the draft and the ready attachments: a new turn, or a steer into the running one. */
   send(): void {
     if (!this.canSend) return;
-    const text = this.draft.trim();
+    // Marked photos add their comments as numbered lines under the text (docs/plan/image-markup.md).
+    const text = [this.draft.trim(), this.attachments?.notes() ?? ''].filter((block) => block !== '').join('\n\n');
     const input: InputPart[] = [...(text === '' ? [] : [{ type: 'text' as const, text }]), ...(this.attachments?.parts() ?? [])];
     this.draft = '';
     if (this.attachments !== undefined && this.attachments.entries.length > 0) this.attachments.clear();

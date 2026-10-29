@@ -2,7 +2,8 @@
 // size and type rules as attachments/resize.ts.
 
 import { JPEG_QUALITY, fitWithin, outputType, renamed, type Decoded, type PreparedImage } from '../attachments/resize';
-import { MARKUP_COLORS, pinRadius, strokeWidths, type Mark, type MarkupColor, type PinMark, type Point, numberedPins } from './marks';
+import type { MarkedPhoto } from '../attachments/composer';
+import { composeCommentLines, MARKUP_COLORS, pinRadius, strokeWidths, type Mark, type MarkupColor, type PinMark, type Point, numberedPins } from './marks';
 
 function pinDiameter(longEdge: number): number {
   return pinRadius(longEdge) * 2;
@@ -165,4 +166,33 @@ export async function exportMarkedImage(
     );
   });
   return { blob, name: renamed(file.name, file.type, type), type, ...size };
+}
+
+/** The browser parts of `markedPhoto`; tests pass fakes. */
+export interface MarkedPhotoDeps {
+  decode: (blob: Blob) => Promise<Decoded>;
+  canvas: () => ExportCanvas;
+}
+
+const browserPhotoDeps: MarkedPhotoDeps = {
+  decode: (blob) => createImageBitmap(blob),
+  canvas: () => document.createElement('canvas'),
+};
+
+/**
+ * The composer's Done (docs/plan/image-markup.md, ticket 4): the marks burned into the tray photo's prepared
+ * original, and the tray's record of them (the badge's comment count, the lines for the message text). Always
+ * from the original, so marking again never re-encodes an already marked picture.
+ */
+export async function markedPhoto(original: PreparedImage, marks: readonly Mark[], deps: MarkedPhotoDeps = browserPhotoDeps): Promise<MarkedPhoto> {
+  const image = await deps.decode(original.blob);
+  try {
+    const file = new File([original.blob], original.name, { type: original.type });
+    const marked = await exportMarkedImage(file, image, marks, deps.canvas());
+    const size = { width: original.width, height: original.height };
+    const comments = marks.filter((m) => m.kind === 'pin' && m.comment.trim() !== '').length;
+    return { image: marked, markup: { marks, comments, lines: (index, count) => composeCommentLines(index, count, marks, size) } };
+  } finally {
+    image.close?.();
+  }
 }

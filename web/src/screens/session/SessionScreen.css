@@ -274,7 +274,8 @@ button.jump-pill:active {
   background: var(--fill);
 }
 
-/* A tray photo is a button that opens the image viewer (ui/ImageViewer.tsx). */
+/* A tray photo is a button that opens the markup cover (markup/MarkupScreen.tsx); a sent one opens the image
+   viewer (ui/ImageViewer.tsx). */
 .tray-open,
 .thumbs .thumb {
   display: block;
@@ -294,6 +295,37 @@ button.jump-pill:active {
 .tray-thumb {
   object-fit: cover;
   display: block;
+}
+
+.tray-open {
+  position: relative;
+}
+
+/* While a Done draws its marks the photo cannot be opened again; it does not dim (the progress bar says why). */
+.tray-open:disabled {
+  opacity: 1;
+}
+
+/* A marked photo: a pen, and the number of comments, on an ink pill at the tile's bottom left. */
+.tray-badge {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  box-sizing: border-box;
+  justify-content: center;
+  border-radius: var(--radius-round);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .tray-file {

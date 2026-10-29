@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { JPEG_QUALITY } from '../attachments/resize';
-import { burnIn, exportMarkedImage, type ExportCanvas } from './burn';
+import { burnIn, exportMarkedImage, markedPhoto, type ExportCanvas } from './burn';
 import { MARKUP_COLORS, pinRadius, strokeWidths, type Mark } from './marks';
 
 interface ContextState {
@@ -271,5 +271,31 @@ describe('burn-in', () => {
     const file = new File([], 'shot.png', { type: 'image/png' });
     const prepared = await exportMarkedImage(file as Blob & { name: string; type: string }, image, [], canvas);
     expect(prepared).toMatchObject({ name: 'shot.png', type: 'image/png', width: 300, height: 200 });
+  });
+
+  it('markedPhoto burns into the original and records the comments for the tray and the message', async () => {
+    const ctx = new FakeContext();
+    const canvas = fakeCanvas(ctx);
+    const closed: unknown[] = [];
+    const decoded = { width: 1000, height: 500, close: () => closed.push(decoded) };
+    const original = { blob: new Blob([new Uint8Array(5)], { type: 'image/png' }), name: 'shot.png', type: 'image/png', width: 1000, height: 500 };
+    const marks: Mark[] = [
+      { kind: 'rectangle', id: 'r', color: 'red', from: { x: 100, y: 100 }, to: { x: 300, y: 200 } },
+      { kind: 'pin', id: 'p1', x: 300, y: 100, comment: 'misaligned', markId: 'r' },
+      { kind: 'pin', id: 'p2', x: 500, y: 250, comment: '  ' },
+      { kind: 'pin', id: 'p3', x: 900, y: 450, comment: 'wrong colour' },
+    ];
+    const { image, markup } = await markedPhoto(original, marks, { decode: async () => decoded, canvas: () => canvas });
+    expect(image).toMatchObject({ name: 'shot.png', type: 'image/png', width: 1000, height: 500 });
+    expect(ctx.calls.find((c) => c.name === 'drawImage')).toMatchObject({ args: [decoded, 0, 0, 1000, 500] });
+    expect(closed).toEqual([decoded]);
+    expect(markup.marks).toBe(marks);
+    expect(markup.comments).toBe(2);
+    expect(markup.lines(1, 1)).toEqual([
+      'Marks on the attached image (the numbers match the pins):',
+      '1. misaligned (around 10-30% across, 20-40% down)',
+      '3. wrong colour (at 90% across, 90% down)',
+    ]);
+    expect(markup.lines(2, 3)[0]).toBe('Marks on image 2 of 3 (the numbers match the pins):');
   });
 });

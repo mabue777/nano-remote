@@ -24,6 +24,7 @@ import { placeByTurn, placeInTurn } from './approvals/answered';
 import { ApprovalsModel, type AnsweredRow } from './approvals/approvals-model';
 import { AnsweredLines, InlineRequests, PinnedQuestions } from './approvals/RequestCards';
 import type { AttachmentEntry } from './attachments/composer';
+import type { Mark } from './markup/marks';
 import { collapse, reducedMotion, useAutoScroll, useFlip, type Flip } from './motion-hooks';
 import { SessionModel, type AttachmentServices, type AttachmentView, type BackgroundTaskRow, type ItemRow, type SteerRow, type TurnRow } from './session-model';
 import { FULL_ACCESS, type DetailAction } from './session-details';
@@ -262,6 +263,8 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
       {model.settingsOpen && <SessionSettingsSheet create={() => model.settingsSheet()} onClose={() => model.closeSettings()} />}
       {model.permissionsOpen && <PermissionsSheet create={() => model.permissionsSheet()} onClose={() => model.closePermissions()} />}
       <StopConfirm model={model} />
+      <RemoveMarkedConfirm model={model} />
+      <MarkupCover model={model} />
       {menuOpen && (
         <SessionDetailsSheet
           title={model.title}
@@ -321,6 +324,56 @@ function BackgroundTasks({ rows, model, flip, scroller }: { rows: BackgroundTask
 }
 
 const TASK_ICON = { running: 'spinner', finished: 'check', cancelled: 'x', failed: 'alert', ended: 'x' } as const;
+
+type MarkupModule = typeof import('./markup/MarkupScreen');
+let markupChunk: Promise<MarkupModule> | undefined;
+/** The markup cover's chunk (lazily loaded, docs/plan/image-markup.md "Bundle"); a failed load is tried again. */
+function loadMarkup(): Promise<MarkupModule> {
+  markupChunk ??= import('./markup/MarkupScreen').catch((error: unknown) => {
+    markupChunk = undefined;
+    throw error;
+  });
+  return markupChunk;
+}
+
+/**
+ * The markup cover over the session for the tray photo being marked: it opens on the prepared original with the
+ * earlier marks still editable; Done burns the marks into the original and the tray uploads that instead.
+ */
+function MarkupCover({ model }: { model: SessionModel }) {
+  const id = model.markingId;
+  const [module, setModule] = useState<MarkupModule | null>(null);
+  useEffect(() => {
+    if (id !== undefined && module === null) void loadMarkup().then(setModule, () => model.closeMarkup());
+  }, [id, module, model]);
+  const original = id === undefined ? undefined : model.attachments?.original(id);
+  const entry = model.attachments?.entries.find((e) => e.id === id);
+  if (module === null || original === undefined || entry === undefined) return null;
+  const done = (marks: readonly Mark[]) => model.finishMarkup(marks.length === 0 ? undefined : module.markedPhoto(original.image, marks));
+  const Screen = module.MarkupScreen;
+  return <Screen key={id} src={original.url} label={entry.name} {...(entry.markup !== undefined ? { initialMarks: entry.markup.marks } : {})} onDone={done} onCancel={() => model.closeMarkup()} />;
+}
+
+/** Remove of a marked photo: its marks go with it, so it asks first. */
+function RemoveMarkedConfirm({ model }: { model: SessionModel }) {
+  const entry = model.removing;
+  if (entry === undefined) return null;
+  const comments = entry.markup?.comments ?? 0;
+  return (
+    <Sheet labelledBy="remove-marked-title" onClose={() => model.cancelRemove()}>
+      <h2 id="remove-marked-title">Remove the marked picture?</h2>
+      <p class="muted small">{`Your marks${comments === 0 ? '' : comments === 1 ? ' and 1 comment' : ` and ${comments} comments`} on ${entry.name} go with it.`}</p>
+      <div class="actions">
+        <button type="button" class="small ghost" onClick={() => model.cancelRemove()}>
+          Keep
+        </button>
+        <button type="button" class="small danger" onClick={() => model.confirmRemove()}>
+          Remove
+        </button>
+      </div>
+    </Sheet>
+  );
+}
 
 /** Stop while background tasks run: stopping the turn cancels them too, so it asks first. */
 function StopConfirm({ model }: { model: SessionModel }) {
@@ -556,19 +609,20 @@ function SentAttachments({ images, files }: { images: AttachmentView[]; files: A
   );
 }
 
-/** The picked photos and files above the message field: thumbnail or name, progress, error, remove. */
+/**
+ * The picked photos and files above the message field: thumbnail or name, progress, error, remove. A photo's
+ * thumbnail opens the markup cover (docs/plan/image-markup.md); a marked one shows the marked picture and a badge
+ * (a pen, and the number of comments).
+ */
 function AttachTray({ model }: { model: SessionModel }) {
-  const list = useRef<HTMLUListElement>(null);
   const entries = model.attachments?.entries ?? [];
   const notice = model.attachments?.notice;
-  const photos = entries.filter((entry) => entry.kind === 'image' && entry.previewUrl !== undefined);
-  const hasPhotos = photos.length > 0;
+  const hasPhotos = entries.some((entry) => entry.kind === 'image' && entry.previewUrl !== undefined);
+  // The cover's chunk loads while a photo is in the tray, so the first tap does not wait for it.
   useEffect(() => {
-    if (hasPhotos) preloadImageViewer();
+    if (hasPhotos) void loadMarkup().catch(() => undefined);
   }, [hasPhotos]);
   if (entries.length === 0 && notice === undefined) return null;
-  const viewerImages = photos.map((entry) => ({ src: entry.previewUrl!, alt: entry.name, name: entry.name }));
-  const open = (entryId: string) => openViewer(list.current, 'img.tray-thumb', viewerImages, photos.findIndex((entry) => entry.id === entryId));
   return (
     <div class="attach-tray">
       {notice !== undefined && (
@@ -577,9 +631,9 @@ function AttachTray({ model }: { model: SessionModel }) {
         </p>
       )}
       {entries.length > 0 && (
-        <ul ref={list} class="tray" aria-label="Attachments to send">
+        <ul class="tray" aria-label="Attachments to send">
           {entries.map((entry) => (
-            <TrayEntry key={entry.id} entry={entry} model={model} onOpen={() => open(entry.id)} />
+            <TrayEntry key={entry.id} entry={entry} model={model} />
           ))}
         </ul>
       )}
@@ -592,13 +646,23 @@ function openViewer(list: HTMLElement | null, selector: string, images: ViewerIm
   imageViewer.open({ images, index, origin: (i) => (list?.querySelectorAll<HTMLImageElement>(selector)[i] ?? null) });
 }
 
-function TrayEntry({ entry, model, onOpen }: { entry: AttachmentEntry; model: SessionModel; onOpen: () => void }) {
+function TrayEntry({ entry, model }: { entry: AttachmentEntry; model: SessionModel }) {
   const label = entry.state === 'preparing' ? 'Preparing…' : entry.state === 'uploading' ? `Uploading ${Math.round(entry.progress * 100)}%` : entry.state === 'ready' ? 'Ready' : 'Failed';
+  const markup = entry.markup;
+  const marked = markup === undefined ? '' : `, marked${markup.comments === 0 ? '' : markup.comments === 1 ? ', 1 comment' : `, ${markup.comments} comments`}`;
   return (
-    <li class={`tray-entry ${entry.kind} ${entry.state}`} data-state={entry.state} aria-label={`${entry.name}: ${label}`}>
+    <li class={`tray-entry ${entry.kind} ${entry.state}`} data-state={entry.state} data-marked={markup === undefined ? undefined : 'true'} aria-label={`${entry.name}${marked}: ${label}`}>
       {entry.kind === 'image' && entry.previewUrl !== undefined ? (
-        <button type="button" class="tray-open" onClick={onOpen}>
+        <button type="button" class="tray-open" aria-label={`Mark up ${entry.name}`} disabled={entry.state === 'preparing'} onClick={() => model.markAttachment(entry.id)}>
           <img class="tray-thumb" src={entry.previewUrl} alt={entry.name} />
+          {markup !== undefined && (
+            <span class="tray-badge" aria-hidden="true">
+              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z" />
+              </svg>
+              {markup.comments > 0 && markup.comments}
+            </span>
+          )}
         </button>
       ) : (
         <span class="tray-file">

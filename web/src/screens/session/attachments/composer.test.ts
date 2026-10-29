@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { FakeUploader, fakeObjectUrls, fakeResize, picked } from '../../../../test/attachment-doubles';
 import { settle } from '../../../../test/replica-doubles';
-import { ComposerAttachments, MAX_ATTACHMENTS, type AttachmentRules } from './composer';
+import { ComposerAttachments, MAX_ATTACHMENTS, type AttachmentRules, type MarkedPhoto, type Markup } from './composer';
+import type { PreparedImage } from './resize';
 
 const RULES: AttachmentRules = { images: true, files: true, maxBytes: 20 * 1024 * 1024 };
 
@@ -159,5 +160,158 @@ describe('ComposerAttachments (spec 8.1)', () => {
     await settle();
     expect(tray.entries).toEqual([]);
     expect(other.tray.entries).toEqual([]);
+  });
+});
+
+describe('ComposerAttachments: a marked photo (image markup, ticket 4)', () => {
+  const marked = (bytes = 2000): PreparedImage => ({ blob: new Blob([new Uint8Array(bytes)], { type: 'image/png' }), name: 'shot.png', type: 'image/png', width: 100, height: 100 });
+  const markup = (comments: string[]): Markup => ({
+    marks: comments.map((comment, i) => ({ kind: 'pin', id: `p${i}`, x: 1, y: 1, comment })),
+    comments: comments.length,
+    lines: (index, count) => [`Marks on image ${index} of ${count}:`, ...comments.map((c, i) => `${i + 1}. ${c}`)],
+  });
+  const done = (image: PreparedImage, record: Markup): Promise<MarkedPhoto> => Promise.resolve({ image, markup: record });
+
+  it('Done while the first upload runs: it is aborted, the entry waits for the marked picture, which then goes up', async () => {
+    const { tray, uploader, urls } = rig();
+    tray.add([picked('shot@100x100.png', 'image/png')], RULES);
+    await settle();
+    const id = tray.entries[0]!.id;
+    const first = uploader.last;
+    expect(tray.original(id)).toMatchObject({ url: 'blob:preview-1', image: { name: 'shot@100x100.png', width: 100 } });
+    let draw!: (value: MarkedPhoto) => void;
+    tray.replace(id, new Promise((resolve) => (draw = resolve)), RULES);
+    expect(first.aborted).toBe(true);
+    // Until the marks are drawn the entry is busy, so Send cannot take the unmarked picture.
+    expect(tray.entries[0]).toMatchObject({ state: 'preparing', previewUrl: 'blob:preview-1' });
+    expect(tray.busy).toBe(true);
+    first.resolve(); // a late answer of the replaced upload changes nothing
+    await settle();
+    expect(tray.entries[0]!.state).toBe('preparing');
+    draw({ image: marked(), markup: markup(['too tight']) });
+    await settle();
+    expect(tray.entries[0]).toMatchObject({ state: 'uploading', progress: 0, previewUrl: 'blob:preview-2', size: 2000, markup: { comments: 1 } });
+    expect(uploader.last).toMatchObject({ name: 'shot.png', type: 'image/png', size: 2000 });
+    expect(urls.revoked).toEqual([]);
+    uploader.last.progress(0.4);
+    expect(tray.entries[0]!.progress).toBe(0.4);
+    uploader.last.resolve();
+    await settle();
+    expect(tray.parts()).toEqual([{ type: 'image', url: `/v1/blob/blb_${'2'.padStart(22, '0')}` }]);
+    expect(tray.notes()).toBe('Marks on image 1 of 1:\n1. too tight');
+  });
+
+  it('marking again replaces the marked picture; Done without marks puts the original back', async () => {
+    const { tray, uploader, urls } = rig();
+    tray.add([picked('shot@100x100.png', 'image/png')], RULES);
+    await settle();
+    const id = tray.entries[0]!.id;
+    uploader.last.resolve();
+    await settle();
+    tray.replace(id, undefined, RULES); // an unmarked photo left unmarked: nothing to do
+    expect(uploader.uploads).toHaveLength(1);
+    expect(tray.entries[0]!.state).toBe('ready');
+    tray.replace(id, done(marked(), markup(['a'])), RULES);
+    expect(tray.entries[0]!.uploaded).toBeUndefined();
+    expect(tray.ready).toBe(false);
+    await settle();
+    tray.replace(id, done(marked(3000), markup(['a', 'b'])), RULES);
+    await settle();
+    expect(urls.revoked).toEqual(['blob:preview-2']);
+    expect(tray.entries[0]).toMatchObject({ previewUrl: 'blob:preview-3', size: 3000, markup: { comments: 2 } });
+    tray.replace(id, undefined, RULES);
+    await settle();
+    expect(urls.revoked).toEqual(['blob:preview-2', 'blob:preview-3']);
+    expect(tray.entries[0]).toMatchObject({ previewUrl: 'blob:preview-1', size: 10, name: 'shot@100x100.png' });
+    expect(tray.entries[0]!.markup).toBeUndefined();
+    expect(uploader.last).toMatchObject({ name: 'shot@100x100.png', size: 10 });
+    uploader.last.resolve();
+    await settle();
+    expect(tray.notes()).toBe('');
+    tray.remove(id);
+    expect(urls.revoked).toEqual(['blob:preview-2', 'blob:preview-3', 'blob:preview-1']);
+  });
+
+  it('a failed replacement retries the marked picture; one too large fails at once; marks that cannot be drawn fail', async () => {
+    const { tray, uploader, resize } = rig();
+    tray.add([picked('shot@100x100.png', 'image/png')], RULES);
+    await settle();
+    const id = tray.entries[0]!.id;
+    tray.replace(id, done(marked(), markup(['x'])), RULES);
+    await settle();
+    uploader.last.reject('Upload failed: the host did not answer.');
+    await settle();
+    expect(tray.entries[0]).toMatchObject({ state: 'failed', error: 'Upload failed: the host did not answer.' });
+    tray.retry(id, RULES);
+    expect(tray.entries[0]).toMatchObject({ state: 'uploading' });
+    expect(uploader.last).toMatchObject({ name: 'shot.png', size: 2000 });
+    expect(resize.calls).toEqual([]); // not prepared again
+    tray.replace(id, done(marked(50), markup(['x'])), { ...RULES, maxBytes: 20 });
+    await settle();
+    expect(tray.entries[0]).toMatchObject({ state: 'failed', error: 'shot.png is larger than 0 MB.' });
+    expect(uploader.uploads).toHaveLength(3);
+    tray.replace(id, Promise.reject(new Error('no 2d canvas')), RULES);
+    await settle();
+    expect(tray.entries[0]).toMatchObject({ state: 'failed', error: 'The marks could not be added: no 2d canvas' });
+  });
+
+  it('a newer Done or a remove makes a pending one stale', async () => {
+    const { tray, uploader } = rig();
+    tray.add([picked('shot@100x100.png', 'image/png')], RULES);
+    await settle();
+    const id = tray.entries[0]!.id;
+    let slow!: (value: MarkedPhoto) => void;
+    tray.replace(id, new Promise((resolve) => (slow = resolve)), RULES);
+    tray.replace(id, done(marked(3000), markup(['new'])), RULES);
+    await settle();
+    slow({ image: marked(1), markup: markup(['old']) });
+    await settle();
+    expect(tray.entries[0]).toMatchObject({ size: 3000, markup: { comments: 1 } });
+    expect(tray.entries[0]!.markup!.lines(1, 1)).toEqual(['Marks on image 1 of 1:', '1. new']);
+    const uploads = uploader.uploads.length;
+    let late!: (value: MarkedPhoto) => void;
+    tray.replace(id, new Promise((resolve) => (late = resolve)), RULES);
+    tray.remove(id);
+    late({ image: marked(), markup: markup(['x']) });
+    await settle();
+    expect(uploader.uploads).toHaveLength(uploads);
+  });
+
+  it('notes count the images in send order and skip files and photos without comments', async () => {
+    const { tray, uploader } = rig();
+    tray.add([picked('a@10x10.png', 'image/png'), picked('b.txt', 'text/plain'), picked('c@10x10.png', 'image/png'), picked('d@10x10.png', 'image/png')], RULES);
+    await settle();
+    const [a, , c, d] = tray.entries.map((e) => e.id);
+    tray.replace(a!, done(marked(), markup(['first'])), RULES);
+    tray.replace(c!, done(marked(), { marks: [{ kind: 'pen', id: 'm', color: 'red', points: [] }], comments: 0, lines: () => [] }), RULES);
+    tray.replace(d!, done(marked(), markup(['third'])), RULES);
+    await settle();
+    expect(tray.notes()).toBe(''); // nothing ready yet
+    for (const upload of uploader.uploads) if (!upload.aborted) upload.resolve();
+    await settle();
+    expect(tray.ready).toBe(true);
+    expect(tray.notes()).toBe('Marks on image 1 of 3:\n1. first\n\nMarks on image 3 of 3:\n1. third');
+    expect(tray.original(tray.entries[1]!.id)).toBeUndefined(); // a file is not markable
+  });
+
+  it('a photo the browser cannot read is not markable', async () => {
+    const { tray } = rig();
+    tray.add([picked('IMG.heic', 'image/heic', 50)], RULES);
+    await settle();
+    const id = tray.entries[0]!.id;
+    expect(tray.original(id)).toBeUndefined();
+    tray.replace(id, done(marked(), markup(['x'])), RULES);
+    await settle();
+    expect(tray.entries[0]!.markup).toBeUndefined();
+  });
+
+  it('clear frees the original and the marked thumbnail', async () => {
+    const { tray, urls } = rig();
+    tray.add([picked('a@10x10.png', 'image/png')], RULES);
+    await settle();
+    tray.replace(tray.entries[0]!.id, done(marked(), markup(['x'])), RULES);
+    await settle();
+    tray.clear();
+    expect(urls.revoked.sort()).toEqual(['blob:preview-1', 'blob:preview-2']);
   });
 });

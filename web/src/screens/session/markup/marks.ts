@@ -62,9 +62,15 @@ export function markId(): string {
 /** The undoable editing state. Every mutating operation pushes a new snapshot; undo/redo move through the
  * snapshot stack without mutating history entries. */
 export class MarkupState {
-  private _marks: readonly Mark[] = [];
-  private history: readonly (readonly Mark[])[] = [[]];
+  private _marks: readonly Mark[];
+  private history: readonly (readonly Mark[])[];
   private index = 0;
+
+  /** `initial`: the marks of an earlier visit (the bottom of the undo stack). */
+  constructor(initial: readonly Mark[] = []) {
+    this._marks = initial;
+    this.history = [initial];
+  }
 
   get marks(): readonly Mark[] {
     return this._marks;
