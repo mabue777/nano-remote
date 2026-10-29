@@ -61,9 +61,11 @@ export interface SessionScreenProps {
   actions?: SessionActions;
   /** The host connection (the stream client): "Mac offline" in the header, the host's name in the ⋯ sheet. */
   link?: ConnectionSource;
+  /** Opens the Files page for this session. */
+  onOpenFiles?: () => void;
 }
 
-export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared, link }: SessionScreenProps) {
+export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName, onOpened, agents, attachments, actions: shared, link, onOpenFiles }: SessionScreenProps) {
   const own = useMemo(() => (shared === undefined ? new SessionActions({ replica }) : undefined), [shared, replica]);
   useEffect(() => () => own?.dispose(), [own]);
   const actions = useModel((shared ?? own)!);
@@ -276,6 +278,7 @@ export function SessionScreen({ sessionId, replica, onBack, clientId, deviceName
             if (action === 'settings') model.openSettings();
             else if (action === 'permissions') model.openPermissions();
             else if (action === 'changes') model.openLastChanges();
+            else if (action === 'files') onOpenFiles?.();
             else if (action === 'archive') {
               if (actions.askArchive(sessionId)) onBack();
             } else if (action === 'unarchive') void actions.unarchive(sessionId);

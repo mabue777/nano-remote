@@ -665,6 +665,16 @@ export class FakeHost {
           },
         };
       case 'fs/readDirectory': {
+        if (params.sessionId !== undefined) {
+          const session = this.sessions.get(params.sessionId);
+          if (session === undefined) throw new HostError({ code: 'not_found', message: `no session ${params.sessionId}`, data: { sessionId: params.sessionId } });
+          try {
+            return { result: { entries: this.files.list(params.sessionId, session.summary.cwd, String(params.path ?? '')) } };
+          } catch (error) {
+            if (error instanceof FileError) throw new HostError({ code: error.code, message: error.message, data: error.data });
+            throw error;
+          }
+        }
         const entries = this.tree[params.path];
         if (entries === undefined) throw new HostError({ code: 'not_found', message: `no directory ${params.path}` });
         const base = params.path === '/' ? '' : params.path;

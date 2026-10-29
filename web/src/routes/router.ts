@@ -1,7 +1,7 @@
 // A tiny history router for the app's pages: /pair, / (home), /chats (home on its Chats tab),
 // /settings (Settings; /settings/providers is its old address and opens it too), /s/:sessionId,
 // /s/:sessionId/file?path=<path>[&line=<n>] (a file of the session folder, pushed over the session),
-// /c/:chatId (a local chat) and /lab (the
+// /s/:sessionId/files?path=<path> (a folder of the session folder, pushed over the session), /c/:chatId (a local chat) and /lab (the
 // hidden interaction lab, reached only by typing the URL). The host answers each of these paths with index.html (host/src/http/static.ts), so a reload or a push link
 // lands on the right page. The fragment is left alone: the pairing link carries its code there
 // (`/pair#code=12345678`, spec 8), and a fragment never reaches the host.
@@ -21,12 +21,15 @@ export type Route =
   | { name: 'session'; sessionId: string }
   /** A file of the session folder; `line` (1-based) is scrolled to and tinted once. */
   | { name: 'file'; sessionId: string; path: string; line?: number }
+  /** A folder of the session folder; `path` is relative to the session folder ('' for the root). */
+  | { name: 'files'; sessionId: string; path: string }
   | { name: 'chat'; chatId: string }
   | { name: 'lab' }
   | { name: 'notFound'; path: string };
 
 const SESSION = /^\/s\/([^/]+)\/?$/;
 const FILE = /^\/s\/([^/]+)\/file\/?$/;
+const FOLDER = /^\/s\/([^/]+)\/files\/?$/;
 const CHAT = /^\/c\/([^/]+)\/?$/;
 
 /**
@@ -49,6 +52,11 @@ export function parseRoute(pathname: string, search = ''): Route {
     if (file === '') return { name: 'notFound', path: path + search };
     const line = Number(query.get('line'));
     return Number.isInteger(line) && line > 0 ? { name: 'file', sessionId: fileSession, path: file, line } : { name: 'file', sessionId: fileSession, path: file };
+  }
+  const folderSession = idOf(FOLDER, path);
+  if (folderSession !== undefined) {
+    const query = new URLSearchParams(search);
+    return { name: 'files', sessionId: folderSession, path: query.get('path') ?? '' };
   }
   const chatId = idOf(CHAT, path);
   if (chatId !== undefined) return { name: 'chat', chatId };
@@ -85,6 +93,11 @@ export function routePath(route: Route): string {
       if (route.line !== undefined) query.set('line', String(route.line));
       return `/s/${encodeURIComponent(route.sessionId)}/file?${query.toString()}`;
     }
+    case 'files': {
+      const query = new URLSearchParams();
+      if (route.path !== '') query.set('path', route.path);
+      return `/s/${encodeURIComponent(route.sessionId)}/files${query.toString() === '' ? '' : `?${query.toString()}`}`;
+    }
     case 'chat':
       return `/c/${encodeURIComponent(route.chatId)}`;
     case 'lab':
@@ -97,8 +110,8 @@ export function routePath(route: Route): string {
 export type Direction = 'push' | 'pop' | 'none';
 
 /**
- * How deep a page sits: Home 0, a session or chat 1, Settings and a session's file 2 (Settings opens from
- * Home and from a chat; a file from its session).
+ * How deep a page sits: Home 0, a session or chat 1, Settings and a session's file or folder 2 (Settings opens from
+ * Home and from a chat; a file or folder from its session).
  */
 export function depthOf(route: Route): number {
   switch (route.name) {
@@ -107,6 +120,7 @@ export function depthOf(route: Route): number {
       return 1;
     case 'settings':
     case 'file':
+    case 'files':
       return 2;
     default:
       return 0;

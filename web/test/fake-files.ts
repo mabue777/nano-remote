@@ -70,6 +70,51 @@ function isBinary(head: Buffer, complete: boolean): boolean {
 
 const continuation = (byte: number | undefined) => byte !== undefined && (byte & 0xc0) === 0x80;
 
+/** One entry of a directory listing (matches protocol spec 4). */
+export interface ListedEntry {
+  name: string;
+  kind: 'dir' | 'file';
+  path: string;
+  size?: number;
+  mtimeMs?: number;
+  hidden?: boolean;
+}
+
+/** Lists the direct children of a path inside a session folder. */
+export function listFiles(sessionId: string, cwd: string, requested: string, folders: ReadonlyMap<string, ReadonlyMap<string, StoredFile>>): ListedEntry[] {
+  const outside = () => new FileError('not_found', 'no such file or folder in the session folder', { path: requested });
+  if (requested.includes('\0')) throw new FileError('invalid_params', 'path must not contain NUL', { path: 'params.path' });
+  const absolute = path.posix.isAbsolute(requested) ? path.posix.normalize(requested) : path.posix.join(cwd, requested === '' ? '.' : requested);
+  if (absolute !== cwd && !absolute.startsWith(`${cwd}/`)) throw outside();
+  const relative = path.posix.relative(cwd, absolute);
+  const folder = folders.get(sessionId) ?? new Map<string, StoredFile>();
+  const prefix = relative === '' ? '' : `${relative}/`;
+  const seen = new Map<string, ListedEntry>();
+  for (const [fileRelative, file] of folder) {
+    if (!fileRelative.startsWith(prefix)) continue;
+    const rest = fileRelative.slice(prefix.length);
+    if (rest === '' || rest.includes('/')) continue;
+    const name = rest;
+    seen.set(name, { name, kind: 'file', path: `${relative === '' ? '' : `${relative}/`}${name}`, size: file.bytes.length, mtimeMs: file.mtimeMs, hidden: name.startsWith('.') });
+  }
+  // Derive folders from the stored paths too: any prefix with more than one segment under the requested path is a folder.
+  for (const fileRelative of folder.keys()) {
+    if (!fileRelative.startsWith(prefix)) continue;
+    const rest = fileRelative.slice(prefix.length);
+    if (rest === '') continue;
+    const slash = rest.indexOf('/');
+    if (slash === -1) continue;
+    const dirName = rest.slice(0, slash);
+    if (seen.has(dirName)) continue;
+    seen.set(dirName, { name: dirName, kind: 'dir', path: `${relative === '' ? '' : `${relative}/`}${dirName}`, mtimeMs: Date.now(), hidden: dirName.startsWith('.') });
+  }
+  // If the requested path is not the root and there are no entries, it is not a folder (or empty folder is still a folder?).
+  if (relative !== '' && seen.size === 0 && ![...folder.keys()].some((key) => key.startsWith(`${relative}/`))) {
+    throw outside();
+  }
+  return [...seen.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
 export class FakeFiles {
   /** sessionId -> relative path -> file. */
   private readonly folders = new Map<string, Map<string, StoredFile>>();
@@ -83,6 +128,11 @@ export class FakeFiles {
     let folder = this.folders.get(sessionId);
     if (folder === undefined) this.folders.set(sessionId, (folder = new Map()));
     folder.set(relative, { bytes: typeof content === 'string' ? Buffer.from(content, 'utf8') : content, mtimeMs });
+  }
+
+  /** Lists a directory relative to a session folder. */
+  list(sessionId: string, cwd: string, requested: string): ListedEntry[] {
+    return listFiles(sessionId, cwd, requested, this.folders);
   }
 
   /** The stored file for a requested path under the scope rule, with its path inside the folder. */

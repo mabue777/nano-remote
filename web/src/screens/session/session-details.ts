@@ -67,7 +67,7 @@ export function statusValue(line: StatusLine, workedFor?: string): string {
   return line.detail === undefined && workedFor !== undefined ? `${line.text} · ${workedFor}` : line.text;
 }
 
-export type DetailAction = 'settings' | 'permissions' | 'changes' | 'archive' | 'unarchive' | 'delete';
+export type DetailAction = 'settings' | 'permissions' | 'changes' | 'files' | 'archive' | 'unarchive' | 'delete';
 
 /** One part of a row's value; `label` names it for assistive tech (and the tests): "Model", "Effort". */
 export interface ValuePart {
@@ -97,6 +97,8 @@ export interface DetailsInput {
   effort?: string;
   /** The agent lets the model and effort change (SessionModel.canChangeSettings). */
   canChangeSettings: boolean;
+  /** The host lets the session folder be browsed (SessionModel.filesRead). */
+  filesRead: boolean;
   /** The full path of the working folder. */
   folder?: string;
   fullAccess: boolean;
@@ -128,6 +130,7 @@ export function detailRows(input: DetailsInput): DetailRow[] {
     });
   }
   if (input.folder !== undefined) rows.push({ key: 'folder', icon: 'folder', label: 'Folder', value: [{ text: input.folder }] });
+  if (input.filesRead) rows.push({ key: 'files', icon: 'folder', label: 'Files', value: [], action: 'files', title: 'Browse the session folder' });
   const permissions = input.fullAccess ? FULL_ACCESS : (input.permissions ?? ASKS_FIRST);
   rows.push({
     key: 'permissions',

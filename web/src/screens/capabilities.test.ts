@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Agent } from '../generated/common';import { attachmentsFor, canAcceptEdits, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys } from './capabilities';
+import type { Agent } from '../generated/common';import { attachmentsFor, canAcceptEdits, canBypass, canReadFiles, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys } from './capabilities';
 
 const agent = (capabilities?: { steer: boolean; diff: boolean; approvalModes: string[] }) => ({
   id: 'a',
@@ -64,6 +64,13 @@ describe('agent capabilities', () => {
     expect(findAgent(() => undefined, 'a')).toBeUndefined();
     expect(findAgent(undefined, 'a')).toBeUndefined();
     expect(findAgent(() => list, undefined)).toBeUndefined();
+  });
+
+  it('file reading needs the host to declare files.read; older hosts get none', () => {
+    expect(canReadFiles({ files: { read: true } } as any)).toBe(true);
+    expect(canReadFiles({ files: { read: false } } as any)).toBe(false);
+    expect(canReadFiles({ files: {} } as any)).toBe(false);
+    expect(canReadFiles(undefined)).toBe(false);
   });
 
   it('attachmentsFor needs a host limit and an agent that declares images or files; older hosts get none', () => {

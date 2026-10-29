@@ -65,6 +65,7 @@ const BASE: DetailsInput = {
   model: 'gpt-5.5-codex',
   effort: 'High',
   canChangeSettings: true,
+  filesRead: true,
   folder: '/Users/me/code/nano-remote',
   fullAccess: false,
   changes: '3 files changed',
@@ -72,9 +73,9 @@ const BASE: DetailsInput = {
 };
 
 describe('detailRows: the ⋯ sheet', () => {
-  it('everything the old header showed, Changes, then Archive and Delete', () => {
+  it('everything the old header showed, Files, Changes, then Archive and Delete', () => {
     const rows = detailRows(BASE);
-    expect(rows.map((row) => row.label)).toEqual(['Status', 'Agent', 'Model', 'Folder', 'Permissions', 'Changes', 'Archive', 'Delete…']);
+    expect(rows.map((row) => row.label)).toEqual(['Status', 'Agent', 'Model', 'Folder', 'Files', 'Permissions', 'Changes', 'Archive', 'Delete…']);
     expect(rows[0]).toEqual({ key: 'status', icon: 'check', label: 'Status', value: [{ text: 'Finished · Worked for 3m 12s' }] });
     expect(rows[2]).toEqual({
       key: 'model',
@@ -88,16 +89,17 @@ describe('detailRows: the ⋯ sheet', () => {
       title: 'Change model and effort',
     });
     expect(rows[3]!.value).toEqual([{ text: '/Users/me/code/nano-remote' }]);
-    expect(rows[4]!.value).toEqual([{ text: ASKS_FIRST }]);
-    expect(rows[5]).toMatchObject({ action: 'changes', value: [{ text: '3 files changed' }] });
-    expect(rows[6]).toMatchObject({ key: 'archive', action: 'archive' });
-    expect(rows[7]).toMatchObject({ key: 'delete', action: 'delete', tone: 'error', icon: 'trash' });
+    expect(rows[4]).toMatchObject({ key: 'files', icon: 'folder', label: 'Files', action: 'files', value: [] });
+    expect(rows[5]!.value).toEqual([{ text: ASKS_FIRST }]);
+    expect(rows[6]).toMatchObject({ action: 'changes', value: [{ text: '3 files changed' }] });
+    expect(rows[7]).toMatchObject({ key: 'archive', action: 'archive' });
+    expect(rows[8]).toMatchObject({ key: 'delete', action: 'delete', tone: 'error', icon: 'trash' });
   });
 
   it('a Full-access session says so; an archived one offers Unarchive; no Changes row without changes', () => {
     const rows = detailRows({ ...BASE, fullAccess: true, archived: true, changes: undefined } as DetailsInput);
     expect(rows.find((row) => row.key === 'permissions')!.value).toEqual([{ text: FULL_ACCESS }]);
-    expect(rows.map((row) => row.key)).toEqual(['status', 'agent', 'model', 'folder', 'permissions', 'unarchive', 'delete']);
+    expect(rows.map((row) => row.key)).toEqual(['status', 'agent', 'model', 'folder', 'files', 'permissions', 'unarchive', 'delete']);
   });
 
   it('the Permissions row names the mode in effect and opens the Permissions sheet when the mode can change', () => {
@@ -113,7 +115,7 @@ describe('detailRows: the ⋯ sheet', () => {
     const fixed = detailRows({ ...BASE, canChangeSettings: false }).find((row) => row.key === 'model')!;
     expect(fixed.action).toBeUndefined();
     expect(fixed.title).toBeUndefined();
-    const bare: DetailsInput = { status: 'Idle', statusTone: 'muted', canChangeSettings: false, fullAccess: false, archived: false };
+    const bare: DetailsInput = { status: 'Idle', statusTone: 'muted', canChangeSettings: false, filesRead: false, fullAccess: false, archived: false };
     expect(detailRows(bare).map((row) => row.key)).toEqual(['status', 'permissions', 'archive', 'delete']);
     expect(detailRows(bare)[0]!.icon).toBe('list');
   });

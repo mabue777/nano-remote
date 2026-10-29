@@ -169,7 +169,7 @@ test('a Full-access session: " · Full access" after the status, and in the ⋯ 
   await closeDetails(page, details);
 });
 
-test('the ⋯ sheet: Status, Agent, Model, Folder, Permissions, Changes, then Archive and Delete; Model and Changes open their sheets', async ({ page, request }) => {
+test('the ⋯ sheet: Status, Agent, Model, Folder, Files, Permissions, Changes, then Archive and Delete; Model and Changes open their sheets', async ({ page, request }) => {
   await request.post('/test/turn-diff', { data: { sessionId: 'ses_fake_1', result: DIFF } });
   await pair(page, request);
   await page.goto('/s/ses_fake_1');
@@ -178,7 +178,7 @@ test('the ⋯ sheet: Status, Agent, Model, Folder, Permissions, Changes, then Ar
   await expect(details).toHaveAccessibleName('Create hello.txt and list files');
   await expect(details.locator('.detail-subtitle')).toHaveText(/ · [^·]+$/); // host · folder
   const rows = details.getByRole('list', { name: 'Session details' }).locator(':scope > li');
-  await expect(rows.locator('.group-label')).toHaveText(['Status', 'Agent', 'Model', 'Folder', 'Permissions', 'Changes']);
+  await expect(rows.locator('.group-label')).toHaveText(['Status', 'Agent', 'Model', 'Folder', 'Files', 'Permissions', 'Changes']);
   await expect(details.locator('[data-row="status"] .group-value')).toHaveText(/^Finished · Worked for \d+/);
   await expect(details.locator('[data-row="agent"] .group-value')).toHaveText('Codex');
   await expect(details.getByLabel('Model', { exact: true })).toHaveText('gpt-5-codex');

@@ -34,6 +34,7 @@ import { xhrUploader } from './screens/session/attachments/upload';
 import type { AttachmentServices } from './screens/session/session-model';
 import { SessionScreen } from './screens/session/SessionScreen';
 import { FileRoute, preloadFileViewer } from './screens/session/files/FileRoute';
+import { FolderPage } from './screens/session/files/FolderPage';
 import { StreamClient } from './stream/client';
 
 export interface AppProps {
@@ -129,10 +130,11 @@ interface ConnectedProps {
   onUnpaired: () => void;
 }
 
-/** The page Back goes to: Home from a session or Settings, the Chats tab from a chat, the session from its file. */
+/** The page Back goes to: Home from a session or Settings, the Chats tab from a chat, the session from its file or folder. */
 function connectedParent(route: Route): Route | null {
   switch (route.name) {
     case 'file':
+    case 'files':
       return { name: 'session', sessionId: route.sessionId };
     case 'session':
     case 'settings':
@@ -195,8 +197,9 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
   }, [services, chat]);
 
   const open = (sessionId: string) => router.navigate({ name: 'session', sessionId });
-  // A session's files open in a lazily loaded viewer: start loading it once a session is on screen.
-  const inSession = route.name === 'session' || route.name === 'file';
+  const openFiles = (sessionId: string) => router.navigate({ name: 'files', sessionId, path: '' });
+  // A session's files open in a lazily loaded viewer: start loading it once a session or its folder is on screen.
+  const inSession = route.name === 'session' || route.name === 'file' || route.name === 'files';
   useEffect(() => {
     if (inSession) void preloadFileViewer().catch(() => undefined);
   }, [inSession]);
@@ -264,6 +267,7 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
             actions={services.actions}
             link={services.client}
             onBack={() => router.back('/')}
+            onOpenFiles={() => openFiles(route.sessionId)}
           />
         );
       case 'file': {
@@ -286,6 +290,36 @@ function Connected({ device, route, router, storage, push, chat, motion, ownsEdg
             storage={storage}
             sessionFolder={sessionFolder}
             onBack={() => router.back({ name: 'session', sessionId: route.sessionId })}
+          />
+        );
+      }
+      case 'files': {
+        const { replica } = services;
+        const sessionId = route.sessionId;
+        const sessionFolder = {
+          name: () => {
+            const cwd = replica.session(sessionId)?.session?.cwd ?? [...replica.sessions, ...replica.archivedSessions].find((s) => s.sessionId === sessionId)?.cwd;
+            return cwd?.split('/').filter((part) => part !== '').at(-1);
+          },
+          subscribe: (listener: () => void) => replica.subscribe(listener),
+        };
+        return (
+          <FolderPage
+            key={`${route.sessionId}:${route.path}`}
+            sessionId={route.sessionId}
+            path={route.path}
+            reader={services.client}
+            replica={services.replica}
+            storage={storage}
+            sessionFolder={sessionFolder}
+            onBack={() => router.back({ name: 'session', sessionId: route.sessionId })}
+            onOpen={(target) =>
+              router.navigate(
+                target.name === 'folder'
+                  ? { name: 'files', sessionId: route.sessionId, path: target.path }
+                  : { name: 'file', sessionId: route.sessionId, path: target.path },
+              )
+            }
           />
         );
       }

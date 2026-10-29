@@ -124,17 +124,24 @@ describe('parseRoute and routePath', () => {
     ['/s/ses_1/file', '?path=a.ts&line=x', { name: 'file', sessionId: 'ses_1', path: 'a.ts' }],
     ['/s/ses_1/file', '', { name: 'notFound', path: '/s/ses_1/file' }],
     ['/s/ses_1/file', '?path=', { name: 'notFound', path: '/s/ses_1/file?path=' }],
-    ['/s/ses_1/files', '?path=a', { name: 'notFound', path: '/s/ses_1/files' }],
-  ])('a file page: %s%s', (path, search, route) => {
+    ['/s/ses_1/files', '', { name: 'files', sessionId: 'ses_1', path: '' }],
+    ['/s/ses_1/files/', '?path=src%2Fcomponents', { name: 'files', sessionId: 'ses_1', path: 'src/components' }],
+    ['/s/ses_1/files', '?path=', { name: 'files', sessionId: 'ses_1', path: '' }],
+  ])('a file or folder page: %s%s', (path, search, route) => {
     expect(parseRoute(path, search)).toEqual(route);
   });
 
-  it('routePath inverts parseRoute for a file page', () => {
-    const route: Route = { name: 'file', sessionId: 's 1', path: 'src/a b.ts', line: 7 };
-    expect(routePath(route)).toBe('/s/s%201/file?path=src%2Fa+b.ts&line=7');
-    const url = new URL(routePath(route), 'http://x');
-    expect(parseRoute(url.pathname, url.search)).toEqual(route);
+  it('routePath inverts parseRoute for file and folder pages', () => {
+    const file: Route = { name: 'file', sessionId: 's 1', path: 'src/a b.ts', line: 7 };
+    expect(routePath(file)).toBe('/s/s%201/file?path=src%2Fa+b.ts&line=7');
+    const url = new URL(routePath(file), 'http://x');
+    expect(parseRoute(url.pathname, url.search)).toEqual(file);
     expect(routePath({ name: 'file', sessionId: 's', path: 'a.ts' })).toBe('/s/s/file?path=a.ts');
+    const folder: Route = { name: 'files', sessionId: 's 1', path: 'src/components' };
+    expect(routePath(folder)).toBe('/s/s%201/files?path=src%2Fcomponents');
+    const folderUrl = new URL(routePath(folder), 'http://x');
+    expect(parseRoute(folderUrl.pathname, folderUrl.search)).toEqual(folder);
+    expect(routePath({ name: 'files', sessionId: 's', path: '' })).toBe('/s/s/files');
   });
 
   it('routePath inverts parseRoute', () => {

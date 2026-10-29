@@ -10,7 +10,7 @@ export interface GroupRow {
   icon: IconName;
   label: string;
   /** Shown at the right, joined by " · "; a part's `label` names it for assistive tech. */
-  value: readonly { text: string; label?: string }[];
+  value: readonly { text: string; label?: string; class?: string }[];
   /** A tap; without one the row is plain text. */
   onClick?: () => void;
   /** The row opens another sheet: a chevron at the right. */
@@ -50,11 +50,18 @@ function RowContent({ row }: { row: GroupRow }) {
   const parts: ComponentChildren[] = [];
   row.value.forEach((part, index) => {
     if (index > 0) parts.push(' · ');
+    const className = part.class === undefined ? undefined : part.class;
     parts.push(
       part.label === undefined ? (
-        part.text
+        className === undefined ? (
+          part.text
+        ) : (
+          <span key={index} class={className}>
+            {part.text}
+          </span>
+        )
       ) : (
-        <span key={part.label} aria-label={part.label}>
+        <span key={part.label} aria-label={part.label} class={className}>
           {part.text}
         </span>
       ),

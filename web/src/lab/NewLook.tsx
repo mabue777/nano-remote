@@ -261,6 +261,7 @@ export function SessionDetailsBody({ status, onChanges, onClose }: { status: str
     model: 'gpt-5.5',
     effort: 'High',
     canChangeSettings: false,
+    filesRead: true,
     folder: '~/code/nano-remote',
     fullAccess: false,
     changes: '3 files',

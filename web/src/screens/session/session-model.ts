@@ -33,7 +33,7 @@ import type { RequestError } from '../../stream/client';
 import type { Agent } from '../../generated/common';
 import type { TurnDiffResult } from '../../generated/methods';
 import type { InputPart, Item, SessionSummary, SessionView, TurnView, Usage } from '../../replica/types';
-import { attachmentsFor, canBypass, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
+import { attachmentsFor, canBypass, canReadFiles, canSteer, changeableApprovalModes, findAgent, hasDiff, settingsKeys, type AgentsSource, type SettingsKey } from '../capabilities';
 import { backgroundTasksText, connectionOf, folderOf, statusOf, type Connection, type ConnectionSource, type SessionRow } from '../home-model';
 import { errorText, Model } from '../model';
 import { effortLabel, modelLabel } from '../new-session-model';
@@ -727,6 +727,7 @@ export class SessionModel extends Model {
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.effort !== undefined ? { effort: this.effort } : {}),
       canChangeSettings: this.canChangeSettings,
+      filesRead: this.filesRead,
       ...(this.folder !== undefined ? { folder: this.folder.path } : {}),
       fullAccess: this.bypass,
       permissions: permissionsValue(this.approvalMode),
@@ -734,6 +735,10 @@ export class SessionModel extends Model {
       ...(last?.changes !== undefined ? { changes: last.changes } : {}),
       archived,
     });
+  }
+
+  get filesRead(): boolean {
+    return canReadFiles(this.link?.host);
   }
 
   /** The Changes row: the newest finished turn's Changes sheet. */

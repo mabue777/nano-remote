@@ -26,6 +26,14 @@ export function hasDiff(agent: Agent | undefined): boolean {
 }
 
 /**
+ * Reading files of a session folder (spec 4.1): the host's `initialize` result says `files.read`. Never
+ * guessed for an older host without it: a client shows no file viewer entry points without the capability.
+ */
+export function canReadFiles(host: { files?: { read?: boolean } } | undefined): boolean {
+  return host?.files?.read ?? false;
+}
+
+/**
  * Which attachments (spec 8.1) the composer offers for the agent: none unless the host takes uploads
  * (`limits.maxAttachmentBytes`) and the agent declares `capabilities.attachments` with images or files.
  * Unlike the other controls this one is never guessed for an older host: it would only upload into a 404.

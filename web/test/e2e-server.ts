@@ -55,7 +55,7 @@ import { FakeHost } from './fake-host';
 import { startFakeProvider } from './fake-provider';
 
 const PUBLIC = fileURLToPath(new URL('../../host/public/', import.meta.url));
-const CLIENT_ROUTE = /^\/((pair|chats|settings|settings\/providers|lab)\/?)?$|^\/[sc]\/[^/]+$|^\/s\/[^/]+\/file$/;
+const CLIENT_ROUTE = /^\/((pair|chats|settings|settings\/providers|lab)\/?)?$|^\/[sc]\/[^/]+$|^\/s\/[^/]+\/(file|files)$/;
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

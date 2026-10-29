@@ -2,11 +2,88 @@
    borders, the accent only for find matches and the jumped-to line, 20 px page margins, --type-code for the
    text and --type-footnote for meta lines. Loaded with the viewer's own chunk. */
 
+/* The folder page (FolderPage.tsx): a scrollable list under the same centred header. */
+.folder-page {
+  padding-top: 0;
+}
+
+.folder-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * (var(--safe-right) + var(--page-x))) 0 calc(-1 * (var(--safe-left) + var(--page-x)));
+  padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--page-x)) 0 calc(var(--safe-left) + var(--page-x));
+  background: var(--bg);
+}
+
+.folder-top .nav {
+  position: static;
+}
+
 /* The page scrolls the window; the header and the find bar stay at the top, over the safe area. */
 .file-viewer {
   padding-top: 0;
 }
 
+.folder-list {
+  padding: var(--space-4) 0 var(--space-12);
+}
+
+.folder-list .group-list {
+  margin: 0 calc(-1 * (var(--safe-right) + var(--page-x))) 0 calc(-1 * (var(--safe-left) + var(--page-x)));
+  border-radius: 0;
+  background: transparent;
+}
+
+.folder-list .group-row {
+  padding-left: calc(var(--safe-left) + var(--page-x));
+  padding-right: calc(var(--safe-right) + var(--page-x));
+}
+
+.folder-list .group-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--muted);
+}
+
+.folder-list .group-value .status-word {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.folder-list .group-value .status-word .dot {
+  background: var(--accent);
+}
+
+.folder-status {
+  margin: var(--space-12) 0;
+  font: var(--type-callout);
+  text-align: center;
+}
+
+.folder-status p {
+  margin: 0 0 var(--space-6);
+}
+
+.folder-cap {
+  margin: var(--space-6) 0 0;
+  text-align: center;
+  font: var(--type-footnote);
+  color: var(--muted);
+}
+
+.folder-hidden {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: var(--space-8) calc(var(--safe-right) + var(--page-x)) 0 calc(var(--safe-left) + var(--page-x));
+  padding: var(--space-4) 0;
+  font: var(--type-body);
+}
+
+/* ---------- the text ---------- */
 .file-top {
   position: sticky;
   top: 0;
