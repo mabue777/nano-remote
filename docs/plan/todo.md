@@ -45,3 +45,9 @@ has moved since it was written.
 - 9: superseded by ADR 0004 and 0005. No Apple Developer Program, no APNs, no TestFlight for v1.
   Replaced by: Tailscale HTTPS certificate for the host, VAPID key on the host, home-screen install.
 - 10: still applies; add Web Push subscription storage and VAPID key handling to the pass.
+
+## Status note (2026-11-03)
+
+- This list is historical: items 1 to 8 are done, 9 is superseded, and 10 and 11 continue as Beads
+  tickets (security pass 2 is `brocode-3ig.2`; dispatch and field checks are per ticket).
+- Open work lives in Beads only: run `bd ready` for the frontier and `bd blocked` for the rest.
